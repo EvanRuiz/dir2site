@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenSeadragonOverlayEditor", "OpenSeadragonOverlayEditor.csproj", "{81B3151B-D98E-4809-AEBA-73C3EAEB3BE0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|ARM64 = Debug|ARM64
+		Release|Any CPU = Release|Any CPU
+		Release|ARM64 = Release|ARM64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{81B3151B-D98E-4809-AEBA-73C3EAEB3BE0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{81B3151B-D98E-4809-AEBA-73C3EAEB3BE0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{81B3151B-D98E-4809-AEBA-73C3EAEB3BE0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{81B3151B-D98E-4809-AEBA-73C3EAEB3BE0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{81B3151B-D98E-4809-AEBA-73C3EAEB3BE0}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{81B3151B-D98E-4809-AEBA-73C3EAEB3BE0}.Debug|ARM64.Build.0 = Debug|ARM64
+		{81B3151B-D98E-4809-AEBA-73C3EAEB3BE0}.Release|ARM64.ActiveCfg = Debug|ARM64
+		{81B3151B-D98E-4809-AEBA-73C3EAEB3BE0}.Release|ARM64.Build.0 = Debug|ARM64
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,80 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:OpenSeadragonOverlayEditor.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:webview="clr-namespace:WebViewControl;assembly=WebViewControl.Avalonia"
+        mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="450"
+        x:Class="OpenSeadragonOverlayEditor.Views.MainWindow"
+        x:DataType="vm:ImageViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="OpenSeadragonOverlayEditor">
+
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+        <vm:ImageViewModel/>
+    </Design.DataContext>
+    <StackPanel>
+        <TabControl>
+            <TabItem Header="Select Image">
+                <StackPanel>
+                    <Button Content="Open Image File..."
+                            Command="{Binding OpenImageFileCommand}" />
+                    <TextBlock Text="{Binding ImagePath}" />
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="Make Tiles">
+                <StackPanel>
+                    
+                    <!-- <Separator Margin="0 20"/> -->
+
+                    <Grid ColumnDefinitions="Auto, *"
+                          RowDefinitions="Auto,Auto">
+                        <Grid.Styles>
+                            <Style Selector="TextBlock, NumericUpDown">
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                            </Style>
+                        </Grid.Styles>
+                        
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Tiles Name: "></TextBlock>
+                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TilesName}" />
+
+                        <TextBlock  Grid.Row="1" Grid.Column="0" Text="Quality: "></TextBlock>
+                        <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal">
+                            <Slider Width="200"
+                                    Minimum="10"
+                                    Maximum="100"
+                                    TickFrequency="10"
+                                    IsSnapToTickEnabled="True"
+                                    TickPlacement="BottomRight" 
+                                    Value="{Binding QualityLevel}" 
+                                    Padding="5, 0" />
+                            <NumericUpDown Width="130" 
+                                           Value="{Binding QualityLevel}"></NumericUpDown>
+                        </StackPanel>
+                       
+                    </Grid>
+                    <Button Content="Generate tiles..." Command="{Binding GenerateTilesCommand}" />
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="Edit Overlays"></TabItem>
+            <TabItem Header="Preview Overlays">
+                <Grid RowDefinitions="Auto,*">
+                    <Button Grid.Row="0" DockPanel.Dock="Top"
+                                         Content="Generate Preview..."
+                                         Command="{Binding GeneratePreviewCommand}"/>
+                    <Viewbox Grid.Row="1" Stretch="Fill">
+                        <webview:WebView Name="WebViewControl"
+                                         Focusable="True" 
+                                         Width="1000"
+                                         Height="800"/>
+                    </Viewbox>
+                </Grid>
+            </TabItem>
+
+        </TabControl>
+    </StackPanel>
+
+</Window>
