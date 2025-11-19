@@ -168,8 +168,16 @@ public partial class ImageViewModel : ViewModelBase
         }).ToList();
 
         var json = JsonSerializer.Serialize(overlaysForJson);
-        
         var overlaysJsonPath = Path.Combine(previewPath, "overlays.json");
+
+        // Copy existing as backup
+        if(File.Exists(overlaysJsonPath))
+        {
+            var backupPath = Path.Combine(previewPath, $"overlays-backup-{Guid.NewGuid()}.json");
+            await Task.Run(() => File.Copy(overlaysJsonPath, backupPath));
+        }
+        
+        // Save new data
         await File.WriteAllTextAsync(overlaysJsonPath, json);
     }
     
