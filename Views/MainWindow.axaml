@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:webview="clr-namespace:WebViewControl;assembly=WebViewControl.Avalonia"
+        xmlns:converters="clr-namespace:OpenSeadragonOverlayEditor.Converters"
         mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="450"
         x:Class="OpenSeadragonOverlayEditor.Views.MainWindow"
         x:DataType="vm:ImageViewModel"
@@ -15,6 +16,10 @@
              to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
         <vm:ImageViewModel/>
     </Design.DataContext>
+    
+    <Window.Resources>
+        <converters:SelectedBrushMultiConverter x:Key="SelectedBrushMultiConverter"/>
+    </Window.Resources>
     
     <Window.Styles>
         <Style Selector="TextBlock">
@@ -178,12 +183,25 @@
                             <DataTemplate>
                                 <Ellipse Width="{Binding Width}" 
                                          Height="{Binding Height}"
-                                         Fill="{Binding Fill}"
-                                         Stroke="{Binding Stroke}"
                                          StrokeThickness="{Binding StrokeThickness}"
                                          PointerPressed="Overlay_OnPointerPressed"
                                          PointerMoved="Overlay_OnPointerMoved"
-                                         PointerReleased="Overlay_OnPointerReleased" />
+                                         PointerReleased="Overlay_OnPointerReleased">
+                                    <Ellipse.Fill>
+                                        <MultiBinding Converter="{StaticResource SelectedBrushMultiConverter}">
+                                            <Binding Path="IsSelected"/>
+                                            <Binding Path="Fill"/>
+                                            <Binding Path="SelectedFill"/>
+                                        </MultiBinding>
+                                    </Ellipse.Fill>
+                                    <Ellipse.Stroke>
+                                        <MultiBinding Converter="{StaticResource SelectedBrushMultiConverter}">
+                                            <Binding Path="IsSelected"/>
+                                            <Binding Path="Stroke"/>
+                                            <Binding Path="SelectedStroke"/>
+                                        </MultiBinding>
+                                    </Ellipse.Stroke>
+                                </Ellipse>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

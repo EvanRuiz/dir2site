@@ -38,6 +38,15 @@ public partial class OverlayViewModel : ViewModelBase
     [ObservableProperty]
     private string? _caption;
 
+    [ObservableProperty]
+    private bool _isSelected = false;
+    
+    [ObservableProperty]
+    private IBrush _selectedFill = new SolidColorBrush(Color.FromArgb(128, 0, 100, 0));
+
+    [ObservableProperty]
+    private IBrush _selectedStroke = new SolidColorBrush(Color.FromArgb(128, 100, 255, 100));
+
     partial void OnXChanged(double value)
     {
         UpdateBounds();

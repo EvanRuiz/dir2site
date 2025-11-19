@@ -27,11 +27,7 @@ public partial class ImageViewModel : ViewModelBase
     private WebView? _webView;
     private Canvas? _overlayCanvas;
     private Image? _overlayCanvasImage;
-
-    private IBrush _defaultFill = new SolidColorBrush(Color.FromArgb(128, 0, 0, 0));
-    private IBrush _defaultStroke = new SolidColorBrush(Color.FromArgb(200, 0, 0, 0));
-    private int _defaultThickness = 2;
-
+    
     public ImageViewModel()
     {
     }
@@ -44,7 +40,16 @@ public partial class ImageViewModel : ViewModelBase
         _overlayCanvas = overlayCanvas;
         _overlayCanvasImage = overlayCanvasImage;
     }
-
+    
+    [ObservableProperty]    
+    private IBrush _defaultFill = new SolidColorBrush(Color.FromArgb(128, 0, 0, 0));
+    
+    [ObservableProperty]
+    private IBrush _defaultStroke = new SolidColorBrush(Color.FromArgb(200, 0, 0, 0));
+    
+    [ObservableProperty]
+    private int _defaultThickness = 2;
+    
     [ObservableProperty]
     private IStorageFile? _imageFile;
     
@@ -83,6 +88,12 @@ public partial class ImageViewModel : ViewModelBase
     
     [ObservableProperty]
     private string _previewTabHeader = "Preview";
+
+    partial void OnSelectedOverlayChanged(OverlayViewModel? oldValue, OverlayViewModel? newValue)
+    {
+        if(oldValue != null) oldValue.IsSelected = false;
+        if(newValue != null) newValue.IsSelected = true;
+    }
     
     partial void OnSelectedTabIndexChanged(int? value)
     {
@@ -250,9 +261,9 @@ public partial class ImageViewModel : ViewModelBase
             X = (o.x + o.width / 2) * _overlayCanvasImage.Bounds.Width + _overlayCanvasImage.Bounds.Left,
             Y = (o.y + o.height / 2) * _overlayCanvasImage.Bounds.Width + _overlayCanvasImage.Bounds.Top,
             Caption = o.caption,
-            Fill = _defaultFill,
-            Stroke = _defaultStroke,
-            StrokeThickness = _defaultThickness
+            Fill = DefaultFill,
+            Stroke = DefaultStroke,
+            StrokeThickness = DefaultThickness
         }).ToList());
 
         foreach(var o in Overlays)
