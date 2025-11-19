@@ -1,0 +1,63 @@
+using Avalonia.Media;
+using CommunityToolkit.Mvvm.ComponentModel;
+
+namespace OpenSeadragonOverlayEditor.ViewModels;
+
+public partial class OverlayViewModel : ViewModelBase
+{
+    [ObservableProperty]
+    private double _x;
+
+    [ObservableProperty]
+    private double _y;
+
+    [ObservableProperty]
+    private double _left;
+
+    [ObservableProperty]
+    private double _top;
+
+    [ObservableProperty]
+    private double _width;
+    
+    [ObservableProperty]
+    private double _height;
+    
+    [ObservableProperty]
+    private double _radius;
+    
+    [ObservableProperty]
+    private IBrush _fill;
+
+    [ObservableProperty]
+    private IBrush _stroke;
+    
+    [ObservableProperty]
+    private int _strokeThickness;
+    
+    [ObservableProperty]
+    private string? _caption;
+
+    partial void OnXChanged(double value)
+    {
+        UpdateBounds();
+    }
+    
+    partial void OnYChanged(double value)
+    {
+        UpdateBounds();
+    }
+
+    partial void OnRadiusChanged(double value)
+    {
+        UpdateBounds();
+    }
+
+    public void UpdateBounds()
+    {
+        Left = X - Radius;
+        Top = Y - Radius;
+        Width = Radius * 2;
+        Height = Radius * 2;
+    }
+}

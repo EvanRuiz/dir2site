@@ -1,0 +1,98 @@
+<html>
+<head>
+    <style>
+        .overlay {
+            border: 2px solid rgba(0, 0, 0, 0.9);
+            border-radius: 50%;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            white-space: nowrap;
+            text-shadow: 0px 1px 2px rgb(0 0 0 / 80%);
+
+            opacity: 0.1;
+            transition: opacity 0.3s ease-in-out;
+        }
+        .overlay:hover {
+            opacity: 1;
+        }
+    </style>
+     <script src="js/openseadragon/openseadragon.min.js"></script>
+     <script src="js/fittext.js"></script>
+     <script>
+
+         function overlaysFitText() {
+             const overlayElements = document.querySelectorAll('.overlay');
+             overlayElements.forEach(function (overlay) {
+                 window.fitText(overlay, 1.2);
+             });
+         };
+         
+         function loadOverlays(overlays) {
+             let count = 0;
+             
+             overlays.forEach(function (overlay) {
+                 console.log(overlay);
+                 overlay.id = "overlay-" + count;
+                 overlay.className = "overlay";
+                 
+                 const overlayDiv = document.createElement("button");
+                 overlayDiv.setAttribute("id", overlay.id);
+                 overlayDiv.classList.add("overlay");
+                 overlayDiv.innerHTML = overlay.caption;
+                 document.body.append(overlayDiv);
+                 console.log(overlayDiv);
+                 
+                 count++;
+             });
+             
+             console.log(overlays);
+             return overlays;
+         }
+
+         function loadOpenSeadragon(overlays) {
+             var viewer = OpenSeadragon({
+                 id:            "openseadragon-view",
+                 prefixUrl:     "openseadragon/images/",
+                 tileSources:   [
+                     "tiles/mydz.dzi"
+                 ],
+                 overlays: overlays
+             });
+
+             viewer.addHandler('zoom', function(event) {
+                 overlaysFitText();
+             });
+
+             viewer.addHandler('open', function() {
+                 overlaysFitText();
+             });
+
+             viewer.addHandler("animation", function(event) {
+                 overlaysFitText();
+             });
+
+             viewer.addHandler("animation-finish", function(event) {
+                 overlaysFitText();
+             });
+         }
+     </script>
+</head>
+<body>
+    <div id="openseadragon-view">
+        <script>
+            
+            fetch('overlays.json')
+                .then(res => res.json())
+                .then(data => {
+                    var overlays = loadOverlays(data);
+                    loadOpenSeadragon(overlays);
+                })
+                .catch(err => console.log(err));
+
+        </script>
+        <noscript>
+            <p>OpenSeadragon is not available unless JavaScript is enabled.</p>
+        </noscript>
+    </div>
+</body>
+</html>

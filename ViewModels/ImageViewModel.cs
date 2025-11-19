@@ -1,10 +1,17 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MsBox.Avalonia;
@@ -17,15 +24,23 @@ public partial class ImageViewModel : ViewModelBase
 {
     private TopLevel? _topLevel;
     private WebView? _webView;
+    private Canvas? _overlayCanvas;
+    private Image? _overlayCanvasImage;
+
+    private IBrush _defaultFill = new SolidColorBrush(Color.FromArgb(128, 0, 0, 0));
+    private IBrush _defaultStroke = new SolidColorBrush(Color.FromArgb(200, 0, 0, 0));
+    private int _defaultThickness = 2;
 
     public ImageViewModel()
     {
     }
 
-    public ImageViewModel(TopLevel topLevel, WebView view)
+    public ImageViewModel(TopLevel topLevel, WebView view, Canvas overlayCanvas, Image overlayCanvasImage)
     {
         _topLevel = topLevel;
         _webView = view;
+        _overlayCanvas = overlayCanvas;
+        _overlayCanvasImage = overlayCanvasImage;
     }
 
     [ObservableProperty]
@@ -33,12 +48,24 @@ public partial class ImageViewModel : ViewModelBase
     
     [ObservableProperty]
     private string? _imagePath;
+    
+    [ObservableProperty]
+    private Bitmap? _imageBitmap;
 
     [ObservableProperty]
     private string? _tilesName = "mydz";
     
     [ObservableProperty]
     private double _qualityLevel = 80;
+
+    [ObservableProperty]
+    private ObservableCollection<OverlayViewModel> _overlays = [];
+    
+    [ObservableProperty]
+    private double _defaultOverlayRadius = 50;
+    
+    [ObservableProperty]
+    private OverlayViewModel? _selectedOverlay;
     
     private async Task<string?> GetPreviewPath()
     {
@@ -53,8 +80,6 @@ public partial class ImageViewModel : ViewModelBase
 
         return previewPath;
     }
-
-   
     
     [RelayCommand]
     private async Task OpenImageFile()
@@ -84,6 +109,9 @@ public partial class ImageViewModel : ViewModelBase
 
         ImageFile = files[0];
         ImagePath = ImageFile.Path.AbsolutePath;
+
+        ImageBitmap = new Bitmap(ImagePath);
+        await LoadOverlays();
     }
 
     [RelayCommand]
@@ -110,8 +138,74 @@ public partial class ImageViewModel : ViewModelBase
 
         var box = MessageBoxManager.GetMessageBoxStandard("Tiles Generated", "Tiles Generated Successfully.", ButtonEnum.Ok);
         await box.ShowAsync();
+    }
+    
+    private class OverlayJson
+    {
+        public string? caption { get; set; }
+        public double x { get; set; }
+        public double y { get; set; }
+        public double width { get; set; }
+        public double height { get; set; }
+    }
 
+    [RelayCommand]
+    private async Task SaveOverlays()
+    {
+        var previewPath = await GetPreviewPath();
+        if(previewPath == null) return;
+        
+        if(_overlayCanvas == null || _overlayCanvasImage == null) return;
+        
+        // Openseadragon overlay bounds are in viewpoint coordinates in percentage of the image width only
+        var overlaysForJson = Overlays.Select(o => new OverlayJson
+        {
+            caption = o.Caption,
+            x = (o.Left - _overlayCanvasImage.Bounds.Left) / _overlayCanvasImage.Bounds.Width,
+            y = (o.Top - _overlayCanvasImage.Bounds.Top) / _overlayCanvasImage.Bounds.Width,
+            width = o.Radius * 2 / _overlayCanvasImage.Bounds.Width,
+            height = o.Radius * 2 / _overlayCanvasImage.Bounds.Width,
+        }).ToList();
 
+        var json = JsonSerializer.Serialize(overlaysForJson);
+        
+        var overlaysJsonPath = Path.Combine(previewPath, "overlays.json");
+        await File.WriteAllTextAsync(overlaysJsonPath, json);
+    }
+    
+    [RelayCommand]
+    private async Task LoadOverlays()
+    {
+        Overlays.Clear();
+        if(_overlayCanvasImage == null) return;
+        
+        var previewPath = await GetPreviewPath();
+        if(previewPath == null) return;
+        
+        var overlaysJsonPath = Path.Combine(previewPath, "overlays.json");
+        if(!File.Exists(overlaysJsonPath)) return;
+
+        var overlaysJsonString = await File.ReadAllTextAsync(overlaysJsonPath);
+        
+        var overlaysJson = JsonSerializer.Deserialize<List<OverlayJson>>(overlaysJsonString);
+        if(overlaysJson == null) return;
+        
+        // Openseadragon overlay bounds are in viewpoint coordinates in percentage of the image width only
+        Overlays = new ObservableCollection<OverlayViewModel>(overlaysJson.Select(o => new OverlayViewModel
+        {
+            Radius = o.width * _overlayCanvasImage.Bounds.Width / 2,
+            X = (o.x + o.width / 2) * _overlayCanvasImage.Bounds.Width + _overlayCanvasImage.Bounds.Left,
+            Y = (o.y + o.height / 2) * _overlayCanvasImage.Bounds.Width + _overlayCanvasImage.Bounds.Top,
+            Caption = o.caption,
+            Fill = _defaultFill,
+            Stroke = _defaultStroke,
+            StrokeThickness = _defaultThickness
+        }).ToList());
+
+        foreach(var o in Overlays)
+        {
+            o.UpdateBounds();
+        }
     }
 
     [RelayCommand]
@@ -123,49 +217,33 @@ public partial class ImageViewModel : ViewModelBase
         var previewPath = await GetPreviewPath();
         if(previewPath == null) return;
         
-        await CopyOpenSeagdragonAssets(previewPath);
+        await SaveOverlays();
+        await CopyPreviewAssets(previewPath);
         
         var htmlPath = Path.Combine(previewPath, "index.html");
-        var html = @"
-<html>
-<head>
-     <script src=""openseadragon/openseadragon.min.js""></script>
-</head>
-<body>
-    <div id=""openseadragon-view"">
-        <script>
-            OpenSeadragon({
-                id:            ""openseadragon-view"",
-                prefixUrl:     ""openseadragon/images/"",
-                tileSources:   [
-                    ""tiles/mydz.dzi""
-                ]
-            });
-        </script>
-        <noscript>
-            <p>OpenSeadragon is not available unless JavaScript is enabled.</p>
-        </noscript>
-    </div>
-</body>
-</html>
-";
-        File.WriteAllText(htmlPath, html);
         
         var uri = new Uri(htmlPath);
         var uriString = uri.AbsoluteUri;
         _webView.Address = uriString;
     }
+
+    [RelayCommand]
+    private void DeleteSelectedOverlay()
+    {
+        if(SelectedOverlay == null) return;
+        Overlays.Remove(SelectedOverlay);
+        SelectedOverlay = null;
+    }
     
-    private async Task CopyOpenSeagdragonAssets(string parentPath)
+    private async Task CopyPreviewAssets(string parentPath)
     {
         if(ImageFile == null) return;
         
-        var assets = AssetLoader.GetAssets(new Uri($"avares://OpenSeadragonOverlayEditor/Assets/openseadragon/"), null);
-
+        var assets = AssetLoader.GetAssets(new Uri($"avares://OpenSeadragonOverlayEditor/Assets/preview/"), null);
         foreach(var asset in assets)
         {
             // Get the relative path of the asset
-            var relativePath = asset.AbsolutePath.Replace("/Assets/openseadragon/", "openseadragon/");
+            var relativePath = asset.AbsolutePath.Replace("/Assets/preview/", "");
             var destinationPath = Path.Combine(parentPath, relativePath);
     
             // Create subdirectories if needed
@@ -179,5 +257,22 @@ public partial class ImageViewModel : ViewModelBase
             await using var fileStream = File.Create(destinationPath);
             await stream.CopyToAsync(fileStream);
         }
+    }
+
+    public void OnOverlayCanvasPressed(double x, double y)
+    {
+        Console.WriteLine($"Canvas clicked at: X={x}, Y={y}");
+
+        var overlay = new OverlayViewModel
+        {
+            X = x,
+            Y = y,
+            Radius = DefaultOverlayRadius,
+            Fill = _defaultFill,
+            Stroke = _defaultStroke,
+            StrokeThickness = _defaultThickness
+        };
+        
+        Overlays.Add(overlay);
     }
 }

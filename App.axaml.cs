@@ -46,6 +46,10 @@ public partial class App : Application
             {
                 CefRuntime.Shutdown();
             };
+            
+#if DEBUG
+            this.AttachDevTools();
+#endif
         }
 
         base.OnFrameworkInitializationCompleted();

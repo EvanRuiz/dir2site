@@ -15,66 +15,193 @@
              to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
         <vm:ImageViewModel/>
     </Design.DataContext>
-    <StackPanel>
-        <TabControl>
-            <TabItem Header="Select Image">
-                <StackPanel>
-                    <Button Content="Open Image File..."
+    
+    <Window.Styles>
+        <Style Selector="TextBlock">
+            <Setter Property="Margin" Value="0 0, 0, 10"/>
+        </Style>
+        <Style Selector="Separator">
+            <Setter Property="Margin" Value="0 10"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+    </Window.Styles>
+    <TabControl HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch">
+        <TabItem Header="Select Image">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="10">
+                    <Button DockPanel.Dock="Top"
+                            Content="Open Image File..."
                             Command="{Binding OpenImageFileCommand}" />
                     <TextBlock Text="{Binding ImagePath}" />
                 </StackPanel>
-            </TabItem>
-            <TabItem Header="Make Tiles">
-                <StackPanel>
+                <Canvas HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch">
+                    <Image Stretch="Uniform" 
+                           Width="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Canvas}}"
+                           Height="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Canvas}}"
+                           Source="{Binding ImageBitmap}" />
+                </Canvas>
+            </DockPanel>
+        </TabItem>
+        <TabItem Header="Make Tiles">
+            <StackPanel>
+                <Grid ColumnDefinitions="Auto, *"
+                      RowDefinitions="Auto,Auto">
+                    <Grid.Styles>
+                        <Style Selector="TextBlock, NumericUpDown">
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="HorizontalAlignment" Value="Right"/>
+                        </Style>
+                    </Grid.Styles>
                     
-                    <!-- <Separator Margin="0 20"/> -->
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Tiles Name: "></TextBlock>
+                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TilesName}" />
 
-                    <Grid ColumnDefinitions="Auto, *"
-                          RowDefinitions="Auto,Auto">
-                        <Grid.Styles>
-                            <Style Selector="TextBlock, NumericUpDown">
-                                <Setter Property="VerticalAlignment" Value="Center"/>
-                                <Setter Property="HorizontalAlignment" Value="Right"/>
-                            </Style>
-                        </Grid.Styles>
-                        
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Tiles Name: "></TextBlock>
-                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TilesName}" />
-
-                        <TextBlock  Grid.Row="1" Grid.Column="0" Text="Quality: "></TextBlock>
-                        <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal">
-                            <Slider Width="200"
-                                    Minimum="10"
-                                    Maximum="100"
-                                    TickFrequency="10"
-                                    IsSnapToTickEnabled="True"
-                                    TickPlacement="BottomRight" 
-                                    Value="{Binding QualityLevel}" 
-                                    Padding="5, 0" />
-                            <NumericUpDown Width="130" 
-                                           Value="{Binding QualityLevel}"></NumericUpDown>
-                        </StackPanel>
-                       
-                    </Grid>
-                    <Button Content="Generate tiles..." Command="{Binding GenerateTilesCommand}" />
-                </StackPanel>
-            </TabItem>
-            <TabItem Header="Edit Overlays"></TabItem>
-            <TabItem Header="Preview Overlays">
-                <Grid RowDefinitions="Auto,*">
-                    <Button Grid.Row="0" DockPanel.Dock="Top"
-                                         Content="Generate Preview..."
-                                         Command="{Binding GeneratePreviewCommand}"/>
-                    <Viewbox Grid.Row="1" Stretch="Fill">
-                        <webview:WebView Name="WebViewControl"
-                                         Focusable="True" 
-                                         Width="1000"
-                                         Height="800"/>
-                    </Viewbox>
+                    <TextBlock  Grid.Row="1" Grid.Column="0" Text="Quality: "></TextBlock>
+                    <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal">
+                        <Slider Width="200"
+                                Minimum="10"
+                                Maximum="100"
+                                TickFrequency="10"
+                                IsSnapToTickEnabled="True"
+                                TickPlacement="BottomRight" 
+                                Value="{Binding QualityLevel}" 
+                                Padding="5, 0" />
+                        <NumericUpDown Width="130" 
+                                       Value="{Binding QualityLevel}"></NumericUpDown>
+                    </StackPanel>
+                   
                 </Grid>
-            </TabItem>
+                <Button Content="Generate tiles..." Command="{Binding GenerateTilesCommand}" />
+            </StackPanel>
+        </TabItem>
+        <TabItem Header="Edit Overlays"
+                 HorizontalAlignment="Stretch"
+                 VerticalAlignment="Stretch">
+            <DockPanel>
+                <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,*,*,*">
+                    <TextBlock Grid.Column="0" Text="{Binding #OverlayCanvasImage.Bounds.Width}" Padding="10"/>
+                    <TextBlock Grid.Column="1" Text="{Binding #OverlayCanvasImage.Bounds.Height}" Padding="10"/>
+                    <TextBlock Grid.Column="2" Text="{Binding #OverlayCanvasImage.Bounds.Left}" Padding="10"/>
+                    <TextBlock Grid.Column="3" Text="{Binding #OverlayCanvasImage.Bounds.Top}" Padding="10"/>
+                </Grid>
+                <StackPanel DockPanel.Dock="Right">
+                    <TextBlock>Default Radius:</TextBlock>
+                    <NumericUpDown Value="{Binding DefaultOverlayRadius}"></NumericUpDown>
+                    <Separator/>
+                    <Button Content="Load Overlays"
+                            Command="{Binding LoadOverlaysCommand}" />
+                    <Button Content="Save Overlays"
+                            Command="{Binding SaveOverlaysCommand}" />
+                    <Button Content="Delete Selected Overlay"
+                            IsEnabled="{Binding !!SelectedOverlay}"
+                            Command="{Binding DeleteSelectedOverlayCommand}" />
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right">
+                    <ListBox Width="200"
+                             MaxWidth="200"
+                             MaxHeight="{Binding #OverlayCanvasImage.Bounds.Height}"
+                             ItemsSource="{Binding Overlays}"
+                             SelectedItem="{Binding SelectedOverlay}">
+                        <ListBox.Styles>
+                            <Style Selector="ListBoxItem">
+                                <Setter Property="Margin" Value="0"/>
+                                <Setter Property="Padding" Value="0"/>
+                            </Style>
+                        </ListBox.Styles>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <Border Padding="10">
+                                        <StackPanel>
+                                            <TextBox Text="{Binding Caption}"
+                                                     Watermark="Caption"/>
+                                            
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock>Center:</TextBlock>
+                                                <TextBlock Text="{Binding X, StringFormat={}{0:0.0}}"/>
+                                                <TextBlock Text="{Binding Y, StringFormat={}{0:0.0}}"/>    
+                                            </StackPanel>
+                                            
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock VerticalAlignment="Center">Radius:</TextBlock>
+                                                <NumericUpDown Value="{Binding Radius}"
+                                                               FormatString="0.0"
+                                                               Width="130"/>    
+                                            </StackPanel>
+                                            
+                                            <Slider Height="40" 
+                                                    Minimum="10" Maximum="200"
+                                                    Value="{Binding Radius, Mode=TwoWay}" />
+                                            <!-- <Separator/> -->
+                                            <!-- <TextBlock Text="{Binding Fill}"/> -->
+                                            <!-- <TextBlock Text="{Binding Stroke}"/> -->
+                                            <!-- <TextBlock Text="{Binding StrokeThickness}"/> -->
 
-        </TabControl>
-    </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                    <Separator/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+                
+                <Grid>
+                <Canvas Name="OverlayCanvas"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch">
+                    <Image Name="OverlayCanvasImage"
+                           Stretch="Uniform" 
+                           Width="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Canvas}}"
+                           Height="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Canvas}}"
+                           Source="{Binding ImageBitmap}" />
+                </Canvas>
+                    <ItemsControl ItemsSource="{Binding Overlays}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        
+                        <ItemsControl.Styles>
+                            <Style Selector="ContentPresenter" x:DataType="vm:OverlayViewModel">
+                                <Setter Property="Canvas.Left" Value="{Binding Left}"/>
+                                <Setter Property="Canvas.Top" Value="{Binding Top}"/>
+                            </Style>
+                        </ItemsControl.Styles>
+                        
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Ellipse Width="{Binding Width}" 
+                                         Height="{Binding Height}"
+                                         Fill="{Binding Fill}"
+                                         Stroke="{Binding Stroke}"
+                                         StrokeThickness="{Binding StrokeThickness}"
+                                         PointerPressed="Overlay_OnPointerPressed"
+                                         PointerMoved="Overlay_OnPointerMoved"
+                                         PointerReleased="Overlay_OnPointerReleased" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </DockPanel>
+        </TabItem>
+        <TabItem Header="Preview Overlays">
+            <Grid RowDefinitions="Auto,*">
+                <Button Grid.Row="0" DockPanel.Dock="Top"
+                                     Content="Generate Preview..."
+                                     Command="{Binding GeneratePreviewCommand}"/>
+                <Viewbox Grid.Row="1" Stretch="Fill">
+                    <webview:WebView Name="WebViewControl"
+                                     Focusable="True" 
+                                     Width="1000"
+                                     Height="800"/>
+                </Viewbox>
+            </Grid>
+        </TabItem>
+
+    </TabControl>
 
 </Window>
