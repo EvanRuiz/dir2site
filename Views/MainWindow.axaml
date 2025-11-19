@@ -88,12 +88,6 @@
                  HorizontalAlignment="Stretch"
                  VerticalAlignment="Stretch">
             <DockPanel>
-                <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,*,*,*">
-                    <TextBlock Grid.Column="0" Text="{Binding #OverlayCanvasImage.Bounds.Width}" Padding="10"/>
-                    <TextBlock Grid.Column="1" Text="{Binding #OverlayCanvasImage.Bounds.Height}" Padding="10"/>
-                    <TextBlock Grid.Column="2" Text="{Binding #OverlayCanvasImage.Bounds.Left}" Padding="10"/>
-                    <TextBlock Grid.Column="3" Text="{Binding #OverlayCanvasImage.Bounds.Top}" Padding="10"/>
-                </Grid>
                 <StackPanel DockPanel.Dock="Right">
                     <TextBlock>Default Radius:</TextBlock>
                     <NumericUpDown Value="{Binding DefaultOverlayRadius}"></NumericUpDown>
@@ -102,6 +96,7 @@
                             Command="{Binding LoadOverlaysCommand}" />
                     <Button Content="Save Overlays"
                             Command="{Binding SaveOverlaysCommand}" />
+                    <Separator/>
                     <Button Content="Delete Selected Overlay"
                             IsEnabled="{Binding !!SelectedOverlay}"
                             Command="{Binding DeleteSelectedOverlayCommand}" />
@@ -142,11 +137,6 @@
                                             <Slider Height="40" 
                                                     Minimum="0.01" Maximum="1.0"
                                                     Value="{Binding Radius, Mode=TwoWay}" />
-                                            <!-- <Separator/> -->
-                                            <!-- <TextBlock Text="{Binding Fill}"/> -->
-                                            <!-- <TextBlock Text="{Binding Stroke}"/> -->
-                                            <!-- <TextBlock Text="{Binding StrokeThickness}"/> -->
-
                                         </StackPanel>
                                     </Border>
                                     <Separator/>
