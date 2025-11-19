@@ -19,6 +19,7 @@
     
     <Window.Resources>
         <converters:SelectedBrushMultiConverter x:Key="SelectedBrushMultiConverter"/>
+        <converters:ViewportToPixelsConverter x:Key="ViewportToPixelsConverter"/>
     </Window.Resources>
     
     <Window.Styles>
@@ -134,12 +135,12 @@
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock VerticalAlignment="Center">Radius:</TextBlock>
                                                 <NumericUpDown Value="{Binding Radius}"
-                                                               FormatString="0.0"
+                                                               FormatString="0.00"
                                                                Width="130"/>    
                                             </StackPanel>
                                             
                                             <Slider Height="40" 
-                                                    Minimum="10" Maximum="200"
+                                                    Minimum="0.01" Maximum="1.0"
                                                     Value="{Binding Radius, Mode=TwoWay}" />
                                             <!-- <Separator/> -->
                                             <!-- <TextBlock Text="{Binding Fill}"/> -->
@@ -174,19 +175,45 @@
                         
                         <ItemsControl.Styles>
                             <Style Selector="ContentPresenter" x:DataType="vm:OverlayViewModel">
-                                <Setter Property="Canvas.Left" Value="{Binding Left}"/>
-                                <Setter Property="Canvas.Top" Value="{Binding Top}"/>
+                                <Setter Property="Canvas.Left">
+                                    <Setter.Value>
+                                        <MultiBinding Converter="{StaticResource ViewportToPixelsConverter}">
+                                            <Binding Path="Left"/>
+                                            <Binding Path="#OverlayCanvasImage.Bounds.Width"/>
+                                            <Binding Path="#OverlayCanvasImage.Bounds.Left"/>
+                                        </MultiBinding>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter Property="Canvas.Top">
+                                    <Setter.Value>
+                                        <MultiBinding Converter="{StaticResource ViewportToPixelsConverter}">
+                                            <Binding Path="Top"/>
+                                            <Binding Path="#OverlayCanvasImage.Bounds.Width"/>
+                                            <Binding Path="#OverlayCanvasImage.Bounds.Top"/>
+                                        </MultiBinding>
+                                    </Setter.Value>
+                                </Setter>
                             </Style>
                         </ItemsControl.Styles>
                         
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Ellipse Width="{Binding Width}" 
-                                         Height="{Binding Height}"
-                                         StrokeThickness="{Binding StrokeThickness}"
+                                <Ellipse StrokeThickness="{Binding StrokeThickness}"
                                          PointerPressed="Overlay_OnPointerPressed"
                                          PointerMoved="Overlay_OnPointerMoved"
                                          PointerReleased="Overlay_OnPointerReleased">
+                                    <Ellipse.Width>
+                                        <MultiBinding Converter="{StaticResource ViewportToPixelsConverter}">
+                                            <Binding Path="Width"/>
+                                            <Binding Path="#OverlayCanvasImage.Bounds.Width"/>
+                                        </MultiBinding>
+                                    </Ellipse.Width>
+                                    <Ellipse.Height>
+                                        <MultiBinding Converter="{StaticResource ViewportToPixelsConverter}">
+                                            <Binding Path="Height"/>
+                                            <Binding Path="#OverlayCanvasImage.Bounds.Width"/>
+                                        </MultiBinding>
+                                    </Ellipse.Height>
                                     <Ellipse.Fill>
                                         <MultiBinding Converter="{StaticResource SelectedBrushMultiConverter}">
                                             <Binding Path="IsSelected"/>

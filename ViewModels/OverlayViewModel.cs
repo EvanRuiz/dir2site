@@ -5,6 +5,9 @@ namespace OpenSeadragonOverlayEditor.ViewModels;
 
 public partial class OverlayViewModel : ViewModelBase
 {
+    //
+    // Stored in Viewport Coordinates (percentage of viewport width)
+    // 
     [ObservableProperty]
     private double _x;
 

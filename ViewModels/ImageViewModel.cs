@@ -69,7 +69,7 @@ public partial class ImageViewModel : ViewModelBase
     private ObservableCollection<OverlayViewModel> _overlays = [];
     
     [ObservableProperty]
-    private double _defaultOverlayRadius = 50;
+    private double _defaultOverlayRadius = 0.1;
     
     [ObservableProperty]
     private OverlayViewModel? _selectedOverlay;
@@ -214,13 +214,14 @@ public partial class ImageViewModel : ViewModelBase
         if(_overlayCanvas == null || _overlayCanvasImage == null) return;
         
         // Openseadragon overlay bounds are in viewpoint coordinates in percentage of the image width only
+        // Save x,y as left/top instead of center
         var overlaysForJson = Overlays.Select(o => new OverlayJson
         {
             caption = o.Caption,
-            x = (o.Left - _overlayCanvasImage.Bounds.Left) / _overlayCanvasImage.Bounds.Width,
-            y = (o.Top - _overlayCanvasImage.Bounds.Top) / _overlayCanvasImage.Bounds.Width,
-            width = o.Radius * 2 / _overlayCanvasImage.Bounds.Width,
-            height = o.Radius * 2 / _overlayCanvasImage.Bounds.Width,
+            x = o.Left,
+            y = o.Top,
+            width = o.Radius * 2,
+            height = o.Radius * 2,
         }).ToList();
 
         var json = JsonSerializer.Serialize(overlaysForJson);
@@ -255,11 +256,12 @@ public partial class ImageViewModel : ViewModelBase
         if(overlaysJson == null) return;
         
         // Openseadragon overlay bounds are in viewpoint coordinates in percentage of the image width only
+        // Convert left/top to center coordinates
         Overlays = new ObservableCollection<OverlayViewModel>(overlaysJson.Select(o => new OverlayViewModel
         {
-            Radius = o.width * _overlayCanvasImage.Bounds.Width / 2,
-            X = (o.x + o.width / 2) * _overlayCanvasImage.Bounds.Width + _overlayCanvasImage.Bounds.Left,
-            Y = (o.y + o.height / 2) * _overlayCanvasImage.Bounds.Width + _overlayCanvasImage.Bounds.Top,
+            Radius = o.width / 2,
+            X = o.x + o.width / 2,
+            Y = o.y + o.height / 2,
             Caption = o.caption,
             Fill = DefaultFill,
             Stroke = DefaultStroke,
@@ -324,20 +326,28 @@ public partial class ImageViewModel : ViewModelBase
         }
     }
 
-    public void OnOverlayCanvasPressed(double x, double y)
+    public void OnOverlayCanvasPressed(double px, double py)
     {
-        Console.WriteLine($"Canvas clicked at: X={x}, Y={y}");
-
+        if(_overlayCanvasImage == null) return;
+        
+        // Convert pixels to viewpoint coordinates (percentage of image width)
+        var x = (px - _overlayCanvasImage.Bounds.Left) / _overlayCanvasImage.Bounds.Width;
+        var y = (py - _overlayCanvasImage.Bounds.Top) / _overlayCanvasImage.Bounds.Width;
+        var r = DefaultOverlayRadius;
+            
         var overlay = new OverlayViewModel
         {
             X = x,
             Y = y,
-            Radius = DefaultOverlayRadius,
-            Fill = _defaultFill,
-            Stroke = _defaultStroke,
-            StrokeThickness = _defaultThickness
+            Radius = r,
+            Fill = DefaultFill,
+            Stroke = DefaultStroke,
+            StrokeThickness = DefaultThickness
         };
         
+        overlay.UpdateBounds();
         Overlays.Add(overlay);
+        
+        SelectedOverlay = overlay;
     }
 }

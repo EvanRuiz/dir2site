@@ -54,15 +54,10 @@ public partial class MainWindow : Window
         {
             var currentPoint = e.GetPosition(ellipse.Parent as Visual);
             var delta = currentPoint - _dragStartPoint;
-        
-            // _draggingOverlay.X += delta.X;
-            // _draggingOverlay.Y += delta.Y;
-            
             
             _totalDelta += delta;
             
             ellipse.RenderTransform = new TranslateTransform(_totalDelta.X, _totalDelta.Y);
-
 
             _dragStartPoint = currentPoint;
             e.Handled = true;
@@ -74,8 +69,9 @@ public partial class MainWindow : Window
         if (sender is Ellipse ellipse)
         {
             if(_draggingOverlay != null) {
-                _draggingOverlay.X += _totalDelta.X;
-                _draggingOverlay.Y += _totalDelta.Y;
+                // Apply in Viewport Coordinates
+                _draggingOverlay.X += _totalDelta.X / OverlayCanvasImage.Bounds.Width;
+                _draggingOverlay.Y += _totalDelta.Y / OverlayCanvasImage.Bounds.Width;
             
                 ellipse.RenderTransform = null;
                 _totalDelta = default;
