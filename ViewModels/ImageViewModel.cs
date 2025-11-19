@@ -23,6 +23,7 @@ namespace OpenSeadragonOverlayEditor.ViewModels;
 public partial class ImageViewModel : ViewModelBase
 {
     private TopLevel? _topLevel;
+    private TabControl? _tabControl;
     private WebView? _webView;
     private Canvas? _overlayCanvas;
     private Image? _overlayCanvasImage;
@@ -35,9 +36,10 @@ public partial class ImageViewModel : ViewModelBase
     {
     }
 
-    public ImageViewModel(TopLevel topLevel, WebView view, Canvas overlayCanvas, Image overlayCanvasImage)
+    public ImageViewModel(TopLevel topLevel, TabControl tabControl, WebView view, Canvas overlayCanvas, Image overlayCanvasImage)
     {
         _topLevel = topLevel;
+        _tabControl = tabControl;
         _webView = view;
         _overlayCanvas = overlayCanvas;
         _overlayCanvasImage = overlayCanvasImage;
@@ -66,7 +68,50 @@ public partial class ImageViewModel : ViewModelBase
     
     [ObservableProperty]
     private OverlayViewModel? _selectedOverlay;
+
+    [ObservableProperty]
+    private int? _selectedTabIndex;
     
+    [ObservableProperty]
+    private string _selectImageTabHeader = "Select Image";
+    
+    [ObservableProperty]
+    private string _makeTilesTabHeader = "Make Tiles";
+
+    [ObservableProperty]
+    private string _editOverlaysTabHeader = "Edit Overlays";
+    
+    [ObservableProperty]
+    private string _previewTabHeader = "Preview";
+    
+    partial void OnSelectedTabIndexChanged(int? value)
+    {
+        if(value == null) return;
+        if(_tabControl == null) return;
+        if(_tabControl.Items.Count <= value) return;
+
+        var index = (int)value;
+        
+        if(_tabControl.Items[index] is TabItem tabItem)
+        {
+            var tab = tabItem.Header as string;
+            if(tab == EditOverlaysTabHeader)
+            {
+                Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    await LoadOverlays();
+                });
+            }
+            else if(tab == PreviewTabHeader)
+            {
+                Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    await GeneratePreview();
+                });
+            }
+        }
+    }
+
     private async Task<string?> GetPreviewPath()
     {
         if(ImageFile == null) return null;
@@ -233,6 +278,7 @@ public partial class ImageViewModel : ViewModelBase
         var uri = new Uri(htmlPath);
         var uriString = uri.AbsoluteUri;
         _webView.Address = uriString;
+        _webView.Reload();
     }
 
     [RelayCommand]

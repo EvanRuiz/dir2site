@@ -25,9 +25,11 @@
             <Setter Property="Padding" Value="0"/>
         </Style>
     </Window.Styles>
-    <TabControl HorizontalAlignment="Stretch"
+    <TabControl Name="MainTabControl"
+                SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}"
+                HorizontalAlignment="Stretch"
                 VerticalAlignment="Stretch">
-        <TabItem Header="Select Image">
+        <TabItem Header="{Binding SelectImageTabHeader}">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="10">
                     <Button DockPanel.Dock="Top"
@@ -44,7 +46,7 @@
                 </Canvas>
             </DockPanel>
         </TabItem>
-        <TabItem Header="Make Tiles">
+        <TabItem Header="{Binding MakeTilesTabHeader}">
             <StackPanel>
                 <Grid ColumnDefinitions="Auto, *"
                       RowDefinitions="Auto,Auto">
@@ -76,7 +78,7 @@
                 <Button Content="Generate tiles..." Command="{Binding GenerateTilesCommand}" />
             </StackPanel>
         </TabItem>
-        <TabItem Header="Edit Overlays"
+        <TabItem Header="{Binding EditOverlaysTabHeader}"
                  HorizontalAlignment="Stretch"
                  VerticalAlignment="Stretch">
             <DockPanel>
@@ -188,20 +190,13 @@
                 </Grid>
             </DockPanel>
         </TabItem>
-        <TabItem Header="Preview Overlays">
-            <Grid RowDefinitions="Auto,*">
-                <Button Grid.Row="0" DockPanel.Dock="Top"
-                                     Content="Generate Preview..."
-                                     Command="{Binding GeneratePreviewCommand}"/>
-                <Viewbox Grid.Row="1" Stretch="Fill">
-                    <webview:WebView Name="WebViewControl"
-                                     Focusable="True" 
-                                     Width="1000"
-                                     Height="800"/>
-                </Viewbox>
+        <TabItem Header="{Binding PreviewTabHeader}">
+            <Grid>
+                <webview:WebView Name="WebViewControl"
+                                 Focusable="True" 
+                                 Width="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Grid}}"
+                                 Height="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Grid}}" />
             </Grid>
         </TabItem>
-
     </TabControl>
-
 </Window>

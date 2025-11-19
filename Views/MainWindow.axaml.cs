@@ -21,7 +21,7 @@ public partial class MainWindow : Window
             throw new ArgumentNullException(nameof(topLevel));
         }
         
-        _viewModel = new ImageViewModel(topLevel, WebViewControl, OverlayCanvas, OverlayCanvasImage);
+        _viewModel = new ImageViewModel(topLevel, MainTabControl, WebViewControl, OverlayCanvas, OverlayCanvasImage);
         DataContext = _viewModel;
         WebViewControl.LoadHtml("Preview...");
 
