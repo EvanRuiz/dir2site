@@ -42,13 +42,16 @@ public partial class ImageViewModel : ViewModelBase
     }
     
     [ObservableProperty]    
-    private IBrush _defaultFill = new SolidColorBrush(Color.FromArgb(128, 0, 0, 0));
+    private IBrush _defaultFill = new SolidColorBrush(Color.FromArgb(128, 128, 128, 128));
     
     [ObservableProperty]
     private IBrush _defaultStroke = new SolidColorBrush(Color.FromArgb(200, 0, 0, 0));
     
     [ObservableProperty]
     private int _defaultThickness = 2;
+    
+    [ObservableProperty]
+    private bool _noTiles = true;
     
     [ObservableProperty]
     private IStorageFile? _imageFile;
@@ -69,7 +72,7 @@ public partial class ImageViewModel : ViewModelBase
     private ObservableCollection<OverlayViewModel> _overlays = [];
     
     [ObservableProperty]
-    private double _defaultOverlayRadius = 0.1;
+    private double _defaultOverlayRadius = 0.03; // TODO: Different defaults depending on aspect ratio of image, or keep in pixels and convert to viewport
     
     [ObservableProperty]
     private OverlayViewModel? _selectedOverlay;
@@ -168,6 +171,18 @@ public partial class ImageViewModel : ViewModelBase
 
         ImageBitmap = new Bitmap(ImagePath);
         await LoadOverlays();
+        
+        var previewPath = await GetPreviewPath();
+        if(previewPath != null)
+        {
+            var previewImagePath = Path.Combine(previewPath, ImageFile.Name);
+            if(!File.Exists(previewImagePath))
+            {
+                File.Copy(ImagePath, previewImagePath);
+            }
+        } 
+
+        NoTiles = previewPath == null || !Directory.Exists(Path.Combine(previewPath, "tiles"));
     }
 
     [RelayCommand]
@@ -184,14 +199,18 @@ public partial class ImageViewModel : ViewModelBase
         
         var tilesPath = Path.Combine(previewPath, "tiles");
         Directory.CreateDirectory(tilesPath);
-        
+
+        var previousCurrentDir = Directory.GetCurrentDirectory();
         Directory.SetCurrentDirectory(tilesPath);
         
         await Task.Run(() =>
         {
             vips.Dzsave(TilesName, suffix: $".webp[Q={q}]");
         });
-
+        
+        NoTiles = false;
+        Directory.SetCurrentDirectory(previousCurrentDir);
+        
         var box = MessageBoxManager.GetMessageBoxStandard("Tiles Generated", "Tiles Generated Successfully.", ButtonEnum.Ok);
         await box.ShowAsync();
     }
@@ -206,12 +225,12 @@ public partial class ImageViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task SaveOverlays()
+    private async Task<string?> SaveOverlays()
     {
         var previewPath = await GetPreviewPath();
-        if(previewPath == null) return;
+        if(previewPath == null) return null;
         
-        if(_overlayCanvas == null || _overlayCanvasImage == null) return;
+        if(_overlayCanvas == null || _overlayCanvasImage == null) return null;
         
         // Openseadragon overlay bounds are in viewpoint coordinates in percentage of the image width only
         // Save x,y as left/top instead of center
@@ -230,12 +249,17 @@ public partial class ImageViewModel : ViewModelBase
         // Copy existing as backup
         if(File.Exists(overlaysJsonPath))
         {
-            var backupPath = Path.Combine(previewPath, $"overlays-backup-{Guid.NewGuid()}.json");
+            var backupFolder = Path.Combine(previewPath, "backups");
+            Directory.CreateDirectory(backupFolder);
+            var backupPath = Path.Combine(backupFolder, $"overlays-backup-{Guid.NewGuid()}.json");
             await Task.Run(() => File.Copy(overlaysJsonPath, backupPath));
         }
         
         // Save new data
         await File.WriteAllTextAsync(overlaysJsonPath, json);
+        
+        // Return JSON
+        return json;
     }
     
     [RelayCommand]
@@ -283,10 +307,28 @@ public partial class ImageViewModel : ViewModelBase
         var previewPath = await GetPreviewPath();
         if(previewPath == null) return;
         
-        await SaveOverlays();
+        var json = await SaveOverlays();
         await CopyPreviewAssets(previewPath);
         
         var htmlPath = Path.Combine(previewPath, "index.html");
+
+        if(json != null || NoTiles)
+        {
+            var html = await File.ReadAllTextAsync(htmlPath);
+
+            if(json != null)
+            {
+                html = html.Replace("<!-- OVERLAYS OVERRIDE -->", $"overlaysData = {json};");
+            }
+
+            if(NoTiles)
+            {
+                html = html.Replace("<!-- TILES OVERRIDE -->", $"tileSources = {{type: 'image', url: '{ImageFile.Name}'}};");
+            }
+            
+            await File.WriteAllTextAsync(htmlPath, html);
+        }
+        
         
         var uri = new Uri(htmlPath);
         var uriString = uri.AbsoluteUri;

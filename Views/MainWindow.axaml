@@ -124,7 +124,7 @@
                         </ListBox.Styles>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel>
+                                <StackPanel IsEnabled="{Binding $parent[ListBoxItem].IsSelected}">
                                     <Border Padding="10">
                                         <StackPanel>
                                             <TextBox Text="{Binding Caption}"
@@ -132,8 +132,8 @@
                                             
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock>Center:</TextBlock>
-                                                <TextBlock Text="{Binding X, StringFormat={}{0:0.0}}"/>
-                                                <TextBlock Text="{Binding Y, StringFormat={}{0:0.0}}"/>    
+                                                <TextBlock Text="{Binding X, StringFormat={}{0:0.00}}"/>
+                                                <TextBlock Text="{Binding Y, StringFormat={}{0:0.00}}"/>    
                                             </StackPanel>
                                             
                                             <StackPanel Orientation="Horizontal">

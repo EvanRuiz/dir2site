@@ -4,7 +4,7 @@
         .overlay {
             border: 2px solid rgba(0, 0, 0, 0.9);
             border-radius: 50%;
-            background-color: rgba(0, 0, 0, 0.5);
+            background-color: rgba(128, 128, 128, 0.5);
             color: white;
             white-space: nowrap;
             text-shadow: 0px 1px 2px rgb(0 0 0 / 80%);
@@ -16,6 +16,14 @@
             opacity: 1;
         }
     </style>
+     <script>
+         let overlaysData = [];
+         let tileSources = ["tiles/mydz.dzi"];
+
+         <!-- OVERLAYS OVERRIDE -->
+
+         <!-- TILES OVERRIDE -->
+     </script>
      <script src="js/openseadragon/openseadragon.min.js"></script>
      <script src="js/fittext.js"></script>
      <script>
@@ -50,12 +58,10 @@
          }
 
          function loadOpenSeadragon(overlays) {
-             var viewer = OpenSeadragon({
-                 id:            "openseadragon-view",
-                 prefixUrl:     "js/openseadragon/images/",
-                 tileSources:   [
-                     "tiles/mydz.dzi"
-                 ],
+             const viewer = OpenSeadragon({
+                 id: "openseadragon-view",
+                 prefixUrl: "js/openseadragon/images/",
+                 tileSources: tileSources,
                  overlays: overlays
              });
 
@@ -80,15 +86,8 @@
 <body>
     <div id="openseadragon-view">
         <script>
-            
-            fetch('overlays.json')
-                .then(res => res.json())
-                .then(data => {
-                    var overlays = loadOverlays(data);
-                    loadOpenSeadragon(overlays);
-                })
-                .catch(err => console.log(err));
-
+            const overlays = loadOverlays(overlaysData);
+            loadOpenSeadragon(overlays);
         </script>
         <noscript>
             <p>OpenSeadragon is not available unless JavaScript is enabled.</p>
