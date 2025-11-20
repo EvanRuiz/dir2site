@@ -301,6 +301,31 @@ public partial class ImageViewModel : ViewModelBase
         Overlays.Remove(SelectedOverlay);
         SelectedOverlay = null;
     }
+
+    [RelayCommand]
+    private void OverlayMoveUp()
+    {
+        if(SelectedOverlay == null) return;
+        
+        var idx = Overlays.IndexOf(SelectedOverlay);
+        if(idx == 0) return;
+        
+        Overlays.Move(idx, idx - 1);
+        
+        SelectedOverlay = Overlays[idx - 1];
+    }
+    
+    [RelayCommand]
+    private void OverlayMoveDown()
+    {
+        if(SelectedOverlay == null) return;
+        
+        var idx = Overlays.IndexOf(SelectedOverlay);
+        if(idx+1 == Overlays.Count) return;
+        
+        Overlays.Move(idx, idx + 1);
+        SelectedOverlay = Overlays[idx + 1];
+    }
     
     private async Task CopyPreviewAssets(string parentPath)
     {

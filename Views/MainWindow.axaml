@@ -88,7 +88,7 @@
                  HorizontalAlignment="Stretch"
                  VerticalAlignment="Stretch">
             <DockPanel>
-                <StackPanel DockPanel.Dock="Right">
+                <StackPanel DockPanel.Dock="Right" Margin="5">
                     <TextBlock>Default Radius:</TextBlock>
                     <NumericUpDown Value="{Binding DefaultOverlayRadius}"></NumericUpDown>
                     <Separator/>
@@ -100,6 +100,15 @@
                     <Button Content="Delete Selected Overlay"
                             IsEnabled="{Binding !!SelectedOverlay}"
                             Command="{Binding DeleteSelectedOverlayCommand}" />
+                    <Separator/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Move Up"
+                                IsEnabled="{Binding !!SelectedOverlay}"
+                                Command="{Binding OverlayMoveUpCommand}" />
+                        <Button Content="Move Down"
+                                IsEnabled="{Binding !!SelectedOverlay}"
+                                Command="{Binding OverlayMoveDownCommand}" />
+                    </StackPanel>
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right">
                     <ListBox Width="200"
