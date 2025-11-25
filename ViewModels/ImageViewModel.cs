@@ -143,6 +143,12 @@ public partial class ImageViewModel : ViewModelBase
         }
     }
 
+    private string? GetImageNameMinusExtension()
+    {
+        if(ImageFile == null) return null;
+        return Path.GetFileNameWithoutExtension(ImageFile.Name);
+    }
+
     private async Task<string?> GetPreviewPath()
     {
         if(ImageFile == null) return null;
@@ -151,7 +157,7 @@ public partial class ImageViewModel : ViewModelBase
         var parentPath = parentFolder?.TryGetLocalPath();
         if(parentPath == null) return null;
     
-        var previewPath = Path.Combine(parentPath, $"{ImageFile.Name}-preview");
+        var previewPath = Path.Combine(parentPath, $"{GetImageNameMinusExtension()}-preview");
         Directory.CreateDirectory(previewPath);
 
         return previewPath;
@@ -243,8 +249,9 @@ public partial class ImageViewModel : ViewModelBase
 
     private string? GetOverlaysFilename()
     {
-        if(ImageFile == null) return null;
-        return $"{ImageFile.Name}-overlays.json";
+        var imageFileName = GetImageNameMinusExtension();
+        if(imageFileName == null) return null;
+        return $"{GetImageNameMinusExtension()}-overlays.json";
     }
 
     [RelayCommand]
