@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia;
@@ -98,14 +99,30 @@ public partial class ImageViewModel : ViewModelBase
         if(newValue != null) newValue.IsSelected = true;
     }
     
-    partial void OnSelectedTabIndexChanged(int? value)
+    partial void OnSelectedTabIndexChanged(int? oldValue, int? newValue)
     {
-        if(value == null) return;
+        if(newValue == null) return;
         if(_tabControl == null) return;
-        if(_tabControl.Items.Count <= value) return;
+        if(_tabControl.Items.Count <= newValue) return;
 
-        var index = (int)value;
+        // Save overlays if leaving Edit Overlays tab
+        if(oldValue != null)
+        {
+            var oldIndex = (int)oldValue;
+            if(_tabControl.Items[oldIndex] is TabItem oldTabItem)
+            {
+                var oldTab = oldTabItem.Header as string;
+                if(oldTab == EditOverlaysTabHeader)
+                {
+                    Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        await SaveOverlays();
+                    });
+                }
+            }
+        }
         
+        var index = (int)newValue;
         if(_tabControl.Items[index] is TabItem tabItem)
         {
             var tab = tabItem.Header as string;
@@ -224,27 +241,46 @@ public partial class ImageViewModel : ViewModelBase
         public double height { get; set; }
     }
 
+    private string? GetOverlaysFilename()
+    {
+        if(ImageFile == null) return null;
+        return $"{ImageFile.Name}-overlays.json";
+    }
+
     [RelayCommand]
     private async Task<string?> SaveOverlays()
     {
         var previewPath = await GetPreviewPath();
         if(previewPath == null) return null;
         
+        var overlaysFilename = GetOverlaysFilename();
+        if(overlaysFilename == null) return null;
+        
         if(_overlayCanvas == null || _overlayCanvasImage == null) return null;
         
         // Openseadragon overlay bounds are in viewpoint coordinates in percentage of the image width only
         // Save x,y as left/top instead of center
-        var overlaysForJson = Overlays.Select(o => new OverlayJson
+        var overlaysForJson = Overlays.Select((o, index) => new OverlayJson
         {
-            caption = o.Caption,
+            caption = o.Caption ?? $"{index + 1}",
             x = o.Left,
             y = o.Top,
             width = o.Radius * 2,
             height = o.Radius * 2,
         }).ToList();
 
-        var json = JsonSerializer.Serialize(overlaysForJson);
-        var overlaysJsonPath = Path.Combine(previewPath, "overlays.json");
+        var json = new StringBuilder();
+        json.Append('[');
+        for(var i = 0; i < overlaysForJson.Count; ++i)
+        {
+            if(i > 0) json.Append(",\n");
+            json.Append(JsonSerializer.Serialize(overlaysForJson[i]));
+        }
+        json.Append(']');
+        var jsonString = json.ToString();
+        
+        // Prepare to write out file
+        var overlaysJsonPath = Path.Combine(previewPath, overlaysFilename);
 
         // Copy existing as backup
         if(File.Exists(overlaysJsonPath))
@@ -256,10 +292,10 @@ public partial class ImageViewModel : ViewModelBase
         }
         
         // Save new data
-        await File.WriteAllTextAsync(overlaysJsonPath, json);
+        await File.WriteAllTextAsync(overlaysJsonPath, jsonString);
         
         // Return JSON
-        return json;
+        return jsonString;
     }
     
     [RelayCommand]
@@ -271,7 +307,10 @@ public partial class ImageViewModel : ViewModelBase
         var previewPath = await GetPreviewPath();
         if(previewPath == null) return;
         
-        var overlaysJsonPath = Path.Combine(previewPath, "overlays.json");
+        var overlaysFilename = GetOverlaysFilename();
+        if(overlaysFilename == null) return;
+        
+        var overlaysJsonPath = Path.Combine(previewPath, overlaysFilename);
         if(!File.Exists(overlaysJsonPath)) return;
 
         var overlaysJsonString = await File.ReadAllTextAsync(overlaysJsonPath);
@@ -281,12 +320,12 @@ public partial class ImageViewModel : ViewModelBase
         
         // Openseadragon overlay bounds are in viewpoint coordinates in percentage of the image width only
         // Convert left/top to center coordinates
-        Overlays = new ObservableCollection<OverlayViewModel>(overlaysJson.Select(o => new OverlayViewModel
+        Overlays = new ObservableCollection<OverlayViewModel>(overlaysJson.Select((o, index) => new OverlayViewModel
         {
             Radius = o.width / 2,
             X = o.x + o.width / 2,
             Y = o.y + o.height / 2,
-            Caption = o.caption,
+            Caption = o.caption == $"{(index + 1)}" ? null : o.caption,
             Fill = DefaultFill,
             Stroke = DefaultStroke,
             StrokeThickness = DefaultThickness
@@ -353,7 +392,7 @@ public partial class ImageViewModel : ViewModelBase
         if(idx == 0) return;
         
         Overlays.Move(idx, idx - 1);
-        
+        RefreshOverlayIndexes();
         SelectedOverlay = Overlays[idx - 1];
     }
     
@@ -366,6 +405,7 @@ public partial class ImageViewModel : ViewModelBase
         if(idx+1 == Overlays.Count) return;
         
         Overlays.Move(idx, idx + 1);
+        RefreshOverlayIndexes();
         SelectedOverlay = Overlays[idx + 1];
     }
     
@@ -414,7 +454,23 @@ public partial class ImageViewModel : ViewModelBase
         
         overlay.UpdateBounds();
         Overlays.Add(overlay);
+        RefreshOverlayIndexes();
         
         SelectedOverlay = overlay;
+    }
+
+    partial void OnOverlaysChanged(ObservableCollection<OverlayViewModel> value)
+    {
+        RefreshOverlayIndexes();
+    }
+
+    private void RefreshOverlayIndexes()
+    {
+        var i = 1;
+        foreach(var o in Overlays)
+        {
+            o.Index = i;
+            i++;
+        }
     }
 }

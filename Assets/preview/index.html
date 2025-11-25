@@ -4,7 +4,7 @@
         .overlay {
             border: 2px solid rgba(0, 0, 0, 0.9);
             border-radius: 50%;
-            background-color: rgba(128, 128, 128, 0.5);
+            background-color: transparent;
             color: white;
             white-space: nowrap;
             text-shadow: 0px 1px 2px rgb(0 0 0 / 80%);
@@ -15,8 +15,27 @@
         .overlay:hover {
             opacity: 1;
         }
+        .overlay-label {
+            opacity: 0;
+            visibility: hidden;
+            position: absolute;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            text-shadow: 0px 2px 4px rgb(0 0 0 / 80%);
+            background-color: rgba(0, 0, 0, 0.5);
+            box-shadow: 0px 2px 4px rgb(0 0 0 / 80%);
+            border-radius: 5px;
+            padding: 5px 10px;
+            white-space: nowrap;
+            pointer-events: none;
+            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+        }
     </style>
      <script>
+         const LABEL_SIZE = 36;
+         
          let overlaysData = [];
          let tileSources = ["tiles/mydz.dzi"];
 
@@ -43,18 +62,51 @@
                  overlay.id = "overlay-" + count;
                  overlay.className = "overlay";
                  
+                 // Overlay
                  const overlayDiv = document.createElement("button");
                  overlayDiv.setAttribute("id", overlay.id);
                  overlayDiv.classList.add("overlay");
-                 overlayDiv.innerHTML = overlay.caption;
+                 overlayDiv.innerHTML = "";
                  document.body.append(overlayDiv);
                  console.log(overlayDiv);
+                 
+                 // Label
+                 const labelDiv = document.createElement("div");
+                 labelDiv.setAttribute("id", overlay.id + "-label");
+                 labelDiv.classList.add("overlay-label");
+                 labelDiv.innerHTML = overlay.caption;
+                 document.body.append(labelDiv);
+                 
+                 // Event listeners to show/hide label
+                 overlayDiv.addEventListener('mouseenter', function() {
+                     labelDiv.style.opacity = '1';
+                     labelDiv.style.visibility = 'visible';
+                 });
+                 
+                 overlayDiv.addEventListener('mouseleave', function() {
+                     labelDiv.style.opacity = '0';
+                     labelDiv.style.visibility = 'hidden';
+                 });
                  
                  count++;
              });
              
              console.log(overlays);
              return overlays;
+         }
+
+         function updateLabelLocationsAndZoom(viewer) {
+             const zoom = viewer.viewport.getZoom(true);
+             document.querySelectorAll('.overlay').forEach(function (overlay) {
+                 const label = document.getElementById(overlay.id + "-label");
+                 if (label) {
+                     const rect = overlay.getBoundingClientRect();
+                     label.style.left = (rect.left + rect.width / 2) + "px";
+                     label.style.top = (rect.bottom + 5) + "px";
+                     label.style.transform = "translateX(-50%)";
+                     label.style.fontSize = zoom*LABEL_SIZE + "px";
+                 }
+             });
          }
 
          function loadOpenSeadragon(overlays) {
@@ -66,19 +118,19 @@
              });
 
              viewer.addHandler('zoom', function(event) {
-                 overlaysFitText();
+                 updateLabelLocationsAndZoom(viewer);
              });
 
              viewer.addHandler('open', function() {
-                 overlaysFitText();
+                 updateLabelLocationsAndZoom(viewer);
              });
 
              viewer.addHandler("animation", function(event) {
-                 overlaysFitText();
+                 updateLabelLocationsAndZoom(viewer);
              });
 
              viewer.addHandler("animation-finish", function(event) {
-                 overlaysFitText();
+                 updateLabelLocationsAndZoom(viewer);
              });
          }
      </script>

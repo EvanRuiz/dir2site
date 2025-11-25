@@ -6,6 +6,7 @@ using Avalonia.Data.Core.Plugins;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia.Markup.Xaml;
+using OpenSeadragonOverlayEditor.ViewModels;
 using OpenSeadragonOverlayEditor.Views;
 using WebViewControl;
 using Xilium.CefGlue;
@@ -45,6 +46,7 @@ public partial class App : Application
             desktop.ShutdownRequested += (s, e) =>
             {
                 CefRuntime.Shutdown();
+                ((ImageViewModel?)desktop.MainWindow?.DataContext)?.SaveOverlaysCommand.Execute(null);
             };
             
 #if DEBUG

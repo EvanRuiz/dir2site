@@ -20,10 +20,15 @@
     <Window.Resources>
         <converters:SelectedBrushMultiConverter x:Key="SelectedBrushMultiConverter"/>
         <converters:ViewportToPixelsConverter x:Key="ViewportToPixelsConverter"/>
+        <converters:LogarithmicConverter x:Key="RadiusLogarithmicConverter"
+                                         MinValue="0.01"
+                                         MaxValue="1.0"
+                                         SliderMin="0.1"
+                                         SliderMax="100"/>
     </Window.Resources>
     
     <Window.Styles>
-        <Style Selector="TextBlock">
+        <Style Selector="TextBlock, TextBlock">
             <Setter Property="Margin" Value="0 0, 0, 10"/>
         </Style>
         <Style Selector="Separator">
@@ -127,9 +132,19 @@
                                 <StackPanel IsEnabled="{Binding $parent[ListBoxItem].IsSelected}">
                                     <Border Padding="10">
                                         <StackPanel>
-                                            <TextBox Text="{Binding Caption}"
-                                                     Watermark="Caption"/>
-                                            
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Index}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0"/>
+                                                <TextBlock Text=". "
+                                                           VerticalAlignment="Center"
+                                                           Margin="0"/>
+                                                <TextBox Text="{Binding Caption}"
+                                                         Watermark="Caption"
+                                                         VerticalAlignment="Stretch"
+                                                         Height="32"
+                                                         Margin="0"/>
+                                            </StackPanel>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock>Center:</TextBlock>
                                                 <TextBlock Text="{Binding X, StringFormat={}{0:0.00}}"/>
@@ -137,15 +152,18 @@
                                             </StackPanel>
                                             
                                             <StackPanel Orientation="Horizontal">
-                                                <TextBlock VerticalAlignment="Center">Radius:</TextBlock>
-                                                <NumericUpDown Value="{Binding Radius}"
-                                                               FormatString="0.00"
-                                                               Width="130"/>    
+                                                <TextBlock VerticalAlignment="Center" Margin="0">Radius:</TextBlock>
+                                                <NumericUpDown
+                                                    Value="{Binding Radius}"
+                                                               FormatString="0.000"
+                                                               Width="130"
+                                                               VerticalAlignment="Center"
+                                                               Margin="0"/>    
                                             </StackPanel>
                                             
                                             <Slider Height="40" 
-                                                    Minimum="0.01" Maximum="1.0"
-                                                    Value="{Binding Radius, Mode=TwoWay}" />
+                                                    Minimum="0.1" Maximum="100"
+                                                    Value="{Binding Radius, Mode=TwoWay, Converter={StaticResource RadiusLogarithmicConverter}}}" />
                                         </StackPanel>
                                     </Border>
                                     <Separator/>

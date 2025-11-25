@@ -43,6 +43,9 @@ public partial class OverlayViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _isSelected = false;
+
+    [ObservableProperty]
+    private int _index;
     
     [ObservableProperty]
     private IBrush _selectedFill = new SolidColorBrush(Color.FromArgb(128, 0, 100, 0));
