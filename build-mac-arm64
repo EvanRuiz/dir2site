@@ -1,0 +1,7 @@
+dotnet publish -r osx-arm64 -p:Platform=ARM64 -p:Configuration=Release --self-contained
+# -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfContained=true -p:EnableCompressionInSingleFile=true
+
+mkdir -p builds
+
+# Zip
+cd bin/ARM64/Release/net9.0/osx-arm64/publish && zip -r ../../../../../../builds/OpenSeadragonOverlayEditor-macos-arm64.zip . && cd ../../../../../..

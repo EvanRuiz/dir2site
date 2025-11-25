@@ -1,0 +1,7 @@
+dotnet publish -r win-x64 -p:Platform=x64 -p:Configuration=Release --self-contained 
+# -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfContained=true -p:EnableCompressionInSingleFile=true
+
+mkdir -p builds
+
+# Zip
+cd bin/x64/Release/net9.0/win-x64/publish && zip -r ../../../../../../builds/OpenSeadragonOverlayEditor-win-x64.zip . && cd ../../../../../..
