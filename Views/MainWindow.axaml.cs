@@ -4,9 +4,9 @@ using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
-using OpenSeadragonOverlayEditor.ViewModels;
+using dir2site.ViewModels;
 
-namespace OpenSeadragonOverlayEditor.Views;
+namespace dir2site.Views;
 
 public partial class MainWindow : Window
 {

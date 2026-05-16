@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenSeadragonOverlayEditor", "OpenSeadragonOverlayEditor.csproj", "{81B3151B-D98E-4809-AEBA-73C3EAEB3BE0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dir2site", "dir2site.csproj", "{81B3151B-D98E-4809-AEBA-73C3EAEB3BE0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

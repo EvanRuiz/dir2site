@@ -4,4 +4,4 @@ dotnet publish -r osx-x64 -p:Platform=x64 -p:Configuration=Release --self-contai
 mkdir -p builds
 
 # Zip
-cd bin/x64/Release/net9.0/osx-x64/publish && zip -r ../../../../../../builds/OpenSeadragonOverlayEditor-macos-x64.zip . && cd ../../../../../..
+cd bin/x64/Release/net9.0/osx-x64/publish && zip -r ../../../../../../builds/dir2site-macos-x64.zip . && cd ../../../../../..

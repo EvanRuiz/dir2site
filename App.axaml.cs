@@ -6,13 +6,13 @@ using Avalonia.Data.Core.Plugins;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia.Markup.Xaml;
-using OpenSeadragonOverlayEditor.ViewModels;
-using OpenSeadragonOverlayEditor.Views;
+using dir2site.ViewModels;
+using dir2site.Views;
 using WebViewControl;
 using Xilium.CefGlue;
 using Xilium.CefGlue.Avalonia;
 
-namespace OpenSeadragonOverlayEditor;
+namespace dir2site;
 
 public partial class App : Application
 {

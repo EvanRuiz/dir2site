@@ -19,7 +19,7 @@ using MsBox.Avalonia;
 using MsBox.Avalonia.Enums;
 using WebViewControl;
 
-namespace OpenSeadragonOverlayEditor.ViewModels;
+namespace dir2site.ViewModels;
 
 public partial class ImageViewModel : ViewModelBase
 {
@@ -420,7 +420,7 @@ public partial class ImageViewModel : ViewModelBase
     {
         if(ImageFile == null) return;
         
-        var assets = AssetLoader.GetAssets(new Uri($"avares://OpenSeadragonOverlayEditor/Assets/preview/"), null);
+        var assets = AssetLoader.GetAssets(new Uri($"avares://dir2site/Assets/preview/"), null);
         foreach(var asset in assets)
         {
             // Get the relative path of the asset

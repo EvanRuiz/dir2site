@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using Avalonia.Data.Converters;
 
-namespace OpenSeadragonOverlayEditor.Converters;
+namespace dir2site.Converters;
 
 public class ViewportToPixelsConverter : IMultiValueConverter
 {

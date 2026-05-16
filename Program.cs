@@ -1,7 +1,7 @@
 ﻿using Avalonia;
 using System;
 
-namespace OpenSeadragonOverlayEditor;
+namespace dir2site;
 
 sealed class Program
 {

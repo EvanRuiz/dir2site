@@ -15,6 +15,12 @@
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     </PropertyGroup>
 
+    <!-- CefGlue.Common.props defaults to osx-arm64 on Mac when Platform is AnyCPU, but the x64 CEF
+         packages are used whenever Platform != ARM64. Override so the x64 dylibs are copied first. -->
+    <PropertyGroup Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('OSX')) and '$(Platform)' != 'ARM64'">
+        <CefGlueTargetPlatform>osx-x64</CefGlueTargetPlatform>
+    </PropertyGroup>
+
     <ItemGroup>
         <Folder Include="Models\"/>
         <AvaloniaResource Include="Assets\**"/>

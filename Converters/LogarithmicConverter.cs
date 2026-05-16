@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using Avalonia.Data.Converters;
 
-namespace OpenSeadragonOverlayEditor.Converters;
+namespace dir2site.Converters;
 
 public class LogarithmicConverter : IValueConverter
 {

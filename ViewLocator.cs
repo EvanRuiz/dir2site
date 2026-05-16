@@ -1,9 +1,9 @@
 using System;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
-using OpenSeadragonOverlayEditor.ViewModels;
+using dir2site.ViewModels;
 
-namespace OpenSeadragonOverlayEditor;
+namespace dir2site;
 
 public class ViewLocator : IDataTemplate
 {

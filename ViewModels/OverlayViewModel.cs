@@ -1,7 +1,7 @@
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace OpenSeadragonOverlayEditor.ViewModels;
+namespace dir2site.ViewModels;
 
 public partial class OverlayViewModel : ViewModelBase
 {
