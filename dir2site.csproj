@@ -15,9 +15,16 @@
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     </PropertyGroup>
 
-    <!-- CefGlue.Common.props defaults to osx-arm64 on Mac when Platform is AnyCPU, but the x64 CEF
-         packages are used whenever Platform != ARM64. Override so the x64 dylibs are copied first. -->
-    <PropertyGroup Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('OSX')) and '$(Platform)' != 'ARM64'">
+    <!-- On Apple Silicon, the .NET process runs native arm64, so arm64 CEF packages must be used
+         regardless of whether Platform is set explicitly. Explicit x64 cross-target overrides this. -->
+    <PropertyGroup>
+        <IsAppleSilicon Condition="$([MSBuild]::IsOSPlatform('OSX')) AND '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)' == 'Arm64'">true</IsAppleSilicon>
+        <UseArm64CefPackages Condition="'$(Platform)' == 'ARM64' OR ('$(IsAppleSilicon)' == 'true' AND '$(Platform)' != 'x64')">true</UseArm64CefPackages>
+    </PropertyGroup>
+
+    <!-- CefGlue.Common.props defaults to osx-arm64 on Mac for AnyCPU, but x64 CEF packages need
+         osx-x64 so the x64 dylibs are staged to OutDir before the secondary copy step. -->
+    <PropertyGroup Condition="'$(RuntimeIdentifier)' == '' AND $([MSBuild]::IsOSPlatform('OSX')) AND '$(UseArm64CefPackages)' != 'true'">
         <CefGlueTargetPlatform>osx-x64</CefGlueTargetPlatform>
     </PropertyGroup>
 
@@ -44,15 +51,15 @@
         <PackageReference Include="NetVips.Native.win-x64" Version="8.17.3" />
     </ItemGroup>
 
-    <!-- x64 packages -->
-    <ItemGroup Condition="'$(Platform)' != 'ARM64'">
+    <!-- x64 packages: Windows/Linux x64, or Intel Mac (explicit x64 cross-target on Apple Silicon) -->
+    <ItemGroup Condition="'$(UseArm64CefPackages)' != 'true'">
         <PackageReference Include="CefGlue.Common" Version="120.6099.211" />
         <PackageReference Include="CefGlue.Avalonia" Version="120.6099.211" />
         <PackageReference Include="WebViewControl-Avalonia" Version="3.120.10" />
     </ItemGroup>
 
-    <!-- ARM64 packages -->
-    <ItemGroup Condition="'$(Platform)' == 'ARM64'">
+    <!-- ARM64 packages: Windows/Linux ARM64, Apple Silicon (AnyCPU or ARM64 platform) -->
+    <ItemGroup Condition="'$(UseArm64CefPackages)' == 'true'">
         <PackageReference Include="CefGlue.Avalonia.ARM64" Version="120.6099.207" />
         <PackageReference Include="CefGlue.Common.ARM64" Version="120.6099.207" />
         <PackageReference Include="WebViewControl-Avalonia-ARM64" Version="3.120.10" />
