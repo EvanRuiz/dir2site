@@ -6,11 +6,11 @@ New-Item -Path "builds" -ItemType Directory -Force
 Remove-Item -Force -Recurse -Path "bin/x64/Release/net9.0/win-x64/bin"
 Move-Item -Force -Path "bin/x64/Release/net9.0/win-x64/publish" -Destination "bin/x64/Release/net9.0/win-x64/bin"
 
-Compress-Archive -Force -Path "bin/x64/Release/net9.0/win-x64/bin" -DestinationPath "builds/OpenSeadragonOverlayEditor-win-x64.zip"
+Compress-Archive -Force -Path "bin/x64/Release/net9.0/win-x64/bin" -DestinationPath "builds/dir2site-win-x64.zip"
 
 # Convenience bat for quickly running after unzip with build files encapsulated under the bin folder
 # TODO: When/if official installer, this won't be necessary
-Compress-Archive -Update -Path "OpenSeadragonOverlayEditor.bat" -DestinationPath "builds/OpenSeadragonOverlayEditor-win-x64.zip"
+Compress-Archive -Update -Path "dir2site.bat" -DestinationPath "builds/dir2site-win-x64.zip"
 
 
 

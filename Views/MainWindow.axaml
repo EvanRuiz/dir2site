@@ -1,15 +1,15 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:OpenSeadragonOverlayEditor.ViewModels"
+        xmlns:vm="using:dir2site.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:webview="clr-namespace:WebViewControl;assembly=WebViewControl.Avalonia"
-        xmlns:converters="clr-namespace:OpenSeadragonOverlayEditor.Converters"
+        xmlns:converters="clr-namespace:dir2site.Converters"
         mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="450"
-        x:Class="OpenSeadragonOverlayEditor.Views.MainWindow"
+        x:Class="dir2site.Views.MainWindow"
         x:DataType="vm:ImageViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="OpenSeadragonOverlayEditor">
+        Title="dir2site">
 
     <Design.DataContext>
         <!-- This only sets the DataContext for the previewer in an IDE,

@@ -1,6 +1,6 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace OpenSeadragonOverlayEditor.ViewModels;
+namespace dir2site.ViewModels;
 
 public class ViewModelBase : ObservableObject
 {

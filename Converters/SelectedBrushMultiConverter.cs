@@ -4,7 +4,7 @@ using System.Globalization;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 
-namespace OpenSeadragonOverlayEditor.Converters;
+namespace dir2site.Converters;
 
 public class SelectedBrushMultiConverter : IMultiValueConverter
 {
