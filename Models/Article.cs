@@ -1,7 +1,6 @@
 namespace dir2site.Models;
 
-public class Article : Artifact
+public class Article : Document
 {
-    public string? Author {get; set;}
-    public string? Image {get; set;}
+    public string? Image { get; set; }
 }
