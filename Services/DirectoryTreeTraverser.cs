@@ -100,7 +100,7 @@ public static class DirectoryTraverser
 
                 var child = new DirectoryTreeItem(file);
                 
-                var artifact = YamlParser.TryParseSidecar(file, child.YamlErrors);
+                var artifact = YamlParser.TryParseYamlMeta(file, child.YamlErrors);
                 artifact?.RootFolder = rootPath;
                 // if(artifact?.PreviewPath != null)
                 // {
@@ -146,6 +146,12 @@ public static class DirectoryTraverser
 
         // Skip NFS temporary lock files (.nfsXXXXXX)
         if (name.StartsWith(".nfs", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Skip YAML meta files — they are metadata for adjacent media files, not content nodes
+        var ext = Path.GetExtension(name);
+        if (ext.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".yml",  StringComparison.OrdinalIgnoreCase))
             return true;
 
         return IgnoredFileNames.Contains(name);
