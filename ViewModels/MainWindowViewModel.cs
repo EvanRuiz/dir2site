@@ -61,16 +61,17 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var progress = new Progress<string>(msg => StatusText = msg);
 
-        var (root, files) = await Task.Run(() =>
+        var (root, files, artifacts) = await Task.Run(() =>
         {
             var collected = new List<string>();
-            var tree = DirectoryTraverser.BuildTree(DirectoryRoot, collected, progress);
-            return (tree, collected);
+            var collectedArtifacts = new List<string>();
+            var tree = DirectoryTraverser.BuildTree(DirectoryRoot, collected, collectedArtifacts, progress);
+            return (tree, collected, collectedArtifacts);
         });
 
         DirItems.Add(root);
 
         IsLoading = false;
-        StatusText = $"{files.Count:N0} files loaded";
+        StatusText = $"{files.Count:N0} files · {artifacts.Count:N0} artifacts";
     }
 }
