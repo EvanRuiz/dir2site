@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:dir2site.ViewModels"
+             x:Class="dir2site.Views.ArtifactView"
+             x:DataType="vm:ArtifactViewModel">
+
+<StackPanel Orientation="Horizontal">
+            <Image Source="{Binding PreviewBitmap}"
+                   Stretch="Uniform"
+                   MaxHeight="100"
+                  />
+            
+            <StackPanel Spacing="12" Margin="16">
+
+            <TextBlock Text="{Binding Caption}"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding Caption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <TextBlock Text="{Binding Date}"
+                       FontSize="13"
+                       Opacity="0.6"
+                       IsVisible="{Binding Date, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <TextBlock Text="{Binding Credit}"
+                       FontStyle="Italic"
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding Credit, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <TextBlock Text="{Binding UrlText}"
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding UrlText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <TextBlock Text="{Binding Id}"
+                       FontSize="11"
+                       Opacity="0.4"
+                       FontFamily="Monospace" />
+
+        </StackPanel>
+            </StackPanel>
+
+</UserControl>
