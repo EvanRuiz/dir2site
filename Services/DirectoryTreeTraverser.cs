@@ -140,6 +140,36 @@ public static class DirectoryTraverser
                     }
                 }
 
+                if (PreviewGenerator.IsPdfFile(file))
+                {
+                    var alreadyHasBoth = artifact != null
+                        && !string.IsNullOrEmpty(artifact.Preview)
+                        && !string.IsNullOrEmpty(artifact.PreviewLarge);
+
+                    if (!alreadyHasBoth)
+                    {
+                        try
+                        {
+                            var previews = PreviewGenerator.GeneratePdfPreviewsAndPages(file, traversalRoot, progress);
+                            if (previews.HasValue && artifact != null)
+                            {
+                                if (string.IsNullOrEmpty(artifact.Preview))
+                                    artifact.Preview = previews.Value.Preview;
+                                if (string.IsNullOrEmpty(artifact.PreviewLarge))
+                                    artifact.PreviewLarge = previews.Value.PreviewLarge;
+
+                                var yamlPath = YamlParser.FindYamlMetaPath(file);
+                                if (yamlPath != null)
+                                    YamlParser.UpdatePreviewFields(yamlPath, artifact.Preview!, artifact.PreviewLarge!);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            progress?.Report($"Preview failed: {Path.GetFileName(file)} — {ex.Message}");
+                        }
+                    }
+                }
+
                 allFiles.Add(file);
 
                 // Only surface files that have a parsed artifact — others are not yet catalogued

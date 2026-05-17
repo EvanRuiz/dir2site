@@ -30,8 +30,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Folder Include="Models\"/>
-        <AvaloniaResource Include="Assets\**"/>
+        <Folder Include="Models\" />
+        <AvaloniaResource Include="Assets\**" />
     </ItemGroup>
     
     <ItemGroup>
@@ -52,6 +52,9 @@
         <PackageReference Include="NetVips.Native.osx-arm64" Version="8.17.3" />
         <PackageReference Include="NetVips.Native.win-x64" Version="8.17.3" />
         <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.13.0" />
+        <PackageReference Include="PdfPig" Version="*" />
+        <PackageReference Include="PDFtoImage" Version="5.*" />
+        <PackageReference Include="SkiaSharp" Version="3.*" />
         <PackageReference Include="YamlDotNet" Version="17.1.0" />
     </ItemGroup>
 
