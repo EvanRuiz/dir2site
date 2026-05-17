@@ -114,7 +114,9 @@ public static class DirectoryTraverser
                 {
                     var alreadyHasBoth = artifact != null
                         && !string.IsNullOrEmpty(artifact.Preview)
-                        && !string.IsNullOrEmpty(artifact.PreviewLarge);
+                        && !string.IsNullOrEmpty(artifact.PreviewLarge)
+                        && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
+                        && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge);
 
                     if (!alreadyHasBoth)
                     {
@@ -144,7 +146,9 @@ public static class DirectoryTraverser
                 {
                     var alreadyHasBoth = artifact != null
                         && !string.IsNullOrEmpty(artifact.Preview)
-                        && !string.IsNullOrEmpty(artifact.PreviewLarge);
+                        && !string.IsNullOrEmpty(artifact.PreviewLarge)
+                        && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
+                        && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge);
 
                     if (!alreadyHasBoth)
                     {
