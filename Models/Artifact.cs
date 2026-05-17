@@ -7,6 +7,8 @@ public enum ArtifactType
     Photo,
     Deepzoom,
     Directory,
+    Pdf,
+    MarkdownPage,
 }
 
 public class Artifact

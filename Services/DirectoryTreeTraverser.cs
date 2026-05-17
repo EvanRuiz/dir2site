@@ -186,10 +186,10 @@ public static class DirectoryTraverser
         if (name.StartsWith(".nfs", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        // Skip yaml meta files — they are metadata for other files, not content nodes
+        // Skip YAML meta files — they are metadata for adjacent media files, not content nodes
         var ext = Path.GetExtension(name);
         if (ext.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".yml", StringComparison.OrdinalIgnoreCase))
+            ext.Equals(".yml",  StringComparison.OrdinalIgnoreCase))
             return true;
 
         return IgnoredFileNames.Contains(name);
