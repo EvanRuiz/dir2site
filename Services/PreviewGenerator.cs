@@ -111,14 +111,15 @@ public static class PreviewGenerator
 
             if (TryExtractJpegPage(pdfPigDoc, pageIndex, pagePath, out imgWidth, out imgHeight))
             {
-                progress?.Report($"Extracting page {pageNum}/{pageCount}: {displayName}");
+                progress?.Report($"Extracting original jpeg {pageNum}/{pageCount}: {displayName}");
             }
             else if (TryGetJp2Info(pdfPigDoc, pageIndex, out imgWidth, out imgHeight,
                          out bool singleLayer, out var jp2Raw))
             {
-                progress?.Report($"Extracting page {pageNum}/{pageCount}: {displayName}");
                 if (singleLayer)
                 {
+                    progress?.Report($"Extracting original JP2 resaving as JPEG {pageNum}/{pageCount}: {displayName}");
+
                     // Single JP2 — no other layers to composite, transcode directly
                     using var magick = new MagickImage(jp2Raw.ToArray());
                     magick.Quality = 90;
@@ -126,6 +127,8 @@ public static class PreviewGenerator
                 }
                 else
                 {
+                    progress?.Report($"Rendering layers at original image dimensions {pageNum}/{pageCount}: {displayName}");
+
                     // MRC multi-layer — must composite via PDFtoImage at JP2 pixel dimensions
                     using var pageStream = File.OpenRead(sourceFile);
                     using var bitmap = Conversion.ToImage(pageStream, pageIndex, leaveOpen: false,
