@@ -191,7 +191,7 @@ public static class YamlParser
     /// and each word is title-cased.
     /// </summary>
     /// <example>
-    /// "annual-report"        → "Annual Report"
+    /// "annual-report"        → "Annual-Report"
     /// "my_beautiful_photo"   → "My Beautiful Photo"
     /// "myBeautifulPhoto"     → "My Beautiful Photo"
     /// "TheQuickBrownFox"     → "The Quick Brown Fox"
@@ -204,23 +204,18 @@ public static class YamlParser
         if (string.IsNullOrWhiteSpace(stem))
             return stem;
 
-        // Replace word separators with spaces
-        var s = stem.Replace('_', ' ').Replace('-', ' ');
+        // Process each dash-separated segment independently, preserving the dash as a separator
+        var segments = stem.Split('-').Select(segment =>
+        {
+            var s = segment.Replace('_', ' ');
+            s = Regex.Replace(s, @"([a-z])([A-Z])", "$1 $2");
+            s = Regex.Replace(s, @"([A-Z]{2,})([A-Z][a-z])", "$1 $2");
+            s = Regex.Replace(s, @"\s+", " ").Trim();
+            if (s.Length == 0) return segment;
+            return string.Join(' ', s.Split(' ')
+                .Select(w => w.Length == 0 ? w : char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant()));
+        });
 
-        // Split camelCase: lowercase letter followed by uppercase  (e.g. "myPhoto" → "my Photo")
-        s = Regex.Replace(s, @"([a-z])([A-Z])", "$1 $2");
-
-        // Split acronym runs before a capitalised word (e.g. "XMLParser" → "XML Parser")
-        s = Regex.Replace(s, @"([A-Z]{2,})([A-Z][a-z])", "$1 $2");
-
-        // Collapse whitespace
-        s = Regex.Replace(s, @"\s+", " ").Trim();
-
-        if (s.Length == 0)
-            return stem;
-
-        // Title-case every word (first letter upper, rest lower — simple and deterministic)
-        return string.Join(' ', s.Split(' ')
-            .Select(w => w.Length == 0 ? w : char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant()));
+        return string.Join('-', segments);
     }
 }

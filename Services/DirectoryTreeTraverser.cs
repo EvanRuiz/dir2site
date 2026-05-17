@@ -191,8 +191,11 @@ public static class DirectoryTraverser
     {
         var name = Path.GetFileName(path);
 
-        // Skip hidden directories (dot-prefix on mac/linux, Hidden attribute on Windows)
+        // Skip hidden/private directories (dot-prefix on mac/linux, underscore-prefix convention, Hidden attribute on Windows)
         if (name.StartsWith('.'))
+            return true;
+
+        if (name.StartsWith('_'))
             return true;
 
         if (HasHiddenAttribute(path))
@@ -216,10 +219,11 @@ public static class DirectoryTraverser
         if (name.StartsWith(".nfs", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        // Skip YAML meta files — they are metadata for adjacent media files, not content nodes
+        // Skip metadata sidecar files — they are not content nodes
         var ext = Path.GetExtension(name);
         if (ext.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".yml",  StringComparison.OrdinalIgnoreCase))
+            ext.Equals(".yml",  StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".json", StringComparison.OrdinalIgnoreCase))
             return true;
 
         return IgnoredFileNames.Contains(name);

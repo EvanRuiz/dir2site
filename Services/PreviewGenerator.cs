@@ -38,15 +38,14 @@ public static class PreviewGenerator
         var fileDir = Path.GetDirectoryName(sourceFile) ?? string.Empty;
         var stem = Path.GetFileNameWithoutExtension(sourceFile);
 
-        var relativeDir = Path.GetRelativePath(traversalRoot, fileDir);
-        var wwwDir = Path.GetFullPath(Path.Combine(traversalRoot, ".www", relativeDir));
-        Directory.CreateDirectory(wwwDir);
+        var dir2site = Path.GetFullPath(Path.Combine(fileDir, ".dir2site"));
+        Directory.CreateDirectory(dir2site);
 
         var previewFileName = $"preview-{stem}.webp";
         var previewLargeFileName = $"preview-lg-{stem}.webp";
 
-        var previewPath = Path.Combine(wwwDir, previewFileName);
-        var previewLargePath = Path.Combine(wwwDir, previewLargeFileName);
+        var previewPath = Path.Combine(dir2site, previewFileName);
+        var previewLargePath = Path.Combine(dir2site, previewLargeFileName);
 
         if (File.Exists(previewPath) && File.Exists(previewLargePath))
             return (previewFileName, previewLargeFileName);
@@ -74,17 +73,16 @@ public static class PreviewGenerator
 
         var fileDir  = Path.GetDirectoryName(sourceFile) ?? string.Empty;
         var stem     = Path.GetFileNameWithoutExtension(sourceFile);
-        var relDir   = Path.GetRelativePath(traversalRoot, fileDir);
-        var wwwDir   = Path.GetFullPath(Path.Combine(traversalRoot, ".www", relDir));
-        var pagesDir = Path.Combine(wwwDir, $"{stem}_pages");
-        Directory.CreateDirectory(wwwDir);
+        var dir2site = Path.GetFullPath(Path.Combine(fileDir, ".dir2site"));
+        var pagesDir = Path.Combine(dir2site, $"{stem}_pages");
+        Directory.CreateDirectory(dir2site);
         Directory.CreateDirectory(pagesDir);
 
         var previewFileName      = $"preview-{stem}.webp";
         var previewLargeFileName = $"preview-lg-{stem}.webp";
-        var previewPath          = Path.Combine(wwwDir, previewFileName);
-        var previewLargePath     = Path.Combine(wwwDir, previewLargeFileName);
-        var bookReaderJsonPath   = Path.Combine(wwwDir, $"{stem}.bookreader.json");
+        var previewPath          = Path.Combine(dir2site, previewFileName);
+        var previewLargePath     = Path.Combine(dir2site, previewLargeFileName);
+        var bookReaderJsonPath   = Path.Combine(dir2site, $"{stem}.bookreader.json");
 
         if (File.Exists(previewPath) && File.Exists(previewLargePath) && File.Exists(bookReaderJsonPath))
             return (previewFileName, previewLargeFileName);
@@ -113,14 +111,15 @@ public static class PreviewGenerator
 
             if (TryExtractJpegPage(pdfPigDoc, pageIndex, pagePath, out imgWidth, out imgHeight))
             {
-                progress?.Report($"Extracting page {pageNum}/{pageCount}: {displayName}");
+                progress?.Report($"Extracting original jpeg {pageNum}/{pageCount}: {displayName}");
             }
             else if (TryGetJp2Info(pdfPigDoc, pageIndex, out imgWidth, out imgHeight,
                          out bool singleLayer, out var jp2Raw))
             {
-                progress?.Report($"Extracting page {pageNum}/{pageCount}: {displayName}");
                 if (singleLayer)
                 {
+                    progress?.Report($"Extracting original JP2 resaving as JPEG {pageNum}/{pageCount}: {displayName}");
+
                     // Single JP2 — no other layers to composite, transcode directly
                     using var magick = new MagickImage(jp2Raw.ToArray());
                     magick.Quality = 90;
@@ -128,6 +127,8 @@ public static class PreviewGenerator
                 }
                 else
                 {
+                    progress?.Report($"Rendering layers at original image dimensions {pageNum}/{pageCount}: {displayName}");
+
                     // MRC multi-layer — must composite via PDFtoImage at JP2 pixel dimensions
                     using var pageStream = File.OpenRead(sourceFile);
                     using var bitmap = Conversion.ToImage(pageStream, pageIndex, leaveOpen: false,
@@ -224,8 +225,7 @@ public static class PreviewGenerator
     public static string? ResolvePreviewPath(string traversalRoot, string fileDir, string? previewFileName)
     {
         if (previewFileName == null) return null;
-        var relativeDir = Path.GetRelativePath(traversalRoot, fileDir);
-        return Path.GetFullPath(Path.Combine(traversalRoot, ".www", relativeDir, previewFileName));
+        return Path.GetFullPath(Path.Combine(fileDir, ".dir2site", previewFileName));
     }
 
     private static void GenerateThumbnail(string source, string dest, uint width, uint height)
