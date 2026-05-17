@@ -1,11 +1,12 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:dir2site.ViewModels"
+             xmlns:conv="using:dir2site.Converters"
              x:Class="dir2site.Views.ArtifactView"
              x:DataType="vm:ArtifactViewModel">
 
 <StackPanel Orientation="Horizontal">
-            <Image Source="{Binding PreviewBitmap}"
+            <Image Source="{Binding PreviewPath, Converter={x:Static conv:PathToBitmapConverter.Instance}}"
                    Stretch="Uniform"
                    MaxHeight="100"
                   />

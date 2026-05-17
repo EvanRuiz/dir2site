@@ -21,10 +21,28 @@ public partial class DirectoryTreeItem : ObservableObject
     [ObservableProperty]
     private bool _isExpanded;
 
-    /// <summary>Parsed YAML metadata for this item, or null if no YAML was found.</summary>
-    public Artifact? Artifact { get; set; }
+    private Artifact? _artifact;
+    private ArtifactViewModel? _artifactViewModel;
 
-    public ArtifactViewModel? ArtifactViewModel => Artifact.Adapt<ArtifactViewModel?>();
+    /// <summary>Parsed YAML metadata for this item, or null if no YAML was found.</summary>
+    public Artifact? Artifact
+    {
+        get => _artifact;
+        set
+        {
+            _artifact = value;
+            _artifactViewModel = value.Adapt<ArtifactViewModel?>();
+            // Explicitly copy runtime-only fields — Mapster may skip properties
+            // tagged with non-Mapster ignore attributes like [YamlIgnore].
+            if (_artifactViewModel is { } vm && value is { } art)
+            {
+                vm.TraversalRoot = art.TraversalRoot;
+                vm.RootFolder = art.RootFolder;
+            }
+        }
+    }
+
+    public ArtifactViewModel? ArtifactViewModel => _artifactViewModel;
 
     /// <summary>Any errors encountered while parsing the YAML file.</summary>
     public List<string> YamlErrors { get; } = new();

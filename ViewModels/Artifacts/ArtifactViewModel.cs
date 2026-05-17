@@ -1,6 +1,7 @@
 using System.IO;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
+using dir2site.Services;
 
 namespace dir2site.ViewModels;
 
@@ -13,13 +14,27 @@ public partial class ArtifactViewModel : ViewModelBase
     [ObservableProperty] public partial string? Date { get; set; }
     [ObservableProperty] public partial string? Preview { get; set; }
     [ObservableProperty] public partial string? PreviewLarge { get; set; }
-    
-    // Runtime only
-    [ObservableProperty] public partial string? RootFolder {get; set;}
 
-    public string? PreviewPath => RootFolder == null || Preview == null
+    // Runtime only
+    [ObservableProperty] public partial string? RootFolder { get; set; }
+    [ObservableProperty] public partial string? TraversalRoot { get; set; }
+
+    public string? PreviewPath => TraversalRoot == null || RootFolder == null || Preview == null
         ? null
-        : Path.Combine(RootFolder, Preview);
-    
-    public Bitmap? PreviewBitmap => PreviewPath == null ? null : new Bitmap(PreviewPath);
+        : PreviewGenerator.ResolvePreviewPath(TraversalRoot, RootFolder, Preview);
+
+    public string? PreviewLargePath => TraversalRoot == null || RootFolder == null || PreviewLarge == null
+        ? null
+        : PreviewGenerator.ResolvePreviewPath(TraversalRoot, RootFolder, PreviewLarge);
+
+    public Bitmap? PreviewBitmap
+    {
+        get
+        {
+            var path = PreviewPath;
+            if (path == null || !File.Exists(path)) return null;
+            try { return new Bitmap(path); }
+            catch { return null; }
+        }
+    }
 }

@@ -16,31 +16,52 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <ScrollViewer>
+    <DockPanel>
 
-        <StackPanel>
-            <StackPanel Orientation="Horizontal">
-                <Label>Directory Root: </Label>
-                <TextBlock Text="{Binding DirectoryRoot}"
-                           FontSize="16"/>
-                <Button Content="Choose..." Command="{Binding SelectDirectoryCommand}"/>
+        <!-- Status bar pinned to bottom -->
+        <Border DockPanel.Dock="Bottom"
+                Background="#1A1A1A"
+                Padding="8,4">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ProgressBar IsIndeterminate="True"
+                             IsVisible="{Binding IsLoading}"
+                             Width="120"
+                             Height="8"
+                             VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding StatusText}"
+                           FontSize="12"
+                           Foreground="#E0E0E0"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
             </StackPanel>
-            
-            <TreeView ItemsSource="{Binding DirItems}"
-                      SelectedItem="{Binding SelectedItem}">
-                <TreeView.ItemTemplate>
-                    <TreeDataTemplate DataType="vm:DirectoryTreeItem"
-                                      ItemsSource="{Binding Children}">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
-                            <Panel IsVisible="{Binding ArtifactViewModel, Converter={x:Static ObjectConverters.IsNotNull}}">
-                                <v:ArtifactView DataContext="{Binding ArtifactViewModel}"></v:ArtifactView>
-                            </Panel>
-                        </StackPanel>
-                    </TreeDataTemplate>
-                </TreeView.ItemTemplate>
-            </TreeView>
-        </StackPanel>
-    </ScrollViewer>
+        </Border>
+
+        <ScrollViewer>
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Label>Directory Root: </Label>
+                    <TextBlock Text="{Binding DirectoryRoot}"
+                               FontSize="16"/>
+                    <Button Content="Choose..." Command="{Binding SelectDirectoryCommand}"/>
+                </StackPanel>
+
+                <TreeView ItemsSource="{Binding DirItems}"
+                          SelectedItem="{Binding SelectedItem}">
+                    <TreeView.ItemTemplate>
+                        <TreeDataTemplate DataType="vm:DirectoryTreeItem"
+                                          ItemsSource="{Binding Children}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                <Panel IsVisible="{Binding ArtifactViewModel, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                    <v:ArtifactView DataContext="{Binding ArtifactViewModel}"></v:ArtifactView>
+                                </Panel>
+                            </StackPanel>
+                        </TreeDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+            </StackPanel>
+        </ScrollViewer>
+
+    </DockPanel>
     
 </Window>

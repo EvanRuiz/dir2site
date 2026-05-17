@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -54,22 +55,22 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         DirItems.Clear();
         if(DirectoryRoot == null) return;
-        
+
         IsLoading = true;
         StatusText = "Scanning...";
+
+        var progress = new Progress<string>(msg => StatusText = msg);
 
         var (root, files) = await Task.Run(() =>
         {
             var collected = new List<string>();
-            var tree = DirectoryTraverser.BuildTree(DirectoryRoot, collected);
+            var tree = DirectoryTraverser.BuildTree(DirectoryRoot, collected, progress);
             return (tree, collected);
         });
 
-        // Marshal results back to UI thread
         DirItems.Add(root);
-        
 
         IsLoading = false;
-        StatusText = $"{DirItems.Count:N0} files loaded";
+        StatusText = $"{files.Count:N0} files loaded";
     }
 }

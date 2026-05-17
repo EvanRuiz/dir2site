@@ -14,14 +14,20 @@ public static class YamlParser
         .IgnoreUnmatchedProperties()
         .Build();
 
+    private static readonly IDeserializer DictDeserializer = new DeserializerBuilder()
+        .Build();
+
+    private static readonly ISerializer Serializer = new SerializerBuilder()
+        .Build();
+
     /// <summary>
-    /// Looks for a YAML sidecar file next to <paramref name="filePath"/> (same name, .yaml/.yml extension).
+    /// Looks for a YAML meta file next to <paramref name="filePath"/> (same name, .yaml/.yml extension).
     /// If found, tries to deserialize it into the best-fit <see cref="Artifact"/> subtype.
     /// Returns the parsed object (or null), and populates <paramref name="errors"/> on failure.
     /// </summary>
-    public static Artifact? TryParseSidecar(string filePath, List<string> errors)
+    public static Artifact? TryParseYamlMeta(string filePath, List<string> errors)
     {
-        var yamlPath = FindSidecar(filePath);
+        var yamlPath = FindYamlMeta(filePath);
         if (yamlPath is null)
             return null;
 
@@ -65,16 +71,46 @@ public static class YamlParser
         yaml => Deserializer.Deserialize<Artifact>(yaml),
     ];
 
-    private static string? FindSidecar(string filePath)
+    /// <summary>
+    /// Updates (or adds) the preview and previewLarge keys in an existing YAML meta file,
+    /// preserving all other fields.
+    /// </summary>
+    public static void UpdatePreviewFields(string yamlPath, string previewFileName, string previewLargeFileName)
+    {
+        string yaml;
+        try { yaml = File.ReadAllText(yamlPath); }
+        catch { return; }
+
+        Dictionary<object, object> doc;
+        try { doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml) ?? new(); }
+        catch { doc = new(); }
+
+        doc["preview"] = previewFileName;
+        doc["previewLarge"] = previewLargeFileName;
+
+        File.WriteAllText(yamlPath, Serializer.Serialize(doc));
+    }
+
+    public static string? FindYamlMetaPath(string filePath) => FindYamlMeta(filePath);
+
+    private static string? FindYamlMeta(string filePath)
     {
         var dir = Path.GetDirectoryName(filePath) ?? string.Empty;
+        var fileName = Path.GetFileName(filePath);
         var stem = Path.GetFileNameWithoutExtension(filePath);
 
         foreach (var ext in new[] { ".yaml", ".yml" })
         {
-            var candidate = Path.Combine(dir, stem + ext);
-            if (File.Exists(candidate))
-                return candidate;
+            // Prefer {filename}.yaml (e.g. Portrait.jpg → Portrait.jpg.yaml)
+            var fullCandidate = Path.Combine(dir, fileName + ext);
+            if (File.Exists(fullCandidate))
+                return fullCandidate;
+
+            // Fall back to {stem}.yaml (e.g. Portrait.jpg → Portrait.yaml)
+            var stemCandidate = Path.Combine(dir, stem + ext);
+            if (File.Exists(stemCandidate) &&
+                !string.Equals(stemCandidate, filePath, StringComparison.OrdinalIgnoreCase))
+                return stemCandidate;
         }
 
         return null;
