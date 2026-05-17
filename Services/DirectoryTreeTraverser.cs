@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Avalonia.Data.Converters;
-using Avalonia.Media.Imaging;
 using dir2site.ViewModels;
 
 namespace dir2site.Services;
@@ -71,7 +69,10 @@ public static class DirectoryTraverser
         ".pytest_cache",
     };
 
-    public static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles)
+    public static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles, IList<string> allArtifacts, IProgress<string>? progress = null)
+        => BuildTree(rootPath, allFiles, allArtifacts, rootPath, progress);
+
+    private static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles, IList<string> allArtifacts, string traversalRoot, IProgress<string>? progress)
     {
         var node = new DirectoryTreeItem(rootPath);
 
@@ -89,7 +90,7 @@ public static class DirectoryTraverser
                 if (ShouldIgnoreDirectory(dir))
                     continue;
 
-                var child = BuildTree(dir, allFiles);
+                var child = BuildTree(dir, allFiles, allArtifacts, traversalRoot, progress);
                 node.Children.Add(child);
             }
 
@@ -99,17 +100,54 @@ public static class DirectoryTraverser
                     continue;
 
                 var child = new DirectoryTreeItem(file);
-                
+
                 var artifact = YamlParser.TryParseYamlMeta(file, child.YamlErrors);
-                artifact?.RootFolder = rootPath;
-                // if(artifact?.PreviewPath != null)
-                // {
-                //     artifact.PreviewBitmap = new Bitmap(artifact.PreviewPath);
-                // }
-                //
-                child.Artifact = artifact;
+                if (artifact != null)
+                {
+                    artifact.RootFolder = rootPath;
+                    artifact.TraversalRoot = traversalRoot;
+                }
+
+                // Generate previews for any image file where they are missing,
+                // regardless of whether a yaml meta file exists.
+                if (PreviewGenerator.IsImageFile(file))
+                {
+                    var alreadyHasBoth = artifact != null
+                        && !string.IsNullOrEmpty(artifact.Preview)
+                        && !string.IsNullOrEmpty(artifact.PreviewLarge);
+
+                    if (!alreadyHasBoth)
+                    {
+                        try
+                        {
+                            var previews = PreviewGenerator.GeneratePreviews(file, traversalRoot, progress);
+                            if (previews.HasValue && artifact != null)
+                            {
+                                if (string.IsNullOrEmpty(artifact.Preview))
+                                    artifact.Preview = previews.Value.Preview;
+                                if (string.IsNullOrEmpty(artifact.PreviewLarge))
+                                    artifact.PreviewLarge = previews.Value.PreviewLarge;
+
+                                var yamlPath = YamlParser.FindYamlMetaPath(file);
+                                if (yamlPath != null)
+                                    YamlParser.UpdatePreviewFields(yamlPath, artifact.Preview!, artifact.PreviewLarge!);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            progress?.Report($"Preview failed: {Path.GetFileName(file)} — {ex.Message}");
+                        }
+                    }
+                }
 
                 allFiles.Add(file);
+
+                // Only surface files that have a parsed artifact — others are not yet catalogued
+                if (artifact == null)
+                    continue;
+
+                child.Artifact = artifact;
+                allArtifacts.Add(file);
                 node.Children.Add(child);
             }
         }

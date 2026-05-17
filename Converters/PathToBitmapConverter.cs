@@ -8,6 +8,8 @@ namespace dir2site.Converters;
 
 public class PathToBitmapConverter : IValueConverter
 {
+    public static readonly PathToBitmapConverter Instance = new();
+
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is string path && File.Exists(path))

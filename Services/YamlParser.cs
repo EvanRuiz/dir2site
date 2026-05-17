@@ -16,6 +16,12 @@ public static class YamlParser
         .IgnoreUnmatchedProperties()
         .Build();
 
+    private static readonly IDeserializer DictDeserializer = new DeserializerBuilder()
+        .Build();
+
+    private static readonly ISerializer Serializer = new SerializerBuilder()
+        .Build();
+
     // Maps media file extensions to their artifact type name (lowercase).
     public static readonly IReadOnlyDictionary<string, string> ExtensionToType =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -95,6 +101,28 @@ public static class YamlParser
     ];
 
     /// <summary>
+    /// Updates (or adds) the preview and previewLarge keys in an existing YAML meta file,
+    /// preserving all other fields.
+    /// </summary>
+    public static void UpdatePreviewFields(string yamlPath, string previewFileName, string previewLargeFileName)
+    {
+        string yaml;
+        try { yaml = File.ReadAllText(yamlPath); }
+        catch { return; }
+
+        Dictionary<object, object> doc;
+        try { doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml) ?? new(); }
+        catch { doc = new(); }
+
+        doc["preview"] = previewFileName;
+        doc["previewLarge"] = previewLargeFileName;
+
+        File.WriteAllText(yamlPath, Serializer.Serialize(doc));
+    }
+
+    public static string? FindYamlMetaPath(string filePath) => FindYamlMeta(filePath);
+
+    /// <summary>
     /// Returns the path of an existing YAML meta file for <paramref name="filePath"/>, or null.
     /// Checks the new convention first (<c>filename.ext.yaml</c>) then the legacy form
     /// (<c>stem.yaml</c>) for backward compatibility.
@@ -105,20 +133,18 @@ public static class YamlParser
         var fileName = Path.GetFileName(filePath);
         var stem     = Path.GetFileNameWithoutExtension(filePath);
 
-        // New convention: keep original extension, append .yaml / .yml
         foreach (var ext in new[] { ".yaml", ".yml" })
         {
-            var candidate = Path.Combine(dir, fileName + ext);
-            if (File.Exists(candidate))
-                return candidate;
-        }
+            // New convention: Portrait.jpg → Portrait.jpg.yaml
+            var fullCandidate = Path.Combine(dir, fileName + ext);
+            if (File.Exists(fullCandidate))
+                return fullCandidate;
 
-        // Legacy fallback: stem-only yaml meta (e.g. photo.yaml next to photo.jpg)
-        foreach (var ext in new[] { ".yaml", ".yml" })
-        {
-            var candidate = Path.Combine(dir, stem + ext);
-            if (File.Exists(candidate))
-                return candidate;
+            // Legacy fallback: Portrait.jpg → Portrait.yaml (guard against self-reference)
+            var stemCandidate = Path.Combine(dir, stem + ext);
+            if (File.Exists(stemCandidate) &&
+                !string.Equals(stemCandidate, filePath, StringComparison.OrdinalIgnoreCase))
+                return stemCandidate;
         }
 
         return null;

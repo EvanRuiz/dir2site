@@ -51,6 +51,7 @@
         <PackageReference Include="NetVips.Native.linux-x64" Version="8.17.3" />
         <PackageReference Include="NetVips.Native.osx-arm64" Version="8.17.3" />
         <PackageReference Include="NetVips.Native.win-x64" Version="8.17.3" />
+        <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.13.0" />
         <PackageReference Include="YamlDotNet" Version="17.1.0" />
     </ItemGroup>
 
