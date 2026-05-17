@@ -22,6 +22,10 @@ public static class YamlParser
     private static readonly ISerializer Serializer = new SerializerBuilder()
         .Build();
 
+    private static readonly ISerializer CamelCaseSerializer = new SerializerBuilder()
+        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .Build();
+
     // Maps media file extensions to their artifact type name (lowercase).
     public static readonly IReadOnlyDictionary<string, string> ExtensionToType =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -119,6 +123,12 @@ public static class YamlParser
 
         File.WriteAllText(yamlPath, Serializer.Serialize(doc));
     }
+
+    public static T DeserializeAs<T>(string yaml) where T : new() =>
+        Deserializer.Deserialize<T>(yaml);
+
+    public static string SerializeToYaml<T>(T obj) =>
+        CamelCaseSerializer.Serialize(obj);
 
     public static string? FindYamlMetaPath(string filePath) => FindYamlMeta(filePath);
 

@@ -23,6 +23,10 @@ public static class PreviewGenerator
     public static bool IsPdfFile(string filePath) =>
         Path.GetExtension(filePath).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
 
+    // previewRelativePath already includes the .dir2site/ segment (e.g. ".dir2site/preview-foo.webp")
+    public static bool PreviewFileExists(string sourceFileDir, string previewRelativePath) =>
+        File.Exists(Path.Combine(sourceFileDir, previewRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+
     /// <summary>
     /// Generates preview and preview-large webp images into the .www mirror tree.
     /// Returns (previewFileName, previewLargeFileName), or null if generation was skipped/failed.
@@ -41,11 +45,14 @@ public static class PreviewGenerator
         var dir2site = Path.GetFullPath(Path.Combine(fileDir, ".dir2site"));
         Directory.CreateDirectory(dir2site);
 
-        var previewFileName = $"preview-{stem}.webp";
-        var previewLargeFileName = $"preview-lg-{stem}.webp";
+        var previewFile      = $"preview-{stem}.webp";
+        var previewLargeFile = $"preview-lg-{stem}.webp";
+        var previewPath      = Path.Combine(dir2site, previewFile);
+        var previewLargePath = Path.Combine(dir2site, previewLargeFile);
 
-        var previewPath = Path.Combine(dir2site, previewFileName);
-        var previewLargePath = Path.Combine(dir2site, previewLargeFileName);
+        // Returned names include the .dir2site/ segment so they are valid relative paths from the artifact's folder
+        var previewFileName      = $".dir2site/preview-{stem}.webp";
+        var previewLargeFileName = $".dir2site/preview-lg-{stem}.webp";
 
         if (File.Exists(previewPath) && File.Exists(previewLargePath))
             return (previewFileName, previewLargeFileName);
@@ -78,11 +85,15 @@ public static class PreviewGenerator
         Directory.CreateDirectory(dir2site);
         Directory.CreateDirectory(pagesDir);
 
-        var previewFileName      = $"preview-{stem}.webp";
-        var previewLargeFileName = $"preview-lg-{stem}.webp";
-        var previewPath          = Path.Combine(dir2site, previewFileName);
-        var previewLargePath     = Path.Combine(dir2site, previewLargeFileName);
-        var bookReaderJsonPath   = Path.Combine(dir2site, $"{stem}.bookreader.json");
+        var previewFile      = $"preview-{stem}.webp";
+        var previewLargeFile = $"preview-lg-{stem}.webp";
+        var previewPath      = Path.Combine(dir2site, previewFile);
+        var previewLargePath = Path.Combine(dir2site, previewLargeFile);
+        var bookReaderJsonPath = Path.Combine(dir2site, $"{stem}.bookreader.json");
+
+        // Returned names include the .dir2site/ segment so they are valid relative paths from the artifact's folder
+        var previewFileName      = $".dir2site/preview-{stem}.webp";
+        var previewLargeFileName = $".dir2site/preview-lg-{stem}.webp";
 
         if (File.Exists(previewPath) && File.Exists(previewLargePath) && File.Exists(bookReaderJsonPath))
             return (previewFileName, previewLargeFileName);
