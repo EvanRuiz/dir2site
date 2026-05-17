@@ -1,264 +1,46 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:dir2site.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:webview="clr-namespace:WebViewControl;assembly=WebViewControl.Avalonia"
-        xmlns:converters="clr-namespace:dir2site.Converters"
-        mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="450"
+        xmlns:vm="using:dir2site.ViewModels"
+        xmlns:v="using:dir2site.Views"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="dir2site.Views.MainWindow"
-        x:DataType="vm:ImageViewModel"
+        x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="dir2site">
 
     <Design.DataContext>
         <!-- This only sets the DataContext for the previewer in an IDE,
              to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:ImageViewModel/>
+        <vm:MainWindowViewModel/>
     </Design.DataContext>
-    
-    <Window.Resources>
-        <converters:SelectedBrushMultiConverter x:Key="SelectedBrushMultiConverter"/>
-        <converters:ViewportToPixelsConverter x:Key="ViewportToPixelsConverter"/>
-        <converters:LogarithmicConverter x:Key="RadiusLogarithmicConverter"
-                                         MinValue="0.01"
-                                         MaxValue="1.0"
-                                         SliderMin="0.1"
-                                         SliderMax="100"/>
-    </Window.Resources>
-    
-    <Window.Styles>
-        <Style Selector="TextBlock, TextBlock">
-            <Setter Property="Margin" Value="0 0, 0, 10"/>
-        </Style>
-        <Style Selector="Separator">
-            <Setter Property="Margin" Value="0 10"/>
-            <Setter Property="Padding" Value="0"/>
-        </Style>
-    </Window.Styles>
-    <TabControl Name="MainTabControl"
-                SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Stretch">
-        <TabItem Header="{Binding SelectImageTabHeader}">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Margin="10">
-                    <Button DockPanel.Dock="Top"
-                            Content="Open Image File..."
-                            Command="{Binding OpenImageFileCommand}" />
-                    <TextBlock Text="{Binding ImagePath}" />
-                </StackPanel>
-                <Canvas HorizontalAlignment="Stretch"
-                        VerticalAlignment="Stretch">
-                    <Image Stretch="Uniform" 
-                           Width="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Canvas}}"
-                           Height="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Canvas}}"
-                           Source="{Binding ImageBitmap}" />
-                </Canvas>
-            </DockPanel>
-        </TabItem>
-        <TabItem Header="{Binding MakeTilesTabHeader}">
-            <StackPanel>
-                <Grid ColumnDefinitions="Auto, *"
-                      RowDefinitions="Auto,Auto">
-                    <Grid.Styles>
-                        <Style Selector="TextBlock, NumericUpDown">
-                            <Setter Property="VerticalAlignment" Value="Center"/>
-                            <Setter Property="HorizontalAlignment" Value="Right"/>
-                        </Style>
-                    </Grid.Styles>
-                    
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Tiles Name: "></TextBlock>
-                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TilesName}" />
 
-                    <TextBlock  Grid.Row="1" Grid.Column="0" Text="Quality: "></TextBlock>
-                    <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal">
-                        <Slider Width="200"
-                                Minimum="10"
-                                Maximum="100"
-                                TickFrequency="10"
-                                IsSnapToTickEnabled="True"
-                                TickPlacement="BottomRight" 
-                                Value="{Binding QualityLevel}" 
-                                Padding="5, 0" />
-                        <NumericUpDown Width="130" 
-                                       Value="{Binding QualityLevel}"></NumericUpDown>
-                    </StackPanel>
-                   
-                </Grid>
-                <Button Content="Generate tiles..." Command="{Binding GenerateTilesCommand}" />
+    <ScrollViewer>
+
+        <StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <Label>Directory Root: </Label>
+                <TextBlock Text="{Binding DirectoryRoot}"
+                           FontSize="16"/>
+                <Button Content="Choose..." Command="{Binding SelectDirectoryCommand}"/>
             </StackPanel>
-        </TabItem>
-        <TabItem Header="{Binding EditOverlaysTabHeader}"
-                 HorizontalAlignment="Stretch"
-                 VerticalAlignment="Stretch">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Right" Margin="5">
-                    <TextBlock>Default Radius:</TextBlock>
-                    <NumericUpDown Value="{Binding DefaultOverlayRadius}"></NumericUpDown>
-                    <Separator/>
-                    <Button Content="Load Overlays"
-                            Command="{Binding LoadOverlaysCommand}" />
-                    <Button Content="Save Overlays"
-                            Command="{Binding SaveOverlaysCommand}" />
-                    <Separator/>
-                    <Button Content="Delete Selected Overlay"
-                            IsEnabled="{Binding !!SelectedOverlay}"
-                            Command="{Binding DeleteSelectedOverlayCommand}" />
-                    <Separator/>
-                    <StackPanel Orientation="Horizontal">
-                        <Button Content="Move Up"
-                                IsEnabled="{Binding !!SelectedOverlay}"
-                                Command="{Binding OverlayMoveUpCommand}" />
-                        <Button Content="Move Down"
-                                IsEnabled="{Binding !!SelectedOverlay}"
-                                Command="{Binding OverlayMoveDownCommand}" />
-                    </StackPanel>
-                </StackPanel>
-                <StackPanel DockPanel.Dock="Right">
-                    <ListBox Width="200"
-                             MaxWidth="200"
-                             MaxHeight="{Binding #OverlayCanvasImage.Bounds.Height}"
-                             ItemsSource="{Binding Overlays}"
-                             SelectedItem="{Binding SelectedOverlay}">
-                        <ListBox.Styles>
-                            <Style Selector="ListBoxItem">
-                                <Setter Property="Margin" Value="0"/>
-                                <Setter Property="Padding" Value="0"/>
-                            </Style>
-                        </ListBox.Styles>
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel IsEnabled="{Binding $parent[ListBoxItem].IsSelected}">
-                                    <Border Padding="10">
-                                        <StackPanel>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding Index}"
-                                                           VerticalAlignment="Center"
-                                                           Margin="0"/>
-                                                <TextBlock Text=". "
-                                                           VerticalAlignment="Center"
-                                                           Margin="0"/>
-                                                <TextBox Text="{Binding Caption}"
-                                                         Watermark="Caption"
-                                                         VerticalAlignment="Stretch"
-                                                         Height="32"
-                                                         Margin="0"/>
-                                            </StackPanel>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock>Center:</TextBlock>
-                                                <TextBlock Text="{Binding X, StringFormat={}{0:0.00}}"/>
-                                                <TextBlock Text="{Binding Y, StringFormat={}{0:0.00}}"/>    
-                                            </StackPanel>
-                                            
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock VerticalAlignment="Center" Margin="0">Radius:</TextBlock>
-                                                <NumericUpDown
-                                                    Value="{Binding Radius}"
-                                                               FormatString="0.000"
-                                                               Width="130"
-                                                               VerticalAlignment="Center"
-                                                               Margin="0"/>    
-                                            </StackPanel>
-                                            
-                                            <Slider Height="40" 
-                                                    Minimum="0.1" Maximum="100"
-                                                    Value="{Binding Radius, Mode=TwoWay, Converter={StaticResource RadiusLogarithmicConverter}}}" />
-                                        </StackPanel>
-                                    </Border>
-                                    <Separator/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </StackPanel>
-                
-                <Grid>
-                <Canvas Name="OverlayCanvas"
-                        HorizontalAlignment="Stretch"
-                        VerticalAlignment="Stretch">
-                    <Image Name="OverlayCanvasImage"
-                           Stretch="Uniform" 
-                           Width="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Canvas}}"
-                           Height="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Canvas}}"
-                           Source="{Binding ImageBitmap}" />
-                </Canvas>
-                    <ItemsControl ItemsSource="{Binding Overlays}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <Canvas />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        
-                        <ItemsControl.Styles>
-                            <Style Selector="ContentPresenter" x:DataType="vm:OverlayViewModel">
-                                <Setter Property="Canvas.Left">
-                                    <Setter.Value>
-                                        <MultiBinding Converter="{StaticResource ViewportToPixelsConverter}">
-                                            <Binding Path="Left"/>
-                                            <Binding Path="#OverlayCanvasImage.Bounds.Width"/>
-                                            <Binding Path="#OverlayCanvasImage.Bounds.Left"/>
-                                        </MultiBinding>
-                                    </Setter.Value>
-                                </Setter>
-                                <Setter Property="Canvas.Top">
-                                    <Setter.Value>
-                                        <MultiBinding Converter="{StaticResource ViewportToPixelsConverter}">
-                                            <Binding Path="Top"/>
-                                            <Binding Path="#OverlayCanvasImage.Bounds.Width"/>
-                                            <Binding Path="#OverlayCanvasImage.Bounds.Top"/>
-                                        </MultiBinding>
-                                    </Setter.Value>
-                                </Setter>
-                            </Style>
-                        </ItemsControl.Styles>
-                        
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Ellipse StrokeThickness="{Binding StrokeThickness}"
-                                         PointerPressed="Overlay_OnPointerPressed"
-                                         PointerMoved="Overlay_OnPointerMoved"
-                                         PointerReleased="Overlay_OnPointerReleased">
-                                    <Ellipse.Width>
-                                        <MultiBinding Converter="{StaticResource ViewportToPixelsConverter}">
-                                            <Binding Path="Width"/>
-                                            <Binding Path="#OverlayCanvasImage.Bounds.Width"/>
-                                        </MultiBinding>
-                                    </Ellipse.Width>
-                                    <Ellipse.Height>
-                                        <MultiBinding Converter="{StaticResource ViewportToPixelsConverter}">
-                                            <Binding Path="Height"/>
-                                            <Binding Path="#OverlayCanvasImage.Bounds.Width"/>
-                                        </MultiBinding>
-                                    </Ellipse.Height>
-                                    <Ellipse.Fill>
-                                        <MultiBinding Converter="{StaticResource SelectedBrushMultiConverter}">
-                                            <Binding Path="IsSelected"/>
-                                            <Binding Path="Fill"/>
-                                            <Binding Path="SelectedFill"/>
-                                        </MultiBinding>
-                                    </Ellipse.Fill>
-                                    <Ellipse.Stroke>
-                                        <MultiBinding Converter="{StaticResource SelectedBrushMultiConverter}">
-                                            <Binding Path="IsSelected"/>
-                                            <Binding Path="Stroke"/>
-                                            <Binding Path="SelectedStroke"/>
-                                        </MultiBinding>
-                                    </Ellipse.Stroke>
-                                </Ellipse>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </Grid>
-            </DockPanel>
-        </TabItem>
-        <TabItem Header="{Binding PreviewTabHeader}">
-            <Grid>
-                <webview:WebView Name="WebViewControl"
-                                 Focusable="True" 
-                                 Width="{Binding Bounds.Width, RelativeSource={RelativeSource AncestorType=Grid}}"
-                                 Height="{Binding Bounds.Height, RelativeSource={RelativeSource AncestorType=Grid}}" />
-            </Grid>
-        </TabItem>
-    </TabControl>
+            
+            <TreeView ItemsSource="{Binding DirItems}"
+                      SelectedItem="{Binding SelectedItem}">
+                <TreeView.ItemTemplate>
+                    <TreeDataTemplate DataType="vm:DirectoryTreeItem"
+                                      ItemsSource="{Binding Children}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                            <Panel IsVisible="{Binding ArtifactViewModel, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <v:ArtifactView DataContext="{Binding ArtifactViewModel}"></v:ArtifactView>
+                            </Panel>
+                        </StackPanel>
+                    </TreeDataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
+        </StackPanel>
+    </ScrollViewer>
+    
 </Window>
