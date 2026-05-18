@@ -28,10 +28,10 @@ public static class PreviewGenerator
         File.Exists(Path.Combine(sourceFileDir, previewRelativePath.Replace('/', Path.DirectorySeparatorChar)));
 
     /// <summary>
-    /// Generates preview and preview-large webp images into the .www mirror tree.
-    /// Returns (previewFileName, previewLargeFileName), or null if generation was skipped/failed.
+    /// Generates preview, preview-large, and full-resolution web WebP images into the .dir2site mirror tree.
+    /// Returns (previewFileName, previewLargeFileName, imageFileName), or null if generation was skipped/failed.
     /// </summary>
-    public static (string Preview, string PreviewLarge)? GeneratePreviews(
+    public static (string Preview, string PreviewLarge, string Image)? GeneratePreviews(
         string sourceFile,
         string traversalRoot,
         IProgress<string>? progress = null)
@@ -47,24 +47,37 @@ public static class PreviewGenerator
 
         var previewFile      = $"preview-{stem}.webp";
         var previewLargeFile = $"preview-lg-{stem}.webp";
+        var imageFile        = $"{stem}_q90.webp";
         var previewPath      = Path.Combine(dir2site, previewFile);
         var previewLargePath = Path.Combine(dir2site, previewLargeFile);
+        var imagePath        = Path.Combine(dir2site, imageFile);
 
         // Returned names include the .dir2site/ segment so they are valid relative paths from the artifact's folder
         var previewFileName      = $".dir2site/preview-{stem}.webp";
         var previewLargeFileName = $".dir2site/preview-lg-{stem}.webp";
-
-        if (File.Exists(previewPath) && File.Exists(previewLargePath))
-            return (previewFileName, previewLargeFileName);
+        var imageFileName        = $".dir2site/{imageFile}";
 
         var fileName = Path.GetFileName(sourceFile);
-        progress?.Report($"Generating preview: {fileName}");
-        GenerateThumbnail(sourceFile, previewPath, 800, 600);
 
-        progress?.Report($"Generating preview (large): {fileName}");
-        GenerateThumbnail(sourceFile, previewLargePath, 1200, 900);
+        if (!File.Exists(previewPath))
+        {
+            progress?.Report($"Generating preview: {fileName}");
+            GenerateThumbnail(sourceFile, previewPath, 800, 600);
+        }
 
-        return (previewFileName, previewLargeFileName);
+        if (!File.Exists(previewLargePath))
+        {
+            progress?.Report($"Generating preview (large): {fileName}");
+            GenerateThumbnail(sourceFile, previewLargePath, 1200, 900);
+        }
+
+        if (!File.Exists(imagePath))
+        {
+            progress?.Report($"Generating web image: {fileName}");
+            GenerateWebImage(sourceFile, imagePath);
+        }
+
+        return (previewFileName, previewLargeFileName, imageFileName);
     }
 
     /// <summary>
@@ -237,6 +250,14 @@ public static class PreviewGenerator
     {
         if (previewFileName == null) return null;
         return Path.GetFullPath(Path.Combine(fileDir, ".dir2site", previewFileName));
+    }
+
+    private static void GenerateWebImage(string source, string dest)
+    {
+        using var image = new MagickImage(source);
+        image.Quality = 90;
+        image.Settings.SetDefine(MagickFormat.WebP, "method", "6");
+        image.Write(dest, MagickFormat.WebP);
     }
 
     private static void GenerateThumbnail(string source, string dest, uint width, uint height)

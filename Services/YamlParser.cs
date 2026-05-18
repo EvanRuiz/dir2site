@@ -108,7 +108,11 @@ public static class YamlParser
     /// Updates (or adds) the preview and previewLarge keys in an existing YAML meta file,
     /// preserving all other fields.
     /// </summary>
-    public static void UpdatePreviewFields(string yamlPath, string previewFileName, string previewLargeFileName)
+    public static void UpdatePreviewFields(
+        string yamlPath,
+        string previewFileName,
+        string previewLargeFileName,
+        string? imageFileName = null)
     {
         string yaml;
         try { yaml = File.ReadAllText(yamlPath); }
@@ -120,6 +124,8 @@ public static class YamlParser
 
         doc["preview"] = previewFileName;
         doc["previewLarge"] = previewLargeFileName;
+        if (imageFileName != null)
+            doc["image"] = imageFileName;
 
         File.WriteAllText(yamlPath, Serializer.Serialize(doc));
     }

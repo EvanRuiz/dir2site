@@ -112,13 +112,17 @@ public static class DirectoryTraverser
                 // regardless of whether a yaml meta file exists.
                 if (PreviewGenerator.IsImageFile(file))
                 {
-                    var alreadyHasBoth = artifact != null
+                    var photo = artifact as dir2site.Models.Photo;
+                    var alreadyHasAll = artifact != null
                         && !string.IsNullOrEmpty(artifact.Preview)
                         && !string.IsNullOrEmpty(artifact.PreviewLarge)
                         && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                        && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge);
+                        && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge)
+                        && (photo == null || (
+                            !string.IsNullOrEmpty(photo.Image)
+                            && PreviewGenerator.PreviewFileExists(rootPath, photo.Image)));
 
-                    if (!alreadyHasBoth)
+                    if (!alreadyHasAll)
                     {
                         try
                         {
@@ -129,10 +133,14 @@ public static class DirectoryTraverser
                                     artifact.Preview = previews.Value.Preview;
                                 if (string.IsNullOrEmpty(artifact.PreviewLarge))
                                     artifact.PreviewLarge = previews.Value.PreviewLarge;
+                                if (photo != null && string.IsNullOrEmpty(photo.Image))
+                                    photo.Image = previews.Value.Image;
 
                                 var yamlPath = YamlParser.FindYamlMetaPath(file);
                                 if (yamlPath != null)
-                                    YamlParser.UpdatePreviewFields(yamlPath, artifact.Preview!, artifact.PreviewLarge!);
+                                    YamlParser.UpdatePreviewFields(
+                                        yamlPath, artifact.Preview!, artifact.PreviewLarge!,
+                                        photo?.Image);
                             }
                         }
                         catch (Exception ex)
