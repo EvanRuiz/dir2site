@@ -21,9 +21,8 @@ public partial class OpenSeadragonOverlayEditor : Window
             throw new ArgumentNullException(nameof(topLevel));
         }
         
-        _viewModel = new ImageViewModel(topLevel, MainTabControl, WebViewControl, OverlayCanvas, OverlayCanvasImage);
+        _viewModel = new ImageViewModel(topLevel, MainTabControl, OverlayCanvas, OverlayCanvasImage);
         DataContext = _viewModel;
-        WebViewControl.LoadHtml("Preview...");
 
         OverlayCanvas.PointerPressed += (sender, e) =>
         {
