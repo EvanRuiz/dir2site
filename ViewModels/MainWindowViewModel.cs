@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -16,7 +17,10 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     public TopLevel? TopLevel { get; set; }
 
+    private readonly PreviewServerService _previewServer = new();
+
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StartServerCommand))]
     private string? _directoryRoot;
     
     [ObservableProperty] public partial ObservableCollection<DirectoryTreeItem> DirItems { get; set; } = [];
@@ -32,9 +36,60 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _statusText = "...";
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StartServerCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StopServerCommand))]
+    [NotifyCanExecuteChangedFor(nameof(OpenBrowserCommand))]
+    private bool _isServerRunning;
+
+    [ObservableProperty]
+    private string _serverUrl = string.Empty;
+
+    [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GenerateSiteCommand))]
     private Dir2SiteModel? _dir2SiteConfig;
     
+    partial void OnDirectoryRootChanged(string? value)
+    {
+        if (_previewServer.IsRunning)
+            _ = StopServer();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStartServer))]
+    private async Task StartServer()
+    {
+        if (DirectoryRoot == null) return;
+        var siteRoot = Path.Combine(DirectoryRoot, "_site");
+        await _previewServer.StartAsync(siteRoot);
+        ServerUrl = _previewServer.ServerUrl.TrimEnd('/');
+        IsServerRunning = true;
+        StatusText = $"Preview server at {ServerUrl}";
+    }
+
+    private bool CanStartServer() =>
+        DirectoryRoot != null &&
+        Directory.Exists(Path.Combine(DirectoryRoot, "_site")) &&
+        !IsServerRunning;
+
+    [RelayCommand(CanExecute = nameof(CanStopServer))]
+    private async Task StopServer()
+    {
+        await _previewServer.StopAsync();
+        IsServerRunning = false;
+        ServerUrl = string.Empty;
+        StatusText = "Preview server stopped";
+    }
+
+    private bool CanStopServer() => IsServerRunning;
+
+    [RelayCommand(CanExecute = nameof(CanOpenBrowser))]
+    private void OpenBrowser()
+    {
+        if (string.IsNullOrEmpty(ServerUrl)) return;
+        Process.Start(new ProcessStartInfo(ServerUrl) { UseShellExecute = true });
+    }
+
+    private bool CanOpenBrowser() => IsServerRunning && !string.IsNullOrEmpty(ServerUrl);
+
     [RelayCommand]
     private async Task SelectDirectory()
     {
@@ -123,6 +178,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         IsLoading = false;
         StatusText = summary;
+        StartServerCommand.NotifyCanExecuteChanged();
     }
 
     private bool CanGenerateSite() =>
