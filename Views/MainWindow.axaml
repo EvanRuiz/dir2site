@@ -80,10 +80,38 @@
                             <TextBox Text="{Binding Dir2SiteConfig.BackgroundColor}" Width="120"/>
                         </StackPanel>
 
-                        <Button Content="Generate Site"
-                                Command="{Binding GenerateSiteCommand}"
-                                HorizontalAlignment="Left"
-                                Margin="0,8,0,0"/>
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,8,0,0">
+                            <Button Content="Generate Site"
+                                    Command="{Binding GenerateSiteCommand}"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0" VerticalAlignment="Center">
+                            <Button Content="▶ Start"
+                                    Command="{Binding StartServerCommand}"
+                                    IsVisible="{Binding !IsServerRunning}"
+                                    FontSize="11"
+                                    Padding="6,3"/>
+                            <Button Content="■ Stop"
+                                    Command="{Binding StopServerCommand}"
+                                    IsVisible="{Binding IsServerRunning}"
+                                    FontSize="11"
+                                    Padding="6,3"/>
+                            <Button Content="{Binding ServerUrl}"
+                                    Command="{Binding OpenBrowserCommand}"
+                                    IsVisible="{Binding IsServerRunning}"
+                                    Cursor="Hand"
+                                    FontSize="11"
+                                    Foreground="#4A9EFF"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="2,0"
+                                    VerticalAlignment="Center"/>
+                            <Button Content="Open in Browser"
+                                    Command="{Binding OpenBrowserCommand}"
+                                    IsVisible="{Binding IsServerRunning}"
+                                    FontSize="11"
+                                    Padding="6,3"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
