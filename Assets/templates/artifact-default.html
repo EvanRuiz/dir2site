@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ site.title | html.escape }}{{ if page_title != site.title }} &mdash; {{ page_title | html.escape }}{{ end }}</title>
+  <title>{{ site.title | html.escape }}{{ if artifact.caption != "" }} &mdash; {{ artifact.caption | html.escape }}{{ end }}</title>
   <link rel="stylesheet" href="{{ prefix }}bootstrap/css/bootstrap.min.css">
   <style>
     body {
       background-color: {{ site.background_color }};
-      padding-top: {{ if breadcrumbs.size > 0 }}96px{{ else }}56px{{ end }};
+      padding-top: 96px;
     }
     .navbar-site { background-color: {{ site.primary_color }} !important; }
     .breadcrumb-bar {
@@ -22,9 +22,8 @@
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
     }
     .breadcrumb-bar .breadcrumb { margin-bottom: 0; }
-    .card-img-top { object-fit: cover; height: 200px; }
-    .card-img-placeholder { height: 200px; background-color: {{ site.secondary_color }}; }
     .badge-type { background-color: {{ site.secondary_color }}; }
+    .artifact-preview img { max-width: 100%; max-height: 600px; object-fit: contain; }
   </style>
 </head>
 <body>
@@ -47,7 +46,6 @@
     </div>
   </nav>
 
-  {{ if breadcrumbs.size > 0 }}
   <nav class="breadcrumb-bar" aria-label="breadcrumb">
     <div class="container-fluid">
       <ol class="breadcrumb">
@@ -61,15 +59,21 @@
       </ol>
     </div>
   </nav>
-  {{ end }}
 
   <div class="container pt-4">
-    <h2 class="mb-4">{{ page_title | html.escape }}</h2>
-    <div class="row row-cols-1 row-cols-md-3 g-4">
-      {{ for item in items -}}
-      {{ include 'card' }}
-      {{ end -}}
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <h2 class="mb-0">{{ artifact.caption | html.escape }}</h2>
+      <span class="badge badge-type text-white">{{ artifact.badge | html.escape }}</span>
     </div>
+
+    {{ if artifact.preview_src != "" }}
+    <div class="artifact-preview mb-3">
+      <img src="{{ artifact.preview_src }}" alt="{{ artifact.caption | html.escape }}">
+    </div>
+    {{ end }}
+
+    {{ if artifact.credit != "" }}<p class="text-muted">{{ artifact.credit | html.escape }}</p>{{ end }}
+    {{ if artifact.date != "" }}<p class="text-muted small">{{ artifact.date | html.escape }}</p>{{ end }}
   </div>
 
   <footer class="container my-4 text-muted small">{{ site.footer | html.escape }}</footer>

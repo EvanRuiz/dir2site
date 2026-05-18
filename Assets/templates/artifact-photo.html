@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ site.title | html.escape }}{{ if page_title != site.title }} &mdash; {{ page_title | html.escape }}{{ end }}</title>
+  <title>{{ site.title | html.escape }}{{ if artifact.caption != "" }} &mdash; {{ artifact.caption | html.escape }}{{ end }}</title>
   <link rel="stylesheet" href="{{ prefix }}bootstrap/css/bootstrap.min.css">
   <style>
     body {
       background-color: {{ site.background_color }};
-      padding-top: {{ if breadcrumbs.size > 0 }}96px{{ else }}56px{{ end }};
+      padding-top: 96px;
     }
     .navbar-site { background-color: {{ site.primary_color }} !important; }
     .breadcrumb-bar {
@@ -22,9 +22,13 @@
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
     }
     .breadcrumb-bar .breadcrumb { margin-bottom: 0; }
-    .card-img-top { object-fit: cover; height: 200px; }
-    .card-img-placeholder { height: 200px; background-color: {{ site.secondary_color }}; }
     .badge-type { background-color: {{ site.secondary_color }}; }
+    #osd-viewer {
+      width: 100%;
+      height: calc(100vh - 96px);
+      background: #111;
+    }
+    .artifact-meta { padding: 12px 0 4px; }
   </style>
 </head>
 <body>
@@ -47,7 +51,6 @@
     </div>
   </nav>
 
-  {{ if breadcrumbs.size > 0 }}
   <nav class="breadcrumb-bar" aria-label="breadcrumb">
     <div class="container-fluid">
       <ol class="breadcrumb">
@@ -61,18 +64,34 @@
       </ol>
     </div>
   </nav>
-  {{ end }}
 
-  <div class="container pt-4">
-    <h2 class="mb-4">{{ page_title | html.escape }}</h2>
-    <div class="row row-cols-1 row-cols-md-3 g-4">
-      {{ for item in items -}}
-      {{ include 'card' }}
-      {{ end -}}
+  <div id="osd-viewer"></div>
+
+  <div class="container artifact-meta">
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <h4 class="mb-0">{{ artifact.caption | html.escape }}</h4>
+      <span class="badge badge-type text-white">{{ artifact.badge | html.escape }}</span>
     </div>
+    {{ if artifact.credit != "" }}<p class="text-muted small mb-1">{{ artifact.credit | html.escape }}</p>{{ end }}
+    {{ if artifact.date != "" }}<p class="text-muted small mb-1">{{ artifact.date | html.escape }}</p>{{ end }}
   </div>
 
-  <footer class="container my-4 text-muted small">{{ site.footer | html.escape }}</footer>
+  <footer class="container my-3 text-muted small">{{ site.footer | html.escape }}</footer>
+
   <script src="{{ prefix }}bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script src="{{ prefix }}js/openseadragon/openseadragon.min.js"></script>
+  <script>
+    window.addEventListener('load', function () {
+      OpenSeadragon({
+        id: "osd-viewer",
+        prefixUrl: "{{ prefix }}js/openseadragon/images/",
+        tileSources: { type: "image", url: "{{ artifact.image_src }}" },
+        showNavigationControl: true,
+        gestureSettingsMouse: { scrollToZoom: true },
+        constrainDuringPan: true,
+        minZoomImageRatio: 0.8
+      });
+    });
+  </script>
 </body>
 </html>
