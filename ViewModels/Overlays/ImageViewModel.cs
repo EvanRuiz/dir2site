@@ -17,7 +17,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MsBox.Avalonia;
 using MsBox.Avalonia.Enums;
-using WebViewControl;
 
 namespace dir2site.ViewModels;
 
@@ -25,19 +24,17 @@ public partial class ImageViewModel : ViewModelBase
 {
     private TopLevel? _topLevel;
     private TabControl? _tabControl;
-    private WebView? _webView;
     private Canvas? _overlayCanvas;
     private Image? _overlayCanvasImage;
-    
+
     public ImageViewModel()
     {
     }
 
-    public ImageViewModel(TopLevel topLevel, TabControl tabControl, WebView view, Canvas overlayCanvas, Image overlayCanvasImage)
+    public ImageViewModel(TopLevel topLevel, TabControl tabControl, Canvas overlayCanvas, Image overlayCanvasImage)
     {
         _topLevel = topLevel;
         _tabControl = tabControl;
-        _webView = view;
         _overlayCanvas = overlayCanvas;
         _overlayCanvasImage = overlayCanvasImage;
     }
@@ -90,9 +87,6 @@ public partial class ImageViewModel : ViewModelBase
     [ObservableProperty]
     private string _editOverlaysTabHeader = "Edit Overlays";
     
-    [ObservableProperty]
-    private string _previewTabHeader = "Preview";
-
     partial void OnSelectedOverlayChanged(OverlayViewModel? oldValue, OverlayViewModel? newValue)
     {
         if(oldValue != null) oldValue.IsSelected = false;
@@ -131,13 +125,6 @@ public partial class ImageViewModel : ViewModelBase
                 Dispatcher.UIThread.InvokeAsync(async () =>
                 {
                     await LoadOverlays();
-                });
-            }
-            else if(tab == PreviewTabHeader)
-            {
-                Dispatcher.UIThread.InvokeAsync(async () =>
-                {
-                    await GeneratePreview();
                 });
             }
         }
@@ -348,8 +335,7 @@ public partial class ImageViewModel : ViewModelBase
     private async Task GeneratePreview()
     {
         if(ImageFile == null) return;
-        if(_webView == null) return;
-        
+
         var previewPath = await GetPreviewPath();
         if(previewPath == null) return;
         
@@ -374,12 +360,6 @@ public partial class ImageViewModel : ViewModelBase
             
             await File.WriteAllTextAsync(htmlPath, html);
         }
-        
-        
-        var uri = new Uri(htmlPath);
-        var uriString = uri.AbsoluteUri;
-        _webView.Address = uriString;
-        _webView.Reload();
     }
 
     [RelayCommand]
