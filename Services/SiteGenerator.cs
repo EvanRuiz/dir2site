@@ -77,6 +77,7 @@ public static class SiteGenerator
         siteObj.SetValue("primary_color", config.PrimaryColor, readOnly: true);
         siteObj.SetValue("secondary_color", config.SecondaryColor, readOnly: true);
         siteObj.SetValue("background_color", config.BackgroundColor, readOnly: true);
+        siteObj.SetValue("navbar_dark", config.NavbarDark, readOnly: true);
 
         var navFolders = topLevelFolders
             .Select(f =>
@@ -306,6 +307,7 @@ public static class SiteGenerator
         siteObj.SetValue("primary_color", config.PrimaryColor, readOnly: true);
         siteObj.SetValue("secondary_color", config.SecondaryColor, readOnly: true);
         siteObj.SetValue("background_color", config.BackgroundColor, readOnly: true);
+        siteObj.SetValue("navbar_dark", config.NavbarDark, readOnly: true);
 
         var navFolders = topLevelFolders
             .Select(f =>
@@ -470,6 +472,7 @@ public static class SiteGenerator
         siteObj.SetValue("primary_color",   config.PrimaryColor,   readOnly: true);
         siteObj.SetValue("secondary_color", config.SecondaryColor, readOnly: true);
         siteObj.SetValue("background_color",config.BackgroundColor, readOnly: true);
+        siteObj.SetValue("navbar_dark",     config.NavbarDark,     readOnly: true);
 
         var globals = new ScriptObject();
         globals.SetValue("site", siteObj, readOnly: true);
