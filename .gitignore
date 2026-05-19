@@ -53,5 +53,6 @@ TestResult.xml
 nunit-*.xml
 .DS_Store
 /.idea
+!/.idea/.idea.dir2site/.idea/runConfigurations/
 *.sln.DotSettings.user
 /builds
