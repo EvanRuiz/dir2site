@@ -7,7 +7,7 @@
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="dir2site.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/app/dir2site-icon.png"
         Title="dir2site">
 
     <Design.DataContext>
@@ -36,14 +36,78 @@
             </StackPanel>
         </Border>
 
-        <ScrollViewer>
-            <StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <Label>Directory Root: </Label>
-                    <TextBlock Text="{Binding DirectoryRoot}"
-                               FontSize="16"/>
-                    <Button Content="Choose..." Command="{Binding SelectDirectoryCommand}"/>
+        <!-- Toolbar: always visible -->
+        <Border DockPanel.Dock="Top" Padding="8,6" BorderBrush="#333" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Label VerticalAlignment="Center">Site Project Folder:</Label>
+                <TextBlock Text="{Binding DirectoryRoot}"
+                           FontSize="14"
+                           VerticalAlignment="Center"/>
+                <Button Content="Choose…" Command="{Binding SelectDirectoryCommand}"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Fill area: welcome panel or content, whichever is active -->
+        <Panel>
+
+            <!-- Welcome panel: visible before a folder is chosen -->
+            <ScrollViewer IsVisible="{Binding DirectoryRoot, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+            <Grid ColumnDefinitions="Auto,*"
+                  Margin="40,32"
+                  VerticalAlignment="Top">
+                <Image Grid.Column="0"
+                       Source="/Assets/app/dir2site-icon.png"
+                       Width="160" Height="160"
+                       VerticalAlignment="Top"
+                       Margin="0,0,40,0"/>
+                <StackPanel Grid.Column="1" Spacing="12">
+                    <TextBlock Text="Dir2Site" FontSize="28" FontWeight="Bold"/>
+                    <TextBlock Text="Turn any folder into a polished static website — instantly."
+                               FontSize="15" TextWrapping="Wrap"/>
+                    <TextBlock TextWrapping="Wrap" FontSize="13">
+                        <Run FontWeight="SemiBold">Your filesystem is your CMS</Run>
+                        <Run> — metadata lives in YAML files alongside your content, trackable in git. No database, no lock-in.</Run>
+                    </TextBlock>
+
+                    <TextBlock Text="Getting Started" FontSize="16" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                    <StackPanel Spacing="5">
+                        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <TextBlock FontSize="13" Text="1." VerticalAlignment="Center"/>
+                            <Button Content="Choose…" Command="{Binding SelectDirectoryCommand}"
+                                    FontSize="13" Padding="6,2" VerticalAlignment="Center"/>
+                            <TextBlock FontSize="13" Text="— select your site project folder" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock FontSize="13">
+                            <Run>2.</Run>
+                            <Run> Adjust site settings — title, footer, colors, logo</Run>
+                        </TextBlock>
+                        <TextBlock FontSize="13">
+                            <Run>3.</Run>
+                            <Run FontWeight="SemiBold"> Generate Site</Run>
+                            <Run> — static HTML written to a </Run>
+                            <Run FontFamily="Courier New" FontSize="12">_site/</Run>
+                            <Run> subfolder</Run>
+                        </TextBlock>
+                        <TextBlock FontSize="13">
+                            <Run>4.</Run>
+                            <Run FontWeight="SemiBold"> ▶ Start</Run>
+                            <Run> — launch a local preview and open in browser</Run>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <TextBlock Text="Supported Content" FontSize="16" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                    <StackPanel Spacing="5">
+                        <TextBlock FontSize="13"><Run FontWeight="SemiBold">Photos</Run><Run> — full-screen gallery with deep-zoom viewer and optional annotations</Run></TextBlock>
+                        <TextBlock FontSize="13"><Run FontWeight="SemiBold">PDFs</Run><Run> — embedded document reader</Run></TextBlock>
+                        <TextBlock FontSize="13"><Run FontWeight="SemiBold">Markdown</Run><Run> — .md files rendered as web articles</Run></TextBlock>
+                        <TextBlock FontSize="13"><Run FontWeight="SemiBold">Folders</Run><Run> — become browsable collection pages</Run></TextBlock>
+                    </StackPanel>
                 </StackPanel>
+            </Grid>
+            </ScrollViewer>
+
+            <ScrollViewer IsVisible="{Binding DirectoryRoot, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+            <StackPanel>
 
                 <Border IsVisible="{Binding Dir2SiteConfig, Converter={x:Static ObjectConverters.IsNotNull}}"
                         Margin="8" Padding="12" BorderBrush="#444" BorderThickness="1" CornerRadius="4">
@@ -143,6 +207,8 @@
                 </TreeView>
             </StackPanel>
         </ScrollViewer>
+
+        </Panel>
 
     </DockPanel>
     

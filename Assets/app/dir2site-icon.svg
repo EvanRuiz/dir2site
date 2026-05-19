@@ -1,0 +1,42 @@
+<svg width="400" height="400" viewBox="0 0 400 400" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>dir2site icon</title>
+  <desc>Square icon: folder top-left, arrows pointing to www globe bottom-right</desc>
+
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#7eaaff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="400" height="400" rx="64" fill="#181c2a"/>
+
+  <!-- Folder — top-left -->
+  <g transform="translate(28, 28)">
+    <path d="M0 16 Q0 6 10 6 L56 6 Q64 6 67 13 L74 24 L156 24 Q166 24 166 34 L166 138 Q166 148 156 148 L10 148 Q0 148 0 138 Z" fill="#f5a623"/>
+    <path d="M0 38 L166 38 L166 138 Q166 148 156 148 L10 148 Q0 148 0 138 Z" fill="#c97d10" opacity="0.5"/>
+    <line x1="22" y1="74" x2="144" y2="74" stroke="white" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+    <line x1="22" y1="96" x2="116" y2="96" stroke="white" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+    <line x1="22" y1="118" x2="90" y2="118" stroke="white" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+  </g>
+
+  <!-- Globe — bottom-right -->
+  <g transform="translate(306, 306)">
+    <circle cx="0" cy="0" r="82" fill="#2a3a6e" stroke="#7eaaff" stroke-width="3.5"/>
+    <line x1="-82" y1="0" x2="82" y2="0" stroke="#7eaaff" stroke-width="2.5" opacity="0.9"/>
+    <line x1="0" y1="-82" x2="0" y2="82" stroke="#7eaaff" stroke-width="2.5" opacity="0.9"/>
+    <ellipse cx="0" cy="0" rx="35" ry="82" fill="none" stroke="#7eaaff" stroke-width="2.5" opacity="0.85"/>
+    <path d="M-68 -37 Q0 -48 68 -37" fill="none" stroke="#7eaaff" stroke-width="2.5" opacity="0.8"/>
+    <path d="M-68 37 Q0 48 68 37" fill="none" stroke="#7eaaff" stroke-width="2.5" opacity="0.8"/>
+    <circle cx="0" cy="0" r="82" fill="none" stroke="#7eaaff" stroke-width="3.5"/>
+  </g>
+
+  <!-- Arrow 1: solid diagonal -->
+  <line x1="215" y1="200" x2="236" y2="240" stroke="#7eaaff" stroke-width="3" stroke-linecap="round" marker-end="url(#arr)"/>
+
+  <!-- Arrow 2: arc via top-right -->
+  <path d="M230 108 Q330 70 350 200" fill="none" stroke="#7eaaff" stroke-width="2.5" stroke-dasharray="6 4" stroke-linecap="round" marker-end="url(#arr)" opacity="0.75"/>
+
+  <!-- Arrow 3: arc via bottom-left -->
+  <path d="M108 230 Q70 330 200 350" fill="none" stroke="#7eaaff" stroke-width="2.5" stroke-dasharray="6 4" stroke-linecap="round" marker-end="url(#arr)" opacity="0.75"/>
+
+</svg>
