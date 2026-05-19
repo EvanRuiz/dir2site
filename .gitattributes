@@ -1,0 +1,9 @@
+*.min.js linguist-detectable=false
+*.bundle.js linguist-detectable=false
+*.min.css linguist-detectable=false
+*.esm.js linguist-detectable=false
+jquery-3.js linguist-detectable=false
+BookReader.* linguist-detectable=false
+bootstrap.* linguist-detectable=false
+openseadragon.js linguist-detectable=false
+*.axaml linguist-language=XML
