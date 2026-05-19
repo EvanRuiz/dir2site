@@ -47,5 +47,60 @@
         <PackageReference Include="EmbedIO" Version="3.5.2" />
     </ItemGroup>
 
+    <Target Name="CreateMacAppBundle" AfterTargets="Publish"
+            Condition="$(RuntimeIdentifier.StartsWith('osx'))">
+        <PropertyGroup>
+            <_AppName>Dir2Site</_AppName>
+            <_ExeName>dir2site</_ExeName>
+            <_AppBundle>$([System.IO.Path]::GetFullPath('$(PublishDir)../$(_AppName).app'))</_AppBundle>
+            <_ContentsDir>$(_AppBundle)/Contents</_ContentsDir>
+            <_MacOSDir>$(_ContentsDir)/MacOS</_MacOSDir>
+            <_ResourcesDir>$(_ContentsDir)/Resources</_ResourcesDir>
+        </PropertyGroup>
+
+        <RemoveDir Directories="$(_AppBundle)" />
+        <MakeDir Directories="$(_MacOSDir);$(_ResourcesDir)" />
+
+        <ItemGroup>
+            <_PublishedItems Include="$(PublishDir)**/*" />
+        </ItemGroup>
+        <Copy SourceFiles="@(_PublishedItems)"
+              DestinationFolder="$(_MacOSDir)/%(RecursiveDir)"
+              SkipUnchangedFiles="false" />
+
+        <WriteLinesToFile File="$(_ContentsDir)/Info.plist" Overwrite="true" Lines="
+&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+&lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot; &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;
+&lt;plist version=&quot;1.0&quot;&gt;
+&lt;dict&gt;
+    &lt;key&gt;CFBundleExecutable&lt;/key&gt;
+    &lt;string&gt;$(_ExeName)&lt;/string&gt;
+    &lt;key&gt;CFBundleIdentifier&lt;/key&gt;
+    &lt;string&gt;com.evanruiz.dir2site&lt;/string&gt;
+    &lt;key&gt;CFBundleName&lt;/key&gt;
+    &lt;string&gt;$(_AppName)&lt;/string&gt;
+    &lt;key&gt;CFBundleDisplayName&lt;/key&gt;
+    &lt;string&gt;$(_AppName)&lt;/string&gt;
+    &lt;key&gt;CFBundlePackageType&lt;/key&gt;
+    &lt;string&gt;APPL&lt;/string&gt;
+    &lt;key&gt;CFBundleShortVersionString&lt;/key&gt;
+    &lt;string&gt;1.0.0&lt;/string&gt;
+    &lt;key&gt;CFBundleVersion&lt;/key&gt;
+    &lt;string&gt;1&lt;/string&gt;
+    &lt;key&gt;NSHighResolutionCapable&lt;/key&gt;
+    &lt;true/&gt;
+    &lt;key&gt;NSPrincipalClass&lt;/key&gt;
+    &lt;string&gt;NSApplication&lt;/string&gt;
+    &lt;key&gt;LSMinimumSystemVersion&lt;/key&gt;
+    &lt;string&gt;13.0&lt;/string&gt;
+    &lt;key&gt;LSApplicationCategoryType&lt;/key&gt;
+    &lt;string&gt;public.app-category.developer-tools&lt;/string&gt;
+&lt;/dict&gt;
+&lt;/plist&gt;" />
+
+        <Exec Command="chmod +x &quot;$(_MacOSDir)/$(_ExeName)&quot;" />
+
+        <Message Text="App bundle: $(_AppBundle)" Importance="High" />
+    </Target>
 
 </Project>
