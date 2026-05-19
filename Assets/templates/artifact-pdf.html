@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ site.title | html.escape }}{{ if artifact.caption != "" }} &mdash; {{ artifact.caption | html.escape }}{{ end }}</title>
-  <link rel="stylesheet" href="{{ prefix }}bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" href="{{ prefix }}js/bootstrap/bootstrap.min.css">
   <link rel="stylesheet" href="{{ prefix }}js/bookreader/BookReader.css">
   <style>
     body {
@@ -85,7 +85,7 @@
 
   <footer class="container my-3 text-muted small">{{ site.footer | html.escape }}</footer>
 
-  <script src="{{ prefix }}bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script src="{{ prefix }}js/bootstrap/bootstrap.bundle.min.js"></script>
   <script src="{{ prefix }}js/bookreader/jquery-3.js"></script>
   <script src="{{ prefix }}js/bookreader/BookReader.js"></script>
   <script>
