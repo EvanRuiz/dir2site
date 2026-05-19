@@ -1,0 +1,5 @@
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{ og_title | html.escape }}">
+  {{ if og_description != "" }}<meta property="og:description" content="{{ og_description | html.escape }}">{{ end }}
+  {{ if site.url != "" && og_image != "" }}<meta property="og:image" content="{{ site.url }}/{{ og_image }}">{{ end }}

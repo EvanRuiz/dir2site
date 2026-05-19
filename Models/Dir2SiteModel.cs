@@ -9,4 +9,5 @@ public class Dir2SiteModel
     public string SecondaryColor  { get; set; } = "#666666";
     public string BackgroundColor { get; set; } = "#ffffff";
     public bool   NavbarDark      { get; set; } = true;
+    public string SiteUrl         { get; set; } = string.Empty;
 }

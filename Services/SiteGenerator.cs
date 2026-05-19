@@ -37,7 +37,7 @@ public static class SiteGenerator
 
         var loader = new AvaloniaTemplateLoader();
         CopySiteAssets(siteRoot, config, loader, progress);
-        var pageTemplate = Template.Parse(loader.LoadByName("page"), "page.html");
+        var pageTemplate = Template.Parse(loader.LoadByName("collection"), "collection.html");
 
         int pageCount = 0;
         GeneratePage(rootItem, siteRoot, directoryRoot, config, topLevelFolders, 0,
@@ -78,6 +78,7 @@ public static class SiteGenerator
         siteObj.SetValue("secondary_color", config.SecondaryColor, readOnly: true);
         siteObj.SetValue("background_color", config.BackgroundColor, readOnly: true);
         siteObj.SetValue("navbar_dark", config.NavbarDark, readOnly: true);
+        siteObj.SetValue("url", config.SiteUrl.TrimEnd('/'), readOnly: true);
 
         var navFolders = topLevelFolders
             .Select(f =>
@@ -95,6 +96,15 @@ public static class SiteGenerator
             .Select(child => (object)BuildCardModel(child, prefix, directoryRoot))
             .ToList();
 
+        var ogTitle = depth == 0
+            ? config.Title
+            : string.Join(" > ", ancestorNames.Concat([node.Name]));
+
+        var ogImageResult = FindFirstArtifactWithPreview(node);
+        var ogImage = ogImageResult.HasValue
+            ? GetOgImageRootRelative(ogImageResult.Value.Item1, directoryRoot, ogImageResult.Value.Item2)
+            : "";
+
         var globals = new ScriptObject();
         globals.SetValue("site", siteObj, readOnly: true);
         globals.SetValue("page_title", pageTitle, readOnly: true);
@@ -102,6 +112,9 @@ public static class SiteGenerator
         globals.SetValue("nav_folders", navFolders, readOnly: true);
         globals.SetValue("breadcrumbs", breadcrumbs, readOnly: true);
         globals.SetValue("items", items, readOnly: true);
+        globals.SetValue("og_title", ogTitle, readOnly: true);
+        globals.SetValue("og_description", ogTitle, readOnly: true);
+        globals.SetValue("og_image", ogImage, readOnly: true);
 
         var context = new TemplateContext { TemplateLoader = loader };
         context.PushGlobal(globals);
@@ -308,6 +321,7 @@ public static class SiteGenerator
         siteObj.SetValue("secondary_color", config.SecondaryColor, readOnly: true);
         siteObj.SetValue("background_color", config.BackgroundColor, readOnly: true);
         siteObj.SetValue("navbar_dark", config.NavbarDark, readOnly: true);
+        siteObj.SetValue("url", config.SiteUrl.TrimEnd('/'), readOnly: true);
 
         var navFolders = topLevelFolders
             .Select(f =>
@@ -356,12 +370,18 @@ public static class SiteGenerator
                 break;
         }
 
+        var ogTitle = string.Join(" > ", ancestorNames.Concat([caption]));
+        var ogImage = GetOgImageRootRelative(artifact, directoryRoot, stem);
+
         var globals = new ScriptObject();
         globals.SetValue("site", siteObj, readOnly: true);
         globals.SetValue("prefix", prefix, readOnly: true);
         globals.SetValue("nav_folders", navFolders, readOnly: true);
         globals.SetValue("breadcrumbs", breadcrumbs, readOnly: true);
         globals.SetValue("artifact", artifactObj, readOnly: true);
+        globals.SetValue("og_title", ogTitle, readOnly: true);
+        globals.SetValue("og_description", caption, readOnly: true);
+        globals.SetValue("og_image", ogImage, readOnly: true);
 
         var template = Template.Parse(loader.LoadByName(templateName), $"{templateName}.html");
         var context = new TemplateContext { TemplateLoader = loader };
@@ -369,6 +389,15 @@ public static class SiteGenerator
 
         var html = template.Render(context);
         File.WriteAllText(Path.Combine(outputDir, "index.html"), html, Encoding.UTF8);
+    }
+
+    private static string GetOgImageRootRelative(Artifact artifact, string directoryRoot, string stem)
+    {
+        var src = artifact.PreviewLarge ?? artifact.Preview;
+        if (src == null || artifact.RootFolder == null) return "";
+        var rel = Path.GetRelativePath(directoryRoot, artifact.RootFolder).Replace('\\', '/');
+        var filename = StripDir2SitePrefix(src, stem);
+        return rel == "." ? $"{stem}/{filename}" : $"{rel}/{stem}/{filename}";
     }
 
     private static string GetPreviewLargeSrc(Artifact artifact, string stem)

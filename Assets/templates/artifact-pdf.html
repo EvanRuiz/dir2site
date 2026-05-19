@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ site.title | html.escape }}{{ if artifact.caption != "" }} &mdash; {{ artifact.caption | html.escape }}{{ end }}</title>
+  {{ include 'opengraph' }}
   <link rel="stylesheet" href="{{ prefix }}js/bootstrap/bootstrap.min.css">
   <link rel="stylesheet" href="{{ prefix }}css/site.css">
   <link rel="stylesheet" href="{{ prefix }}js/bookreader/BookReader.css">

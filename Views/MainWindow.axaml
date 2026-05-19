@@ -61,6 +61,11 @@
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Label Width="140">Site URL</Label>
+                            <TextBox Text="{Binding Dir2SiteConfig.SiteUrl}" Width="260" Watermark="https://example.com"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <Label Width="140">Logo (filename)</Label>
                             <TextBox Text="{Binding Dir2SiteConfig.Logo}" Width="200"/>
                             <Button Content="Choose..." Command="{Binding ChooseLogoCommand}"/>
