@@ -51,8 +51,16 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Misc
 .DS_Store
-/.idea
-!/.idea/.idea.dir2site/.idea/runConfigurations/
-*.sln.DotSettings.user
 /builds
+*.sln.DotSettings.user
+
+# Rider IDE
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/dictionaries
+.idea/**/shelf
+.idea/**/avalonia.xml
