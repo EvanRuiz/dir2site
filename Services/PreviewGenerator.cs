@@ -263,6 +263,12 @@ public static class PreviewGenerator
     private static void GenerateThumbnail(string source, string dest, uint width, uint height)
     {
         using var image = new MagickImage(source);
+        var scale = Math.Min((double)image.Width / width, (double)image.Height / height);
+        if (scale < 1.0)
+        {
+            width  = (uint)Math.Floor(width  * scale);
+            height = (uint)Math.Floor(height * scale);
+        }
         var geometry = new MagickGeometry(width, height) { FillArea = true };
         image.Thumbnail(geometry);
         image.Crop(width, height, Gravity.Center);

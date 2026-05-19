@@ -1,16 +1,14 @@
       <div class="col">
         <div class="card h-100">
-          <a href="{{ item.href }}">
-            {{- if item.img_src != "" }}
-            <img src="{{ item.img_src }}" class="card-img-top" alt="{{ item.caption | html.escape }}">
-            {{- else }}
-            <div class="card-img-placeholder d-flex align-items-center justify-content-center text-white">
-              <span>{{ item.badge | html.escape }}</span>
-            </div>
-            {{- end }}
-          </a>
+          {{- if item.img_src != "" }}
+          <img src="{{ item.img_src }}" class="card-img-top" alt="{{ item.caption | html.escape }}">
+          {{- else }}
+          <div class="card-img-placeholder d-flex align-items-center justify-content-center text-white">
+            <span>{{ item.badge | html.escape }}</span>
+          </div>
+          {{- end }}
           <div class="card-body">
-            <h5 class="card-title">{{ item.caption | html.escape }}</h5>
+            <h5 class="card-title"><a href="{{ item.href }}" class="stretched-link text-decoration-none text-body">{{ item.caption | html.escape }}</a></h5>
             <span class="badge badge-type text-white">{{ item.badge | html.escape }}</span>
           </div>
         </div>
