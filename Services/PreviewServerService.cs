@@ -77,6 +77,10 @@ public class PreviewServerService : IDisposable
 
     private async Task HandleRequestAsync(IHttpContext ctx, string siteRoot)
     {
+        ctx.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        ctx.Response.Headers["Pragma"] = "no-cache";
+        ctx.Response.Headers["Expires"] = "0";
+
         var urlPath = ctx.RequestedPath;
 
         if (urlPath == "/__reload-check")
