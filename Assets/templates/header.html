@@ -1,0 +1,36 @@
+  <div class="site-header">
+    <nav class="navbar navbar-expand-lg navbar-site{{ if breadcrumbs.size == 0 }} no-breadcrumb{{ end }}" data-bs-theme="dark">
+      <div class="container-fluid">
+        <a class="navbar-brand" href="{{ prefix }}">
+          {{- if site.logo != "" }}
+          <img src="{{ prefix }}{{ site.logo }}" height="40" alt="{{ site.title | html.escape }}">
+          {{- else }}
+          {{ site.title | html.escape }}
+          {{- end }}
+        </a>
+        <ul class="navbar-nav ms-auto flex-row gap-3">
+          {{ for folder in nav_folders -}}
+          <li class="nav-item">
+            <a class="nav-link text-white" href="{{ folder.href }}">{{ folder.name | html.escape }}</a>
+          </li>
+          {{ end -}}
+        </ul>
+      </div>
+    </nav>
+
+    {{ if breadcrumbs.size > 0 }}
+    <nav class="breadcrumb-bar" aria-label="breadcrumb">
+      <div class="container-fluid">
+        <ol class="breadcrumb">
+          {{ for crumb in breadcrumbs -}}
+          {{ if crumb.is_active }}
+          <li class="breadcrumb-item active" aria-current="page">{{ crumb.name | html.escape }}</li>
+          {{ else }}
+          <li class="breadcrumb-item"><a href="{{ crumb.href }}">{{ crumb.name | html.escape }}</a></li>
+          {{ end -}}
+          {{ end }}
+        </ol>
+      </div>
+    </nav>
+    {{ end }}
+  </div>

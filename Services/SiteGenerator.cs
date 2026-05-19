@@ -36,6 +36,7 @@ public static class SiteGenerator
         CopyBookReaderAssets(siteRoot, progress);
 
         var loader = new AvaloniaTemplateLoader();
+        CopySiteAssets(siteRoot, config, loader, progress);
         var pageTemplate = Template.Parse(loader.LoadByName("page"), "page.html");
 
         int pageCount = 0;
@@ -461,6 +462,27 @@ public static class SiteGenerator
             var dest = Path.Combine(destDir, Path.GetFileName(assetUri.LocalPath));
             CopyEmbeddedIfStale(assetUri.ToString(), dest, progress);
         }
+    }
+
+    private static void CopySiteAssets(string siteRoot, Dir2SiteModel config, AvaloniaTemplateLoader loader, IProgress<string>? progress)
+    {
+        var siteObj = new ScriptObject();
+        siteObj.SetValue("primary_color",   config.PrimaryColor,   readOnly: true);
+        siteObj.SetValue("secondary_color", config.SecondaryColor, readOnly: true);
+        siteObj.SetValue("background_color",config.BackgroundColor, readOnly: true);
+
+        var globals = new ScriptObject();
+        globals.SetValue("site", siteObj, readOnly: true);
+
+        var context = new TemplateContext { TemplateLoader = loader };
+        context.PushGlobal(globals);
+
+        var template = Template.Parse(loader.LoadByName("site-css"), "site-css.html");
+        var css = template.Render(context);
+
+        var dest = Path.Combine(siteRoot, "css", "site.css");
+        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+        File.WriteAllText(dest, css);
     }
 
     private static void CopyBootstrapAssets(string siteRoot, IProgress<string>? progress)

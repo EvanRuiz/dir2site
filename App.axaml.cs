@@ -29,7 +29,8 @@ public partial class App : Application
             
             desktop.ShutdownRequested += (s, e) =>
             {
-                ((ImageViewModel?)desktop.MainWindow?.DataContext)?.SaveOverlaysCommand.Execute(null);
+                // TODO: Save any GUI state (ex. Overlays) before exiting
+                // SaveOverlaysCommand.Execute(null);
             };
             
 #if DEBUG

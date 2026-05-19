@@ -1,0 +1,70 @@
+body {
+  background-color: {{ site.background_color }};
+  padding-top: 106px;
+}
+
+/* Header */
+
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1030;
+}
+
+.navbar-site {
+  background-color: {{ site.primary_color }} !important;
+}
+
+.navbar-site.no-breadcrumb {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.breadcrumb-bar {
+  background-color: {{ site.background_color }};
+  padding: 6px 16px 8px 16px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.breadcrumb-bar .breadcrumb {
+  margin-bottom: 0;
+}
+
+.badge-type {
+  background-color: {{ site.secondary_color }};
+}
+
+/* Directory listing (page) */
+
+.card-img-top { object-fit: cover; aspect-ratio: 4/3; width: 100%; }
+.card-img-placeholder { aspect-ratio: 4/3; background-color: {{ site.secondary_color }}; }
+
+/* Artifact shared */
+
+.artifact-meta { padding: 12px 0 4px; }
+
+/* Photo artifact */
+
+#osd-viewer {
+  width: 100%;
+  height: calc(100vh - 106px);
+  background: #111;
+}
+
+/* PDF artifact */
+
+body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
+
+#BookReader {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 500px;
+}
+
+.BRtoolbar { display: none !important; }
+.BRicon.info, .BRicon.share { display: none !important; }
+
+/* Default artifact */
+
+.artifact-preview img { max-width: 100%; max-height: 600px; object-fit: contain; }
