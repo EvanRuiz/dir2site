@@ -46,6 +46,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GenerateSiteCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ChooseLogoCommand))]
     private Dir2SiteModel? _dir2SiteConfig;
     
     partial void OnDirectoryRootChanged(string? value)
@@ -89,6 +90,26 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     private bool CanOpenBrowser() => IsServerRunning && !string.IsNullOrEmpty(ServerUrl);
+
+    [RelayCommand(CanExecute = nameof(CanChooseLogo))]
+    private async Task ChooseLogo()
+    {
+        if (TopLevel == null || DirectoryRoot == null || Dir2SiteConfig == null) return;
+
+        var files = await TopLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select Logo Image",
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("Images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.svg", "*.webp", "*.gif"] }]
+        });
+
+        if (files.Count == 0) return;
+
+        var fullPath = files[0].Path.LocalPath;
+        Dir2SiteConfig.Logo = Path.GetRelativePath(DirectoryRoot, fullPath);
+    }
+
+    private bool CanChooseLogo() => DirectoryRoot != null && Dir2SiteConfig != null;
 
     [RelayCommand]
     private async Task SelectDirectory()

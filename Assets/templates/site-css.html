@@ -14,12 +14,23 @@ body {
 }
 
 .navbar-site {
-  background-color: {{ site.primary_color }} !important;
+  background-color: {{ if site.navbar_dark }}{{ site.primary_color }}{{ else }}#ffffff{{ end }} !important;
+}
+
+.navbar-site .navbar-brand,
+.navbar-site .nav-link {
+  color: {{ if site.navbar_dark }}#ffffff{{ else }}{{ site.primary_color }}{{ end }} !important;
 }
 
 .navbar-site.no-breadcrumb {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
+
+{{ if !site.navbar_dark -}}
+.navbar-site {
+  border-bottom: 1px solid #DDD;
+}
+{{- end }}
 
 .breadcrumb-bar {
   background-color: {{ site.background_color }};
