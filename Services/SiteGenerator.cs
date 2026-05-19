@@ -235,10 +235,7 @@ public static class SiteGenerator
             {
                 var fileRel = Path.GetRelativePath(dir2siteDir, file);
                 var dest = Path.Combine(destDir, fileRel);
-                if (File.Exists(dest)) continue;
-                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                progress?.Report($"Copying {fileRel}...");
-                File.Copy(file, dest);
+                CopyFileIfNewer(file, dest, progress, fileRel);
                 count++;
             }
         }
@@ -250,8 +247,8 @@ public static class SiteGenerator
         if (string.IsNullOrEmpty(logoFilename)) return;
         var src = Path.Combine(directoryRoot, logoFilename);
         var dest = Path.Combine(siteRoot, logoFilename);
-        if (File.Exists(src) && !File.Exists(dest))
-            File.Copy(src, dest);
+        if (File.Exists(src))
+            CopyFileIfNewer(src, dest, progress: null);
     }
 
     private static void GenerateArtifactPage(
@@ -422,15 +419,8 @@ public static class SiteGenerator
         CopyEmbeddedDirectory($"{baseUri}images/", Path.Combine(destBase, "images"), progress);
     }
 
-    private static void CopyEmbeddedFile(string avaloniaUri, string dest, IProgress<string>? progress)
-    {
-        if (File.Exists(dest)) return;
-        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-        progress?.Report($"Copying {Path.GetFileName(dest)}...");
-        using var stream = AssetLoader.Open(new Uri(avaloniaUri));
-        using var outFile = File.Create(dest);
-        stream.CopyTo(outFile);
-    }
+    private static void CopyEmbeddedFile(string avaloniaUri, string dest, IProgress<string>? progress) =>
+        CopyEmbeddedIfStale(avaloniaUri, dest, progress);
 
     private static void CopyEmbeddedDirectory(
         string avaloniaBaseUri,
@@ -441,14 +431,8 @@ public static class SiteGenerator
         var assets = AssetLoader.GetAssets(baseUri, null);
         foreach (var assetUri in assets)
         {
-            var fileName = Path.GetFileName(assetUri.LocalPath);
-            var dest = Path.Combine(destDir, fileName);
-            if (File.Exists(dest)) continue;
-            Directory.CreateDirectory(destDir);
-            progress?.Report($"Copying {fileName}...");
-            using var stream = AssetLoader.Open(assetUri);
-            using var outFile = File.Create(dest);
-            stream.CopyTo(outFile);
+            var dest = Path.Combine(destDir, Path.GetFileName(assetUri.LocalPath));
+            CopyEmbeddedIfStale(assetUri.ToString(), dest, progress);
         }
     }
 
@@ -463,14 +447,38 @@ public static class SiteGenerator
         };
 
         foreach (var (uri, dest) in files)
-        {
-            if (File.Exists(dest)) continue;
-            progress?.Report($"Copying {Path.GetFileName(dest)}...");
-            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            using var stream = AssetLoader.Open(new Uri(uri));
-            using var outFile = File.Create(dest);
-            stream.CopyTo(outFile);
-        }
+            CopyEmbeddedIfStale(uri, dest, progress);
+    }
+
+    private static void CopyFileIfNewer(string src, string dest, IProgress<string>? progress, string? label = null)
+    {
+        if (File.Exists(dest) && File.GetLastWriteTimeUtc(dest) >= File.GetLastWriteTimeUtc(src)) return;
+        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+        progress?.Report($"Copying {label ?? Path.GetFileName(dest)}...");
+        File.Copy(src, dest, overwrite: true);
+    }
+
+    private static readonly DateTime _assemblyTime = GetAssemblyTime();
+
+    private static DateTime GetAssemblyTime()
+    {
+        var loc = typeof(SiteGenerator).Assembly.Location;
+        if (!string.IsNullOrEmpty(loc) && File.Exists(loc))
+            return File.GetLastWriteTimeUtc(loc);
+        var proc = Environment.ProcessPath;
+        if (!string.IsNullOrEmpty(proc) && File.Exists(proc))
+            return File.GetLastWriteTimeUtc(proc);
+        return DateTime.UtcNow;
+    }
+
+    private static void CopyEmbeddedIfStale(string avaloniaUri, string dest, IProgress<string>? progress)
+    {
+        if (File.Exists(dest) && File.GetLastWriteTimeUtc(dest) >= _assemblyTime) return;
+        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+        progress?.Report($"Copying {Path.GetFileName(dest)}...");
+        using var stream = AssetLoader.Open(new Uri(avaloniaUri));
+        using var outFile = File.Create(dest);
+        stream.CopyTo(outFile);
     }
 
     // Loads Scriban templates from Avalonia embedded resources under Assets/templates/
