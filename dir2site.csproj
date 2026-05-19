@@ -98,6 +98,8 @@
 &lt;/dict&gt;
 &lt;/plist&gt;" />
 
+        <Delete Files="$(_MacOSDir)/$(_ExeName).pdb" />
+
         <Exec Command="chmod +x &quot;$(_MacOSDir)/$(_ExeName)&quot;" />
 
         <Message Text="App bundle: $(_AppBundle)" Importance="High" />
