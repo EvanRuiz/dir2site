@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ site.title | html.escape }}{{ if page_title != site.title }} &mdash; {{ page_title | html.escape }}{{ end }}</title>
+  {{ include 'opengraph' }}
   <link rel="stylesheet" href="{{ prefix }}js/bootstrap/bootstrap.min.css">
   <link rel="stylesheet" href="{{ prefix }}css/site.css">
   {{ if breadcrumbs.size == 0 }}<style>body { padding-top: 66px; }</style>{{ end }}
