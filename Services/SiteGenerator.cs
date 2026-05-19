@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Platform;
 using dir2site.Models;
@@ -41,7 +42,7 @@ public static class SiteGenerator
         GeneratePage(rootItem, siteRoot, directoryRoot, config, topLevelFolders, 0,
             [], ref pageCount, pageTemplate, loader, progress);
 
-        int assetCount = CopyPreviewAssets(directoryRoot, siteRoot, progress);
+        int assetCount = CopyPreviewAssets(rootItem, directoryRoot, siteRoot, progress);
         CopyLogoAsset(directoryRoot, siteRoot, config.Logo);
 
         return $"Site generated: {pageCount} pages, {assetCount} assets → _site/";
@@ -119,12 +120,15 @@ public static class SiteGenerator
                 depth + 1, childAncestors, ref pageCount, pageTemplate, loader, progress);
         }
 
-        foreach (var child in node.Children.Where(c => !c.IsDirectory && c.Artifact != null))
+        var artifactChildren = node.Children.Where(c => !c.IsDirectory && c.Artifact != null).ToList();
+        int artifactPageCount = 0;
+        Parallel.ForEach(artifactChildren, child =>
         {
             GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
                 depth + 1, childAncestors, loader, progress);
-            pageCount++;
-        }
+            Interlocked.Increment(ref artifactPageCount);
+        });
+        pageCount += artifactPageCount;
     }
 
     private static ScriptObject MakeCrumb(string name, string href, bool isActive)
@@ -163,8 +167,10 @@ public static class SiteGenerator
             caption = item.Name;
             badge = "Folder";
             href = $"{item.Name}/";
-            var firstArtifact = FindFirstArtifactWithPreview(item);
-            imgSrc = firstArtifact != null ? GetPreviewSrc(firstArtifact, directoryRoot, prefix) : "";
+            var firstArtifactResult = FindFirstArtifactWithPreview(item);
+            imgSrc = firstArtifactResult.HasValue
+                ? GetPreviewSrc(firstArtifactResult.Value.Item1, directoryRoot, prefix, firstArtifactResult.Value.Item2)
+                : "";
         }
         else
         {
@@ -172,7 +178,7 @@ public static class SiteGenerator
             badge = item.Artifact?.Type.ToString() ?? "File";
             var stem = Path.GetFileNameWithoutExtension(item.Name);
             href = $"{stem}/";
-            imgSrc = item.Artifact != null ? GetPreviewSrc(item.Artifact, directoryRoot, prefix) : "";
+            imgSrc = item.Artifact != null ? GetPreviewSrc(item.Artifact, directoryRoot, prefix, stem) : "";
         }
 
         var obj = new ScriptObject();
@@ -184,7 +190,7 @@ public static class SiteGenerator
         return obj;
     }
 
-    private static Artifact? FindFirstArtifactWithPreview(DirectoryTreeItem node)
+    private static (Artifact, string)? FindFirstArtifactWithPreview(DirectoryTreeItem node)
     {
         // Prefer direct file children over anything in subdirectories.
         // Among direct children: photos/deepzooms first, then alphabetical by caption.
@@ -192,10 +198,10 @@ public static class SiteGenerator
             .Where(c => !c.IsDirectory && c.Artifact?.Preview != null)
             .OrderBy(c => c.Artifact!.Type is ArtifactType.Photo or ArtifactType.Deepzoom ? 0 : 1)
             .ThenBy(c => c.Artifact!.Caption ?? c.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(c => c.Artifact)
+            .Select(c => (c.Artifact!, Path.GetFileNameWithoutExtension(c.Name)))
             .FirstOrDefault();
 
-        if (direct != null) return direct;
+        if (direct.Item1 != null) return direct;
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
         {
@@ -206,40 +212,61 @@ public static class SiteGenerator
         return null;
     }
 
-    private static string GetPreviewSrc(Artifact artifact, string directoryRoot, string prefix)
+    private static string GetPreviewSrc(Artifact artifact, string directoryRoot, string prefix, string stem)
     {
         if (artifact.Preview == null || artifact.RootFolder == null) return "";
         var rel = Path.GetRelativePath(directoryRoot, artifact.RootFolder).Replace('\\', '/');
-        // Strip the leading .dir2site/ segment — previews are flattened into the folder when copied to _site/
-        var filename = artifact.Preview.Replace(".dir2site/", "").Replace(".dir2site\\", "");
-        return rel == "." ? $"{prefix}{filename}" : $"{prefix}{rel}/{filename}";
+        var filename = StripDir2SitePrefix(artifact.Preview, stem);
+        return rel == "." ? $"{prefix}{stem}/{filename}" : $"{prefix}{rel}/{stem}/{filename}";
+    }
+
+    // Strips the ".dir2site/{stem}/" prefix from a stored preview path, leaving the bare filename (or subpath).
+    private static string StripDir2SitePrefix(string path, string stem)
+    {
+        var normalized = path.Replace('\\', '/');
+        var prefix = $".dir2site/{stem}/";
+        return normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? normalized[prefix.Length..]
+            : Path.GetFileName(normalized);
     }
 
     private static string RelativePrefix(int depth) =>
         string.Concat(Enumerable.Repeat("../", depth));
 
-    private static int CopyPreviewAssets(string directoryRoot, string siteRoot, IProgress<string>? progress)
+    private static int CopyPreviewAssets(DirectoryTreeItem rootItem, string directoryRoot, string siteRoot, IProgress<string>? progress)
     {
         int count = 0;
-        foreach (var dir2siteDir in Directory.EnumerateDirectories(directoryRoot, ".dir2site", SearchOption.AllDirectories))
+        CopyFolderPreviews(rootItem, directoryRoot, siteRoot, ref count, progress);
+        return count;
+    }
+
+    // Walks the tree one directory at a time. Each artifact's previews live in .dir2site/{stem}/
+    // so they are self-contained — copy the whole subfolder straight into the artifact's output dir.
+    private static void CopyFolderPreviews(DirectoryTreeItem node, string directoryRoot, string siteRoot, ref int count, IProgress<string>? progress)
+    {
+        var folderRel = Path.GetRelativePath(directoryRoot, node.FullPath);
+
+        foreach (var child in node.Children.Where(c => !c.IsDirectory && c.Artifact != null))
         {
-            if (dir2siteDir.StartsWith(siteRoot, StringComparison.OrdinalIgnoreCase))
-                continue;
+            var stem = Path.GetFileNameWithoutExtension(child.Name);
+            var stemDir = Path.Combine(node.FullPath, ".dir2site", stem);
+            if (!Directory.Exists(stemDir)) continue;
 
-            var parentDir = Path.GetDirectoryName(dir2siteDir)!;
-            var rel = Path.GetRelativePath(directoryRoot, parentDir);
-            var destDir = rel == "." ? siteRoot : Path.Combine(siteRoot, rel);
-            Directory.CreateDirectory(destDir);
+            var destDir = folderRel == "."
+                ? Path.Combine(siteRoot, stem)
+                : Path.Combine(siteRoot, folderRel, stem);
 
-            foreach (var file in Directory.EnumerateFiles(dir2siteDir, "*", SearchOption.AllDirectories))
+            foreach (var file in Directory.EnumerateFiles(stemDir, "*", SearchOption.AllDirectories))
             {
-                var fileRel = Path.GetRelativePath(dir2siteDir, file);
+                var fileRel = Path.GetRelativePath(stemDir, file);
                 var dest = Path.Combine(destDir, fileRel);
                 CopyFileIfNewer(file, dest, progress, fileRel);
                 count++;
             }
         }
-        return count;
+
+        foreach (var child in node.Children.Where(c => c.IsDirectory))
+            CopyFolderPreviews(child, directoryRoot, siteRoot, ref count, progress);
     }
 
     private static void CopyLogoAsset(string directoryRoot, string siteRoot, string logoFilename)
@@ -292,8 +319,8 @@ public static class SiteGenerator
         var breadcrumbs = BuildBreadcrumbs(prefix, depth, ancestorNames, artifact.Caption ?? stem);
 
         var caption = artifact.Caption ?? stem;
-        var previewSrc = GetPreviewSrc(artifact, directoryRoot, prefix);
-        var previewLargeSrc = GetPreviewLargeSrc(artifact, directoryRoot);
+        var previewSrc = GetPreviewSrc(artifact, directoryRoot, prefix, stem);
+        var previewLargeSrc = GetPreviewLargeSrc(artifact, stem);
 
         var artifactObj = new ScriptObject();
         artifactObj.SetValue("caption", caption, readOnly: true);
@@ -308,7 +335,7 @@ public static class SiteGenerator
             case ArtifactType.Photo:
             case ArtifactType.Deepzoom:
                 // Prefer the full-res WebP; fall back to large preview if image not yet generated
-                var osdSrc = GetImageSrc(artifact);
+                var osdSrc = GetImageSrc(artifact, stem);
                 if (string.IsNullOrEmpty(osdSrc))
                     osdSrc = previewLargeSrc;
                 artifactObj.SetValue("image_src", osdSrc, readOnly: true);
@@ -341,23 +368,23 @@ public static class SiteGenerator
         File.WriteAllText(Path.Combine(outputDir, "index.html"), html, Encoding.UTF8);
     }
 
-    private static string GetPreviewLargeSrc(Artifact artifact, string directoryRoot)
+    private static string GetPreviewLargeSrc(Artifact artifact, string stem)
     {
         if (artifact.PreviewLarge == null) return "";
-        return "../" + artifact.PreviewLarge.Replace(".dir2site/", "").Replace(".dir2site\\", "");
+        return StripDir2SitePrefix(artifact.PreviewLarge, stem);
     }
 
-    // Full-resolution web WebP for the OSD viewer — one level up from the artifact detail page
-    private static string GetImageSrc(Artifact artifact)
+    // Full-resolution web WebP for the OSD viewer — co-located with the artifact detail page
+    private static string GetImageSrc(Artifact artifact, string stem)
     {
         if (artifact is not Photo photo || photo.Image == null) return "";
-        return "../" + photo.Image.Replace(".dir2site/", "").Replace(".dir2site\\", "");
+        return StripDir2SitePrefix(photo.Image, stem);
     }
 
     private static string BuildBookReaderData(Artifact artifact, string stem)
     {
         if (artifact.RootFolder == null) return "[]";
-        var jsonPath = Path.Combine(artifact.RootFolder, ".dir2site", $"{stem}.bookreader.json");
+        var jsonPath = Path.Combine(artifact.RootFolder, ".dir2site", stem, $"{stem}.bookreader.json");
         if (!File.Exists(jsonPath)) return "[]";
 
         try
@@ -376,7 +403,7 @@ public static class SiteGenerator
                     if (page?["uri"] is JsonValue uriVal)
                     {
                         var uri = uriVal.GetValue<string>();
-                        page["uri"] = "../" + uri;
+                        page["uri"] = uri;
                     }
                 }
             }
@@ -441,9 +468,9 @@ public static class SiteGenerator
         var files = new[]
         {
             ("avares://dir2site/Assets/js/bootstrap-5.3.8-dist/css/bootstrap.min.css",
-             Path.Combine(siteRoot, "bootstrap", "css", "bootstrap.min.css")),
+             Path.Combine(siteRoot, "js", "bootstrap", "bootstrap.min.css")),
             ("avares://dir2site/Assets/js/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js",
-             Path.Combine(siteRoot, "bootstrap", "js", "bootstrap.bundle.min.js")),
+             Path.Combine(siteRoot, "js", "bootstrap", "bootstrap.bundle.min.js")),
         };
 
         foreach (var (uri, dest) in files)
