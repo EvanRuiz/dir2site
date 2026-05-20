@@ -81,12 +81,17 @@ public static class PreviewGenerator
     }
 
     /// <summary>
-    /// Renders all PDF pages to JPEG, writes a BookReader JSON, and generates WebP catalog thumbnails
+    /// Renders all PDF pages, writes a BookReader JSON, and generates WebP catalog thumbnails
     /// from the first page. Returns (previewFileName, previewLargeFileName), or null on failure.
+    /// Pages are kept as JPEG only when the original binary JPEG is extracted without re-encoding;
+    /// all other cases (JP2, vector, MRC, or any resize) produce WebP.
     /// </summary>
     public static (string Preview, string PreviewLarge)? GeneratePdfPreviewsAndPages(
         string sourceFile,
         string traversalRoot,
+        bool resizeEnabled,
+        int maxWidth,
+        int quality,
         IProgress<string>? progress = null)
     {
         if (!IsPdfFile(sourceFile)) return null;
@@ -111,10 +116,10 @@ public static class PreviewGenerator
         if (File.Exists(previewPath) && File.Exists(previewLargePath) && File.Exists(bookReaderJsonPath))
             return (previewFileName, previewLargeFileName);
 
-        var fileName      = Path.GetFileName(sourceFile);
-        var parentName    = Path.GetFileName(fileDir);
-        var grandParent   = Path.GetFileName(Path.GetDirectoryName(fileDir) ?? string.Empty);
-        var displayName   = (string.IsNullOrEmpty(grandParent), string.IsNullOrEmpty(parentName)) switch
+        var fileName    = Path.GetFileName(sourceFile);
+        var parentName  = Path.GetFileName(fileDir);
+        var grandParent = Path.GetFileName(Path.GetDirectoryName(fileDir) ?? string.Empty);
+        var displayName = (string.IsNullOrEmpty(grandParent), string.IsNullOrEmpty(parentName)) switch
         {
             (_, true)      => fileName,
             (true, false)  => $"{parentName}/{fileName}",
@@ -127,54 +132,79 @@ public static class PreviewGenerator
 
         for (int pageIndex = 0; pageIndex < pageCount; pageIndex++)
         {
-            var pageNum  = pageIndex + 1;
-            var pageName = $"page-{pageNum:D4}.jpg";
-            var pagePath = Path.Combine(pagesDir, pageName);
-
+            var pageNum = pageIndex + 1;
             int imgWidth, imgHeight;
 
-            if (TryExtractJpegPage(pdfPigDoc, pageIndex, pagePath, out imgWidth, out imgHeight))
-            {
-                progress?.Report($"Extracting original jpeg {pageNum}/{pageCount}: {displayName}");
-            }
-            else if (TryGetJp2Info(pdfPigDoc, pageIndex, out imgWidth, out imgHeight,
-                         out bool singleLayer, out var jp2Raw))
-            {
-                if (singleLayer)
-                {
-                    progress?.Report($"Extracting original JP2 resaving as JPEG {pageNum}/{pageCount}: {displayName}");
+            // Determine whether to keep the original JPEG binary or re-encode as WebP.
+            // JPEG is kept only when: there is a single embedded JPEG AND no resize is needed.
+            bool keepJpeg = TryGetOriginalJpeg(pdfPigDoc, pageIndex,
+                                out var jpegBytes, out imgWidth, out imgHeight)
+                            && (!resizeEnabled || imgWidth <= maxWidth);
 
-                    // Single JP2 — no other layers to composite, transcode directly
-                    using var magick = new MagickImage(jp2Raw.ToArray());
-                    magick.Quality = 90;
-                    magick.Write(pagePath, MagickFormat.Jpg);
+            var pageName = keepJpeg ? $"page-{pageNum:D4}.jpg" : $"page-{pageNum:D4}.webp";
+            var pagePath = Path.Combine(pagesDir, pageName);
+
+            if (!File.Exists(pagePath))
+            {
+                if (keepJpeg)
+                {
+                    progress?.Report($"Extracting original JPEG {pageNum}/{pageCount}: {displayName}");
+                    File.WriteAllBytes(pagePath, jpegBytes.ToArray());
+                }
+                else if (!jpegBytes.IsEmpty)
+                {
+                    // Embedded JPEG that needs resizing — re-encode as WebP
+                    progress?.Report($"Resizing JPEG page {pageNum}/{pageCount}: {displayName}");
+                    using var magick = new MagickImage(jpegBytes.ToArray());
+                    if (resizeEnabled && magick.Width > maxWidth)
+                        magick.Resize((uint)maxWidth, (uint)((long)magick.Height * maxWidth / (long)magick.Width));
+                    imgWidth  = (int)magick.Width;
+                    imgHeight = (int)magick.Height;
+                    magick.Quality = (uint)quality;
+                    magick.Settings.SetDefine(MagickFormat.WebP, "method", "6");
+                    magick.Write(pagePath, MagickFormat.WebP);
+                }
+                else if (TryGetJp2Info(pdfPigDoc, pageIndex, out imgWidth, out imgHeight,
+                             out bool singleLayer, out var jp2Raw))
+                {
+                    if (singleLayer)
+                    {
+                        progress?.Report($"Transcoding JP2 page {pageNum}/{pageCount}: {displayName}");
+                        // JP2 single-layer requires re-encoding — always WebP
+                        using var magick = new MagickImage(jp2Raw.ToArray());
+                        if (resizeEnabled && magick.Width > maxWidth)
+                            magick.Resize((uint)maxWidth, (uint)((long)magick.Height * maxWidth / (long)magick.Width));
+                        imgWidth  = (int)magick.Width;
+                        imgHeight = (int)magick.Height;
+                        magick.Quality = (uint)quality;
+                        magick.Settings.SetDefine(MagickFormat.WebP, "method", "6");
+                        magick.Write(pagePath, MagickFormat.WebP);
+                    }
+                    else
+                    {
+                        progress?.Report($"Rendering layers at original image dimensions {pageNum}/{pageCount}: {displayName}");
+                        // MRC multi-layer — composite via PDFtoImage at JP2 pixel dimensions
+                        using var pageStream = File.OpenRead(sourceFile);
+#pragma warning disable CA1416
+                        using var bitmap = Conversion.ToImage(pageStream, pageIndex, leaveOpen: false,
+                            password: null, options: new RenderOptions(Dpi: 72, Width: imgWidth, Height: imgHeight));
+#pragma warning restore CA1416
+                        SaveBitmapAsWebP(bitmap, pagePath, resizeEnabled, maxWidth, quality, out imgWidth, out imgHeight);
+                    }
                 }
                 else
                 {
-                    progress?.Report($"Rendering layers at original image dimensions {pageNum}/{pageCount}: {displayName}");
-
-                    // MRC multi-layer — must composite via PDFtoImage at JP2 pixel dimensions
+                    // Vector or mixed page — render via PDFtoImage at standard DPI
+                    progress?.Report($"Rendering page {pageNum}/{pageCount}: {displayName}");
                     using var pageStream = File.OpenRead(sourceFile);
 #pragma warning disable CA1416
                     using var bitmap = Conversion.ToImage(pageStream, pageIndex, leaveOpen: false,
-                        password: null, options: new RenderOptions(Dpi: 72, Width: imgWidth, Height: imgHeight));
+                        password: null, options: new RenderOptions(Dpi: 150));
 #pragma warning restore CA1416
-                    using var encoded = bitmap.Encode(SKEncodedImageFormat.Jpeg, 85);
-                    File.WriteAllBytes(pagePath, encoded.ToArray());
+                    imgWidth  = bitmap.Width;
+                    imgHeight = bitmap.Height;
+                    SaveBitmapAsWebP(bitmap, pagePath, resizeEnabled, maxWidth, quality, out imgWidth, out imgHeight);
                 }
-            }
-            else
-            {
-                // Vector or mixed page — render via PDFtoImage at standard DPI
-                progress?.Report($"Rendering page {pageNum}/{pageCount}: {displayName}");
-                using var pageStream = File.OpenRead(sourceFile);
-#pragma warning disable CA1416
-                using var bitmap = Conversion.ToImage(pageStream, pageIndex, leaveOpen: false,
-                    password: null, options: new RenderOptions(Dpi: 150));
-#pragma warning restore CA1416
-                using var encoded = bitmap.Encode(SKEncodedImageFormat.Jpeg, 85);
-                File.WriteAllBytes(pagePath, encoded.ToArray());
-                imgWidth = bitmap.Width; imgHeight = bitmap.Height;
             }
 
             pages.Add(new BookReaderPage(imgWidth, imgHeight, $"{stem}_pages/{pageName}", pageNum.ToString()));
@@ -192,12 +222,14 @@ public static class PreviewGenerator
         return (previewFileName, previewLargeFileName);
     }
 
-    // Writes pagePath if the page has exactly one JPEG image (FF D8 magic). No re-encoding.
-    private static bool TryExtractJpegPage(
+    // Returns the raw JPEG bytes and dimensions if the page has exactly one embedded JPEG (FF D8 magic).
+    // Does not write anything — caller decides filename and whether to resize.
+    private static bool TryGetOriginalJpeg(
         UglyToad.PdfPig.PdfDocument doc, int pageIndex,
-        string pagePath, out int width, out int height)
+        out ReadOnlyMemory<byte> jpegBytes, out int width, out int height)
     {
         width = height = 0;
+        jpegBytes = ReadOnlyMemory<byte>.Empty;
         var page   = doc.GetPage(pageIndex + 1);
         var images = page.GetImages().ToList();
         if (images.Count != 1)
@@ -211,10 +243,29 @@ public static class PreviewGenerator
         if (span.Length < 2 || span[0] != 0xFF || span[1] != 0xD8)
             return false;
 
-        File.WriteAllBytes(pagePath, raw.ToArray());
-        width  = img.WidthInSamples;
-        height = img.HeightInSamples;
+        jpegBytes = raw;
+        width     = img.WidthInSamples;
+        height    = img.HeightInSamples;
         return true;
+    }
+
+    // Encodes an SKBitmap to WebP via a lossless PNG intermediate so ImageMagick handles
+    // the resize and WebP encode (method=6) consistently with other WebP output in this project.
+    private static void SaveBitmapAsWebP(SKBitmap bitmap, string destPath,
+        bool resizeEnabled, int maxWidth, int quality,
+        out int outWidth, out int outHeight)
+    {
+        using var pngEncoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+        using var magick = new MagickImage(pngEncoded.ToArray());
+
+        if (resizeEnabled && magick.Width > maxWidth)
+            magick.Resize((uint)maxWidth, (uint)((long)magick.Height * maxWidth / (long)magick.Width));
+
+        outWidth  = (int)magick.Width;
+        outHeight = (int)magick.Height;
+        magick.Quality = (uint)quality;
+        magick.Settings.SetDefine(MagickFormat.WebP, "method", "6");
+        magick.Write(destPath, MagickFormat.WebP);
     }
 
     // Returns JP2 image info for the page without saving anything.

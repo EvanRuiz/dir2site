@@ -10,4 +10,7 @@ public class Dir2SiteModel
     public string BackgroundColor { get; set; } = "#ffffff";
     public bool   NavbarDark      { get; set; } = true;
     public string SiteUrl         { get; set; } = string.Empty;
+    public bool   PdfResizeEnabled { get; set; } = true;
+    public int    PdfMaxWidth      { get; set; } = 1600;
+    public int    PdfQuality       { get; set; } = 80;
 }

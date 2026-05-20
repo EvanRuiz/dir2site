@@ -73,15 +73,23 @@ public static class DirectoryTraverser
 
     public static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles, IList<string> allArtifacts, IProgress<string>? progress = null)
     {
-        var jobs = new List<PreviewJob>();
-        var root = BuildTree(rootPath, allFiles, allArtifacts, rootPath, progress, jobs);
-        GeneratePreviews(jobs, progress);
-        return root;
+        return BuildTree(rootPath, allFiles, allArtifacts, rootPath, progress);
     }
 
-    // Walks the directory tree, parses YAML, and queues any missing previews into `jobs`.
-    // Preview generation itself is deferred so it can be parallelised after the full tree is known.
-    private static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles, IList<string> allArtifacts, string traversalRoot, IProgress<string>? progress, List<PreviewJob> jobs)
+    /// <summary>
+    /// Walks the in-memory tree, checks which previews are missing, and generates them
+    /// using the provided site config (for PDF resize/quality settings).
+    /// Call this during the Generate step so settings affect output.
+    /// </summary>
+    public static void GeneratePreviews(DirectoryTreeItem root, dir2site.Models.Dir2SiteModel config, IProgress<string>? progress)
+    {
+        var jobs = new List<PreviewJob>();
+        CollectPreviewJobs(root, jobs);
+        ExecutePreviewJobs(jobs, config, progress);
+    }
+
+    // Walks the directory tree and parses YAML. Preview generation is deferred to GeneratePreviews().
+    private static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles, IList<string> allArtifacts, string traversalRoot, IProgress<string>? progress)
     {
         var node = new DirectoryTreeItem(rootPath);
 
@@ -99,7 +107,7 @@ public static class DirectoryTraverser
                 if (ShouldIgnoreDirectory(dir))
                     continue;
 
-                var child = BuildTree(dir, allFiles, allArtifacts, traversalRoot, progress, jobs);
+                var child = BuildTree(dir, allFiles, allArtifacts, traversalRoot, progress);
                 node.Children.Add(child);
             }
 
@@ -113,36 +121,8 @@ public static class DirectoryTraverser
                 var artifact = YamlParser.TryParseYamlMeta(file, child.YamlErrors);
                 if (artifact != null)
                 {
-                    artifact.RootFolder = rootPath;
+                    artifact.RootFolder    = rootPath;
                     artifact.TraversalRoot = traversalRoot;
-                }
-
-                if (PreviewGenerator.IsImageFile(file))
-                {
-                    var photo = artifact as dir2site.Models.Photo;
-                    var alreadyHasAll = artifact != null
-                        && !string.IsNullOrEmpty(artifact.Preview)
-                        && !string.IsNullOrEmpty(artifact.PreviewLarge)
-                        && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                        && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge)
-                        && (photo == null || (
-                            !string.IsNullOrEmpty(photo.Image)
-                            && PreviewGenerator.PreviewFileExists(rootPath, photo.Image)));
-
-                    if (!alreadyHasAll && artifact != null)
-                        jobs.Add(new PreviewJob(file, traversalRoot, artifact, artifact.Type));
-                }
-
-                if (PreviewGenerator.IsPdfFile(file))
-                {
-                    var alreadyHasBoth = artifact != null
-                        && !string.IsNullOrEmpty(artifact.Preview)
-                        && !string.IsNullOrEmpty(artifact.PreviewLarge)
-                        && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                        && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge);
-
-                    if (!alreadyHasBoth && artifact != null)
-                        jobs.Add(new PreviewJob(file, traversalRoot, artifact, ArtifactType.Pdf));
                 }
 
                 allFiles.Add(file);
@@ -164,7 +144,45 @@ public static class DirectoryTraverser
 
     private sealed record PreviewJob(string FilePath, string TraversalRoot, Artifact Artifact, ArtifactType Type);
 
-    private static void GeneratePreviews(List<PreviewJob> jobs, IProgress<string>? progress)
+    private static void CollectPreviewJobs(DirectoryTreeItem node, List<PreviewJob> jobs)
+    {
+        if (!node.IsDirectory && node.Artifact is { } artifact)
+        {
+            var file     = node.FullPath;
+            var rootPath = artifact.RootFolder ?? Path.GetDirectoryName(file) ?? string.Empty;
+
+            if (PreviewGenerator.IsImageFile(file))
+            {
+                var photo = artifact as dir2site.Models.Photo;
+                var alreadyHasAll = !string.IsNullOrEmpty(artifact.Preview)
+                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
+                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
+                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge)
+                    && (photo == null || (
+                        !string.IsNullOrEmpty(photo.Image)
+                        && PreviewGenerator.PreviewFileExists(rootPath, photo.Image)));
+
+                if (!alreadyHasAll)
+                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact, artifact.Type));
+            }
+
+            if (PreviewGenerator.IsPdfFile(file))
+            {
+                var alreadyHasBoth = !string.IsNullOrEmpty(artifact.Preview)
+                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
+                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
+                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge);
+
+                if (!alreadyHasBoth)
+                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact, ArtifactType.Pdf));
+            }
+        }
+
+        foreach (var child in node.Children)
+            CollectPreviewJobs(child, jobs);
+    }
+
+    private static void ExecutePreviewJobs(List<PreviewJob> jobs, dir2site.Models.Dir2SiteModel config, IProgress<string>? progress)
     {
         Parallel.ForEach(jobs, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, job =>
         {
@@ -190,7 +208,10 @@ public static class DirectoryTraverser
                     }
                     case ArtifactType.Pdf:
                     {
-                        var result = PreviewGenerator.GeneratePdfPreviewsAndPages(job.FilePath, job.TraversalRoot, progress);
+                        var result = PreviewGenerator.GeneratePdfPreviewsAndPages(
+                            job.FilePath, job.TraversalRoot,
+                            config.PdfResizeEnabled, config.PdfMaxWidth, config.PdfQuality,
+                            progress);
                         if (!result.HasValue) return;
 
                         if (string.IsNullOrEmpty(job.Artifact.Preview))      job.Artifact.Preview      = result.Value.Preview;
