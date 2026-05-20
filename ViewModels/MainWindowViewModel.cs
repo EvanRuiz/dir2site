@@ -10,6 +10,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using dir2site.Models;
 using dir2site.Services;
+using Velopack;
+using Velopack.Sources;
 
 namespace dir2site.ViewModels;
 
@@ -18,6 +20,29 @@ public partial class MainWindowViewModel : ViewModelBase
     public TopLevel? TopLevel { get; set; }
 
     private readonly PreviewServerService _previewServer = new();
+
+    private readonly UpdateManager _updateManager = new(new GithubSource("https://github.com/EvanRuiz/dir2site", null, false));
+    private UpdateInfo? _pendingUpdate;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
+    private bool _updateAvailable;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestartAndUpdateCommand))]
+    private bool _updateReady;
+
+    [ObservableProperty]
+    private int _updateProgress;
+
+    [ObservableProperty]
+    private string _updateVersion = string.Empty;
+
+    public MainWindowViewModel()
+    {
+        _ = CheckForUpdatesAsync();
+    }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartServerCommand))]
@@ -204,4 +229,48 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private bool CanGenerateSite() =>
         DirectoryRoot != null && DirItems.Count > 0 && Dir2SiteConfig != null && !IsLoading;
+
+    public async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            _pendingUpdate = await _updateManager.CheckForUpdatesAsync();
+            if (_pendingUpdate != null)
+            {
+                UpdateVersion = _pendingUpdate.TargetFullRelease.Version.ToString();
+                UpdateAvailable = true;
+            }
+        }
+        catch
+        {
+            // silently ignore — no network, no GitHub release, dev environment, etc.
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDownloadUpdate))]
+    private async Task DownloadUpdate()
+    {
+        if (_pendingUpdate == null) return;
+        UpdateAvailable = false;
+        try
+        {
+            await _updateManager.DownloadUpdatesAsync(_pendingUpdate, p => UpdateProgress = p);
+            UpdateReady = true;
+        }
+        catch
+        {
+            UpdateAvailable = true;
+        }
+    }
+
+    private bool CanDownloadUpdate() => UpdateAvailable && !UpdateReady;
+
+    [RelayCommand(CanExecute = nameof(CanRestartAndUpdate))]
+    private void RestartAndUpdate()
+    {
+        if (_pendingUpdate == null) return;
+        _updateManager.ApplyUpdatesAndRestart(_pendingUpdate);
+    }
+
+    private bool CanRestartAndUpdate() => UpdateReady;
 }

@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            profile: Windows-x64
+            publish-dir: bin/x64/Release/net10.0/win-x64/publish
+          - os: windows-latest
+            rid: win-arm64
+            profile: Windows-ARM64
+            publish-dir: bin/ARM64/Release/net10.0/win-arm64/publish
+          - os: macos-latest
+            rid: osx-arm64
+            profile: macOS-ARM64
+            publish-dir: bin/ARM64/Release/net10.0/osx-arm64/publish
+          - os: macos-latest
+            rid: osx-x64
+            profile: macOS-x64
+            publish-dir: bin/x64/Release/net10.0/osx-x64/publish
+          - os: ubuntu-latest
+            rid: linux-x64
+            profile: linux-x64
+            publish-dir: bin/x64/Release/net10.0/linux-x64/publish
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        env:
+          RELEASE_VERSION: ${{ needs.create-release.outputs.version }}
+        run: dotnet publish /p:PublishProfile=${{ matrix.profile }} -c Release
+
+      - name: Restore tools
+        run: dotnet tool restore
+
+      - name: Pack with Velopack
+        env:
+          DOTNET_ROLL_FORWARD: LatestMajor
+        run: >
+          dotnet vpk pack
+          --packId dir2site
+          --packVersion ${{ needs.create-release.outputs.version }}
+          --packDir ${{ matrix.publish-dir }}
+          --outputDir releases/${{ matrix.rid }}
+          --runtime ${{ matrix.rid }}
+
+      - name: Upload release assets
+        run: gh release upload "${{ github.ref_name }}" releases/${{ matrix.rid }}/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -47,6 +47,42 @@
             </StackPanel>
         </Border>
 
+        <!-- Update notification banner -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource SystemAccentColor}"
+                Padding="10,6"
+                IsVisible="{Binding UpdateAvailable}">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="{Binding UpdateVersion, StringFormat='Update available: v{0}'}"
+                           FontSize="12"
+                           Foreground="White"
+                           VerticalAlignment="Center"/>
+                <ProgressBar Value="{Binding UpdateProgress}"
+                             Minimum="0" Maximum="100"
+                             Width="100" Height="8"
+                             VerticalAlignment="Center"
+                             IsVisible="{Binding UpdateProgress, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                <Button Content="Download"
+                        Command="{Binding DownloadUpdateCommand}"
+                        FontSize="11" Padding="8,3"/>
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource SystemAccentColor}"
+                Padding="10,6"
+                IsVisible="{Binding UpdateReady}">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="{Binding UpdateVersion, StringFormat='v{0} ready to install'}"
+                           FontSize="12"
+                           Foreground="White"
+                           VerticalAlignment="Center"/>
+                <Button Content="Restart &amp; Install"
+                        Command="{Binding RestartAndUpdateCommand}"
+                        FontSize="11" Padding="8,3"/>
+            </StackPanel>
+        </Border>
+
         <!-- Fill area: welcome panel or content, whichever is active -->
         <Panel>
 
