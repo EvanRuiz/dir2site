@@ -61,9 +61,11 @@
                              Minimum="0" Maximum="100"
                              Width="100" Height="8"
                              VerticalAlignment="Center"
-                             IsVisible="{Binding UpdateProgress, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                             IsVisible="{Binding IsDownloading}"/>
                 <Button Content="Download"
                         Command="{Binding DownloadUpdateCommand}"
+                        IsVisible="{Binding !IsDownloading}"
+                        Foreground="White"
                         FontSize="11" Padding="8,3"/>
             </StackPanel>
         </Border>
@@ -79,6 +81,7 @@
                            VerticalAlignment="Center"/>
                 <Button Content="Restart &amp; Install"
                         Command="{Binding RestartAndUpdateCommand}"
+                        Foreground="White"
                         FontSize="11" Padding="8,3"/>
             </StackPanel>
         </Border>
