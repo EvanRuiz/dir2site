@@ -30,10 +30,10 @@ public partial class OverlayViewModel : ViewModelBase
     private double _radius;
     
     [ObservableProperty]
-    private IBrush _fill;
+    private IBrush _fill = Brushes.Transparent;
 
     [ObservableProperty]
-    private IBrush _stroke;
+    private IBrush _stroke = Brushes.Transparent;
     
     [ObservableProperty]
     private int _strokeThickness;

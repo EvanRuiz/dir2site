@@ -155,8 +155,10 @@ public static class PreviewGenerator
 
                     // MRC multi-layer — must composite via PDFtoImage at JP2 pixel dimensions
                     using var pageStream = File.OpenRead(sourceFile);
+#pragma warning disable CA1416
                     using var bitmap = Conversion.ToImage(pageStream, pageIndex, leaveOpen: false,
                         password: null, options: new RenderOptions(Dpi: 72, Width: imgWidth, Height: imgHeight));
+#pragma warning restore CA1416
                     using var encoded = bitmap.Encode(SKEncodedImageFormat.Jpeg, 85);
                     File.WriteAllBytes(pagePath, encoded.ToArray());
                 }
@@ -166,8 +168,10 @@ public static class PreviewGenerator
                 // Vector or mixed page — render via PDFtoImage at standard DPI
                 progress?.Report($"Rendering page {pageNum}/{pageCount}: {displayName}");
                 using var pageStream = File.OpenRead(sourceFile);
+#pragma warning disable CA1416
                 using var bitmap = Conversion.ToImage(pageStream, pageIndex, leaveOpen: false,
                     password: null, options: new RenderOptions(Dpi: 150));
+#pragma warning restore CA1416
                 using var encoded = bitmap.Encode(SKEncodedImageFormat.Jpeg, 85);
                 File.WriteAllBytes(pagePath, encoded.ToArray());
                 imgWidth = bitmap.Width; imgHeight = bitmap.Height;
