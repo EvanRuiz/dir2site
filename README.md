@@ -42,6 +42,8 @@ Dir2Site is a open-source cross-platform desktop application that walks your loc
 
 Dir2Site is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
 
+Third-party open-source components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Build from source
 
 Requires [.NET 10 SDK](https://dotnet.microsoft.com/download).
