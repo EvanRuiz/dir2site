@@ -10,6 +10,7 @@
         <Configurations>Debug;Release</Configurations>
         <Platforms>AnyCPU;ARM64;x64</Platforms>
         <LangVersion>14</LangVersion>
+        <ApplicationIcon>Assets\app\dir2site-icon.ico</ApplicationIcon>
     </PropertyGroup>
 
     <PropertyGroup>
@@ -47,8 +48,7 @@
         <PackageReference Include="EmbedIO" Version="3.5.2" />
     </ItemGroup>
 
-    <Target Name="CreateMacAppBundle" AfterTargets="Publish"
-            Condition="$(RuntimeIdentifier.StartsWith('osx'))">
+    <Target Name="CreateMacAppBundle" AfterTargets="Publish" Condition="$(RuntimeIdentifier.StartsWith('osx'))">
         <PropertyGroup>
             <_AppName>Dir2Site</_AppName>
             <_ExeName>dir2site</_ExeName>
@@ -64,39 +64,11 @@
         <ItemGroup>
             <_PublishedItems Include="$(PublishDir)**/*" />
         </ItemGroup>
-        <Copy SourceFiles="@(_PublishedItems)"
-              DestinationFolder="$(_MacOSDir)/%(RecursiveDir)"
-              SkipUnchangedFiles="false" />
+        <Copy SourceFiles="@(_PublishedItems)" DestinationFolder="$(_MacOSDir)/%(RecursiveDir)" SkipUnchangedFiles="false" />
 
-        <WriteLinesToFile File="$(_ContentsDir)/Info.plist" Overwrite="true" Lines="
-&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
-&lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot; &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;
-&lt;plist version=&quot;1.0&quot;&gt;
-&lt;dict&gt;
-    &lt;key&gt;CFBundleExecutable&lt;/key&gt;
-    &lt;string&gt;$(_ExeName)&lt;/string&gt;
-    &lt;key&gt;CFBundleIdentifier&lt;/key&gt;
-    &lt;string&gt;com.evanruiz.dir2site&lt;/string&gt;
-    &lt;key&gt;CFBundleName&lt;/key&gt;
-    &lt;string&gt;$(_AppName)&lt;/string&gt;
-    &lt;key&gt;CFBundleDisplayName&lt;/key&gt;
-    &lt;string&gt;$(_AppName)&lt;/string&gt;
-    &lt;key&gt;CFBundlePackageType&lt;/key&gt;
-    &lt;string&gt;APPL&lt;/string&gt;
-    &lt;key&gt;CFBundleShortVersionString&lt;/key&gt;
-    &lt;string&gt;1.0.0&lt;/string&gt;
-    &lt;key&gt;CFBundleVersion&lt;/key&gt;
-    &lt;string&gt;1&lt;/string&gt;
-    &lt;key&gt;NSHighResolutionCapable&lt;/key&gt;
-    &lt;true/&gt;
-    &lt;key&gt;NSPrincipalClass&lt;/key&gt;
-    &lt;string&gt;NSApplication&lt;/string&gt;
-    &lt;key&gt;LSMinimumSystemVersion&lt;/key&gt;
-    &lt;string&gt;13.0&lt;/string&gt;
-    &lt;key&gt;LSApplicationCategoryType&lt;/key&gt;
-    &lt;string&gt;public.app-category.developer-tools&lt;/string&gt;
-&lt;/dict&gt;
-&lt;/plist&gt;" />
+        <WriteLinesToFile File="$(_ContentsDir)/Info.plist" Overwrite="true" Lines="&#xA;&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;&#xA;&lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot; &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;&#xA;&lt;plist version=&quot;1.0&quot;&gt;&#xA;&lt;dict&gt;&#xA;    &lt;key&gt;CFBundleExecutable&lt;/key&gt;&#xA;    &lt;string&gt;$(_ExeName)&lt;/string&gt;&#xA;    &lt;key&gt;CFBundleIdentifier&lt;/key&gt;&#xA;    &lt;string&gt;com.evanruiz.dir2site&lt;/string&gt;&#xA;    &lt;key&gt;CFBundleName&lt;/key&gt;&#xA;    &lt;string&gt;$(_AppName)&lt;/string&gt;&#xA;    &lt;key&gt;CFBundleDisplayName&lt;/key&gt;&#xA;    &lt;string&gt;$(_AppName)&lt;/string&gt;&#xA;    &lt;key&gt;CFBundlePackageType&lt;/key&gt;&#xA;    &lt;string&gt;APPL&lt;/string&gt;&#xA;    &lt;key&gt;CFBundleShortVersionString&lt;/key&gt;&#xA;    &lt;string&gt;1.0.0&lt;/string&gt;&#xA;    &lt;key&gt;CFBundleVersion&lt;/key&gt;&#xA;    &lt;string&gt;1&lt;/string&gt;&#xA;    &lt;key&gt;NSHighResolutionCapable&lt;/key&gt;&#xA;    &lt;true/&gt;&#xA;    &lt;key&gt;NSPrincipalClass&lt;/key&gt;&#xA;    &lt;string&gt;NSApplication&lt;/string&gt;&#xA;    &lt;key&gt;LSMinimumSystemVersion&lt;/key&gt;&#xA;    &lt;string&gt;13.0&lt;/string&gt;&#xA;    &lt;key&gt;LSApplicationCategoryType&lt;/key&gt;&#xA;    &lt;string&gt;public.app-category.developer-tools&lt;/string&gt;&#xA;    &lt;key&gt;CFBundleIconFile&lt;/key&gt;&#xA;    &lt;string&gt;dir2site-icon&lt;/string&gt;&#xA;&lt;/dict&gt;&#xA;&lt;/plist&gt;" />
+
+        <Copy SourceFiles="Assets/app/dir2site-icon.icns" DestinationFolder="$(_ResourcesDir)" />
 
         <Delete Files="$(_MacOSDir)/$(_ExeName).pdb" />
 
