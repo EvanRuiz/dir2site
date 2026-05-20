@@ -216,11 +216,17 @@ public partial class MainWindowViewModel : ViewModelBase
             YamlParser.SerializeToYaml(Dir2SiteConfig));
 
         IsLoading = true;
-        StatusText = "Generating site...";
         var progress = new Progress<string>(msg => StatusText = msg);
 
+        // Generate previews first so site settings (PDF resize/quality) affect output
+        StatusText = "Generating previews...";
+        var config = Dir2SiteConfig;
+        var root   = DirItems[0];
+        await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, progress));
+
+        StatusText = "Generating site...";
         var summary = await Task.Run(() =>
-            SiteGenerator.Generate(DirectoryRoot, DirItems[0], Dir2SiteConfig, progress));
+            SiteGenerator.Generate(DirectoryRoot, root, config, progress));
 
         IsLoading = false;
         StatusText = summary;

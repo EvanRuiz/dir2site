@@ -150,46 +150,78 @@
                     <StackPanel Spacing="6">
                         <TextBlock Text="Site Settings" FontWeight="Bold" FontSize="14"/>
 
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Label Width="140">Title</Label>
-                            <TextBox Text="{Binding Dir2SiteConfig.Title}" Width="260"/>
-                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="24" VerticalAlignment="Top">
 
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Label Width="140">Footer</Label>
-                            <TextBox Text="{Binding Dir2SiteConfig.Footer}" Width="260"/>
-                        </StackPanel>
+                            <!-- Left column: general site settings -->
+                            <StackPanel Spacing="6">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Label Width="140">Title</Label>
+                                    <TextBox Text="{Binding Dir2SiteConfig.Title}" Width="260"/>
+                                </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Label Width="140">Site URL</Label>
-                            <TextBox Text="{Binding Dir2SiteConfig.SiteUrl}" Width="260" Watermark="https://example.com"/>
-                        </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Label Width="140">Footer</Label>
+                                    <TextBox Text="{Binding Dir2SiteConfig.Footer}" Width="260"/>
+                                </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Label Width="140">Logo (filename)</Label>
-                            <TextBox Text="{Binding Dir2SiteConfig.Logo}" Width="200"/>
-                            <Button Content="Choose..." Command="{Binding ChooseLogoCommand}"/>
-                        </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Label Width="140">Site URL</Label>
+                                    <TextBox Text="{Binding Dir2SiteConfig.SiteUrl}" Width="260" Watermark="https://example.com"/>
+                                </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Label Width="140">Primary Color</Label>
-                            <TextBox Text="{Binding Dir2SiteConfig.PrimaryColor}" Width="120"/>
-                        </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Label Width="140">Logo (filename)</Label>
+                                    <TextBox Text="{Binding Dir2SiteConfig.Logo}" Width="200"/>
+                                    <Button Content="Choose..." Command="{Binding ChooseLogoCommand}"/>
+                                </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Label Width="140">Secondary Color</Label>
-                            <TextBox Text="{Binding Dir2SiteConfig.SecondaryColor}" Width="120"/>
-                        </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Label Width="140">Primary Color</Label>
+                                    <TextBox Text="{Binding Dir2SiteConfig.PrimaryColor}" Width="120"/>
+                                </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Label Width="140">Background Color</Label>
-                            <TextBox Text="{Binding Dir2SiteConfig.BackgroundColor}" Width="120"/>
-                        </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Label Width="140">Secondary Color</Label>
+                                    <TextBox Text="{Binding Dir2SiteConfig.SecondaryColor}" Width="120"/>
+                                </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Label Width="140">Navbar Style</Label>
-                            <RadioButton GroupName="NavbarStyle" Content="Dark" IsChecked="{Binding Dir2SiteConfig.NavbarDark}"/>
-                            <RadioButton GroupName="NavbarStyle" Content="Light" IsChecked="{Binding Dir2SiteConfig.NavbarDark, Converter={x:Static BoolConverters.Not}}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Label Width="140">Background Color</Label>
+                                    <TextBox Text="{Binding Dir2SiteConfig.BackgroundColor}" Width="120"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Label Width="140">Navbar Style</Label>
+                                    <RadioButton GroupName="NavbarStyle" Content="Dark" IsChecked="{Binding Dir2SiteConfig.NavbarDark}"/>
+                                    <RadioButton GroupName="NavbarStyle" Content="Light" IsChecked="{Binding Dir2SiteConfig.NavbarDark, Converter={x:Static BoolConverters.Not}}"/>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!-- Right column: PDF export settings -->
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="PDF Export" FontWeight="SemiBold" FontSize="12"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <RadioButton GroupName="PdfExportMode"
+                                                 Content="Extract pages at a max width of:"
+                                                 IsChecked="{Binding Dir2SiteConfig.PdfResizeEnabled}"/>
+                                    <NumericUpDown Value="{Binding Dir2SiteConfig.PdfMaxWidth}"
+                                                   Minimum="100" Maximum="10000" Increment="100"
+                                                   Width="120"
+                                                   IsEnabled="{Binding Dir2SiteConfig.PdfResizeEnabled}"/>
+                                    <TextBlock Text="px" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <RadioButton GroupName="PdfExportMode"
+                                             Content="Extract pages at original resolution and quality if possible"
+                                             IsChecked="{Binding Dir2SiteConfig.PdfResizeEnabled,
+                                                         Converter={x:Static BoolConverters.Not}}"/>
+                                <Separator HorizontalAlignment="Stretch"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <Label Width="160">Default Image Quality:</Label>
+                                    <NumericUpDown Value="{Binding Dir2SiteConfig.PdfQuality}"
+                                                   Minimum="1" Maximum="100" Increment="5"
+                                                   Width="120"/>
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,8,0,0">
