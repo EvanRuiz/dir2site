@@ -10,6 +10,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using dir2site.Models;
 using dir2site.Services;
+using Velopack;
+using Velopack.Sources;
 
 namespace dir2site.ViewModels;
 
@@ -18,6 +20,11 @@ public partial class MainWindowViewModel : ViewModelBase
     public TopLevel? TopLevel { get; set; }
 
     private readonly PreviewServerService _previewServer = new();
+
+    public MainWindowViewModel()
+    {
+        _ = CheckForUpdatesAsync();
+    }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartServerCommand))]
@@ -204,4 +211,19 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private bool CanGenerateSite() =>
         DirectoryRoot != null && DirItems.Count > 0 && Dir2SiteConfig != null && !IsLoading;
+
+    public async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            var mgr = new UpdateManager(new GithubSource("https://github.com/EvanRuiz/dir2site", null, false));
+            var update = await mgr.CheckForUpdatesAsync();
+            if (update != null)
+                StatusText = $"Update available: v{update.TargetFullRelease.Version} — restart to install";
+        }
+        catch
+        {
+            // silently ignore — no network, no GitHub release, dev environment, etc.
+        }
+    }
 }
