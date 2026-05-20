@@ -21,6 +21,24 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private readonly PreviewServerService _previewServer = new();
 
+    private readonly UpdateManager _updateManager = new(new GithubSource("https://github.com/EvanRuiz/dir2site", null, false));
+    private UpdateInfo? _pendingUpdate;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
+    private bool _updateAvailable;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestartAndUpdateCommand))]
+    private bool _updateReady;
+
+    [ObservableProperty]
+    private int _updateProgress;
+
+    [ObservableProperty]
+    private string _updateVersion = string.Empty;
+
     public MainWindowViewModel()
     {
         _ = CheckForUpdatesAsync();
@@ -216,14 +234,43 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            var mgr = new UpdateManager(new GithubSource("https://github.com/EvanRuiz/dir2site", null, false));
-            var update = await mgr.CheckForUpdatesAsync();
-            if (update != null)
-                StatusText = $"Update available: v{update.TargetFullRelease.Version} — restart to install";
+            _pendingUpdate = await _updateManager.CheckForUpdatesAsync();
+            if (_pendingUpdate != null)
+            {
+                UpdateVersion = _pendingUpdate.TargetFullRelease.Version.ToString();
+                UpdateAvailable = true;
+            }
         }
         catch
         {
             // silently ignore — no network, no GitHub release, dev environment, etc.
         }
     }
+
+    [RelayCommand(CanExecute = nameof(CanDownloadUpdate))]
+    private async Task DownloadUpdate()
+    {
+        if (_pendingUpdate == null) return;
+        UpdateAvailable = false;
+        try
+        {
+            await _updateManager.DownloadUpdatesAsync(_pendingUpdate, p => UpdateProgress = p);
+            UpdateReady = true;
+        }
+        catch
+        {
+            UpdateAvailable = true;
+        }
+    }
+
+    private bool CanDownloadUpdate() => UpdateAvailable && !UpdateReady;
+
+    [RelayCommand(CanExecute = nameof(CanRestartAndUpdate))]
+    private void RestartAndUpdate()
+    {
+        if (_pendingUpdate == null) return;
+        _updateManager.ApplyUpdatesAndRestart(_pendingUpdate);
+    }
+
+    private bool CanRestartAndUpdate() => UpdateReady;
 }
