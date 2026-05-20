@@ -43,7 +43,7 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
