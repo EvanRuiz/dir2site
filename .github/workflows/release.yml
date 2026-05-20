@@ -4,16 +4,31 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to release (e.g. v1.0.0)'
+        required: true
 
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
-      - name: Extract version from tag
+      - name: Resolve tag and version
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.version }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
       - name: Validate version format
         run: |
@@ -26,6 +41,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -60,6 +76,8 @@ jobs:
             publish-dir: bin/x64/Release/net10.0/linux-x64/publish
 
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -88,6 +106,6 @@ jobs:
           --runtime ${{ matrix.rid }}
 
       - name: Upload release assets
-        run: gh release upload "${{ github.ref_name }}" releases/${{ matrix.rid }}/* --clobber
+        run: gh release upload "${{ needs.create-release.outputs.tag }}" releases/${{ matrix.rid }}/* --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
