@@ -106,6 +106,7 @@ jobs:
           --packDir ${{ matrix.app-bundle || matrix.publish-dir }}
           --outputDir releases/${{ matrix.rid }}
           --runtime ${{ matrix.rid }}
+          --channel ${{ matrix.rid }}
 
       - name: Create DMG (macOS only)
         if: startsWith(matrix.os, 'macos')

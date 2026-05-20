@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
@@ -21,7 +22,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private readonly PreviewServerService _previewServer = new();
 
-    private readonly UpdateManager _updateManager = new(new GithubSource("https://github.com/EvanRuiz/dir2site", null, false));
+    private readonly UpdateManager _updateManager = new(
+        new GithubSource("https://github.com/EvanRuiz/dir2site", null, false),
+        new UpdateOptions { ExplicitChannel = RuntimeInformation.RuntimeIdentifier });
     private UpdateInfo? _pendingUpdate;
 
     [ObservableProperty]
@@ -32,6 +35,10 @@ public partial class MainWindowViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
     [NotifyCanExecuteChangedFor(nameof(RestartAndUpdateCommand))]
     private bool _updateReady;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
+    private bool _isDownloading;
 
     [ObservableProperty]
     private int _updateProgress;
@@ -257,19 +264,20 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task DownloadUpdate()
     {
         if (_pendingUpdate == null) return;
-        UpdateAvailable = false;
+        IsDownloading = true;
         try
         {
             await _updateManager.DownloadUpdatesAsync(_pendingUpdate, p => UpdateProgress = p);
+            UpdateAvailable = false;
             UpdateReady = true;
         }
-        catch
+        finally
         {
-            UpdateAvailable = true;
+            IsDownloading = false;
         }
     }
 
-    private bool CanDownloadUpdate() => UpdateAvailable && !UpdateReady;
+    private bool CanDownloadUpdate() => UpdateAvailable && !UpdateReady && !IsDownloading;
 
     [RelayCommand(CanExecute = nameof(CanRestartAndUpdate))]
     private void RestartAndUpdate()
