@@ -15,16 +15,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - name: Extract version from tag
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             INPUT="${{ github.event.inputs.version }}"
-            echo "version=${INPUT#v}" >> $GITHUB_OUTPUT
+            VERSION="${INPUT#v}"
           else
-            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+            VERSION="${GITHUB_REF_NAME#v}"
           fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
 
       - name: Validate version format
         run: |
@@ -37,6 +40,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -99,6 +103,6 @@ jobs:
           --runtime ${{ matrix.rid }}
 
       - name: Upload release assets
-        run: gh release upload "${{ github.ref_name }}" releases/${{ matrix.rid }}/* --clobber
+        run: gh release upload "${{ needs.create-release.outputs.tag }}" releases/${{ matrix.rid }}/* --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
