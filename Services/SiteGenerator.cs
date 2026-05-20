@@ -543,9 +543,6 @@ public static class SiteGenerator
 
     private static DateTime GetAssemblyTime()
     {
-        var loc = typeof(SiteGenerator).Assembly.Location;
-        if (!string.IsNullOrEmpty(loc) && File.Exists(loc))
-            return File.GetLastWriteTimeUtc(loc);
         var proc = Environment.ProcessPath;
         if (!string.IsNullOrEmpty(proc) && File.Exists(proc))
             return File.GetLastWriteTimeUtc(proc);
