@@ -66,10 +66,12 @@ jobs:
             rid: osx-arm64
             profile: macOS-ARM64
             publish-dir: bin/ARM64/Release/net10.0/osx-arm64/publish
+            app-bundle: bin/ARM64/Release/net10.0/osx-arm64/Dir2Site.app
           - os: macos-latest
             rid: osx-x64
             profile: macOS-x64
             publish-dir: bin/x64/Release/net10.0/osx-x64/publish
+            app-bundle: bin/x64/Release/net10.0/osx-x64/Dir2Site.app
           - os: ubuntu-latest
             rid: linux-x64
             profile: linux-x64
@@ -80,9 +82,9 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -101,9 +103,34 @@ jobs:
           dotnet vpk pack
           --packId dir2site
           --packVersion ${{ needs.create-release.outputs.version }}
-          --packDir ${{ matrix.publish-dir }}
+          --packDir ${{ matrix.app-bundle || matrix.publish-dir }}
           --outputDir releases/${{ matrix.rid }}
           --runtime ${{ matrix.rid }}
+
+      - name: Create DMG (macOS only)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew install create-dmg
+          mkdir -p dmg-source
+          unzip "releases/${{ matrix.rid }}/"*Portable.zip -d dmg-source/
+          # Velopack outputs the app using the lowercase packId
+          APP_NAME=$(ls dmg-source/ | grep -i "\.app$" | head -1)
+          # Sign after Velopack unpacks — signing before pack breaks the
+          # signature because Velopack modifies the bundle contents.
+          codesign --deep --force --sign - "dmg-source/${APP_NAME}"
+          # Detach any stale volume from a parallel job on the same host
+          hdiutil detach "/Volumes/Dir2Site" 2>/dev/null || true
+          create-dmg \
+            --volname "Dir2Site" \
+            --volicon "Assets/app/dir2site-icon.icns" \
+            --window-pos 200 120 \
+            --window-size 540 360 \
+            --icon-size 128 \
+            --icon "${APP_NAME}" 150 175 \
+            --hide-extension "${APP_NAME}" \
+            --app-drop-link 390 175 \
+            "releases/${{ matrix.rid }}/Dir2Site-${{ needs.create-release.outputs.version }}-${{ matrix.rid }}.dmg" \
+            "dmg-source/"
 
       - name: Upload release assets
         run: gh release upload "${{ needs.create-release.outputs.tag }}" releases/${{ matrix.rid }}/* --clobber
