@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System.IO;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
