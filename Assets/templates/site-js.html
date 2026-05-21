@@ -1,0 +1,19 @@
+var _brScrollZooming = false;
+window.addEventListener('wheel', function(e) {
+  if (!_brScrollZooming && !e.ctrlKey && e.target.closest && e.target.closest('#BookReader')) {
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    _brScrollZooming = true;
+    window.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: false,
+      cancelable: true,
+      deltaX: e.deltaX,
+      deltaY: e.deltaY,
+      deltaMode: e.deltaMode,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      ctrlKey: true
+    }));
+    _brScrollZooming = false;
+  }
+}, { capture: true, passive: false });
