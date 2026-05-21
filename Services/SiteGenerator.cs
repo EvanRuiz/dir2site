@@ -6,7 +6,6 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Platform;
 using dir2site.Models;
@@ -89,21 +88,19 @@ public static class SiteGenerator
                         depth + 1, childAncestors, ref pageCount, pageTemplate, loader, progress, errors);
                 }
                 var artifactChildrenSkip = node.Children.Where(c => !c.IsDirectory && c.Artifact != null).ToList();
-                int skippedArtifactCount = 0;
-                Parallel.ForEach(artifactChildrenSkip, child =>
+                foreach (var child in artifactChildrenSkip)
                 {
                     try
                     {
                         GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
                             depth + 1, childAncestors, loader, progress);
-                        Interlocked.Increment(ref skippedArtifactCount);
+                        pageCount++;
                     }
                     catch (Exception ex)
                     {
                         errors.Add($"{child.Name}: {ex.Message}");
                     }
-                });
-                pageCount += skippedArtifactCount;
+                }
                 return;
             }
         }
@@ -174,21 +171,19 @@ public static class SiteGenerator
         }
 
         var artifactChildren = node.Children.Where(c => !c.IsDirectory && c.Artifact != null).ToList();
-        int artifactPageCount = 0;
-        Parallel.ForEach(artifactChildren, child =>
+        foreach (var child in artifactChildren)
         {
             try
             {
                 GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
                     depth + 1, childAncestors, loader, progress);
-                Interlocked.Increment(ref artifactPageCount);
+                pageCount++;
             }
             catch (Exception ex)
             {
                 errors.Add($"{child.Name}: {ex.Message}");
             }
-        });
-        pageCount += artifactPageCount;
+        }
     }
 
     private static DateTime GetCollectionSourceMtime(DirectoryTreeItem node)
