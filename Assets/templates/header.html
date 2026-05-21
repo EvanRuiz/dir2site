@@ -8,13 +8,18 @@
           {{ site.title | html.escape }}
           {{- end }}
         </a>
-        <ul class="navbar-nav ms-auto flex-row gap-3">
-          {{ for folder in nav_folders -}}
-          <li class="nav-item">
-            <a class="nav-link" href="{{ folder.href }}">{{ folder.name | html.escape }}</a>
-          </li>
-          {{ end -}}
-        </ul>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav ms-auto">
+            {{ for folder in nav_folders -}}
+            <li class="nav-item">
+              <a class="nav-link" href="{{ folder.href }}">{{ folder.name | html.escape }}</a>
+            </li>
+            {{ end -}}
+          </ul>
+        </div>
       </div>
     </nav>
 
