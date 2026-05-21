@@ -515,6 +515,12 @@ public static class SiteGenerator
         var dest = Path.Combine(siteRoot, "css", "site.css");
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         File.WriteAllText(dest, css);
+
+        var jsTemplate = Template.Parse(loader.LoadByName("site-js"), "site-js.html");
+        var js = jsTemplate.Render(context);
+        var jsDest = Path.Combine(siteRoot, "js", "site.js");
+        Directory.CreateDirectory(Path.GetDirectoryName(jsDest)!);
+        File.WriteAllText(jsDest, js);
     }
 
     private static void CopyBootstrapAssets(string siteRoot, IProgress<string>? progress)
