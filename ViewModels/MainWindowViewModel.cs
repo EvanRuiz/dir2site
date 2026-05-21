@@ -48,6 +48,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public MainWindowViewModel()
     {
+        _statusText = _updateManager.IsInstalled
+            ? $"v{_updateManager.CurrentVersion}"
+            : "Development Build";
         _ = CheckForUpdatesAsync();
     }
 
@@ -66,6 +69,25 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _statusText = "...";
+
+    [ObservableProperty]
+    private string _errorText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasErrors;
+
+    [RelayCommand]
+    private void DismissErrors()
+    {
+        ErrorText = string.Empty;
+        HasErrors = false;
+    }
+
+    private void AppendError(string message)
+    {
+        ErrorText = HasErrors ? $"{ErrorText}\n{message}" : message;
+        HasErrors = true;
+    }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartServerCommand))]
@@ -154,42 +176,45 @@ public partial class MainWindowViewModel : ViewModelBase
             AllowMultiple = false
         });
 
-        if(folders.Count > 0)
-        {
-            DirectoryRoot = folders[0].Path.LocalPath;
-        }
-        else
-        {
-            DirectoryRoot = null;
-        }
+        if (folders.Count == 0) return;
 
+        DirectoryRoot = folders[0].Path.LocalPath;
         await LoadDirectory();
     }
     
     private async Task LoadDirectory()
     {
         DirItems.Clear();
-        if(DirectoryRoot == null) return;
+        if (DirectoryRoot == null) return;
 
         IsLoading = true;
         StatusText = "Scanning...";
 
-        var progress = new Progress<string>(msg => StatusText = msg);
-
-        var (root, files, artifacts) = await Task.Run(() =>
+        try
         {
-            var collected = new List<string>();
-            var collectedArtifacts = new List<string>();
-            var tree = DirectoryTraverser.BuildTree(DirectoryRoot, collected, collectedArtifacts, progress);
-            return (tree, collected, collectedArtifacts);
-        });
+            var progress = new Progress<string>(msg => StatusText = msg);
 
-        DirItems.Add(root);
+            var (root, files, artifacts) = await Task.Run(() =>
+            {
+                var collected = new List<string>();
+                var collectedArtifacts = new List<string>();
+                var tree = DirectoryTraverser.BuildTree(DirectoryRoot, collected, collectedArtifacts, progress);
+                return (tree, collected, collectedArtifacts);
+            });
 
-        await LoadOrCreateDir2SiteConfig();
+            DirItems.Add(root);
 
-        IsLoading = false;
-        StatusText = $"{files.Count:N0} files · {artifacts.Count:N0} artifacts";
+            await LoadOrCreateDir2SiteConfig();
+
+            IsLoading = false;
+            StatusText = $"{files.Count:N0} files · {artifacts.Count:N0} artifacts";
+        }
+        catch (Exception ex)
+        {
+            IsLoading = false;
+            StatusText = "Load failed";
+            AppendError(ex.Message);
+        }
     }
 
     private async Task LoadOrCreateDir2SiteConfig()
@@ -200,7 +225,11 @@ public partial class MainWindowViewModel : ViewModelBase
         if (File.Exists(configPath))
         {
             var yaml = await File.ReadAllTextAsync(configPath);
-            Dir2SiteConfig = YamlParser.DeserializeAs<Dir2SiteModel>(yaml);
+            Dir2SiteConfig = YamlParser.DeserializeAs<Dir2SiteModel>(yaml) ?? new Dir2SiteModel
+            {
+                Title = Path.GetFileName(DirectoryRoot) is { Length: > 0 } n ? n : "My Site",
+                Footer = $"© {DateTime.Now.Year}",
+            };
         }
         else
         {
@@ -241,11 +270,13 @@ public partial class MainWindowViewModel : ViewModelBase
         await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, progress));
 
         StatusText = "Generating site...";
-        var summary = await Task.Run(() =>
+        var result = await Task.Run(() =>
             SiteGenerator.Generate(DirectoryRoot, root, config, progress));
 
         IsLoading = false;
-        StatusText = summary;
+        StatusText = result.Summary;
+        if (result.Errors.Count > 0)
+            AppendError(string.Join("\n", result.Errors));
         StartServerCommand.NotifyCanExecuteChanged();
     }
 

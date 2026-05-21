@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,7 +19,7 @@ namespace dir2site.Services;
 
 public static class SiteGenerator
 {
-    public static string Generate(
+    public static (string Summary, IReadOnlyList<string> Errors) Generate(
         string directoryRoot,
         DirectoryTreeItem rootItem,
         Dir2SiteModel config,
@@ -39,14 +40,15 @@ public static class SiteGenerator
         CopySiteAssets(siteRoot, config, loader, progress);
         var pageTemplate = Template.Parse(loader.LoadByName("collection"), "collection.html");
 
+        var errors = new ConcurrentBag<string>();
         int pageCount = 0;
         GeneratePage(rootItem, siteRoot, directoryRoot, config, topLevelFolders, 0,
-            [], ref pageCount, pageTemplate, loader, progress);
+            [], ref pageCount, pageTemplate, loader, progress, errors);
 
         int assetCount = CopyPreviewAssets(rootItem, directoryRoot, siteRoot, progress);
         CopyLogoAsset(directoryRoot, siteRoot, config.Logo);
 
-        return $"Site generated: {pageCount} pages, {assetCount} assets → _site/";
+        return ($"Site generated: {pageCount} pages, {assetCount} assets → _site/", [.. errors]);
     }
 
     private static void GeneratePage(
@@ -60,7 +62,8 @@ public static class SiteGenerator
         ref int pageCount,
         Template pageTemplate,
         AvaloniaTemplateLoader loader,
-        IProgress<string>? progress)
+        IProgress<string>? progress,
+        ConcurrentBag<string> errors)
     {
         var label = depth == 0 ? "index.html" : $"{node.Name}/index.html";
 
@@ -83,15 +86,22 @@ public static class SiteGenerator
                 {
                     var childOutputDir = Path.Combine(outputDir, child.Name);
                     GeneratePage(child, childOutputDir, directoryRoot, config, topLevelFolders,
-                        depth + 1, childAncestors, ref pageCount, pageTemplate, loader, progress);
+                        depth + 1, childAncestors, ref pageCount, pageTemplate, loader, progress, errors);
                 }
                 var artifactChildrenSkip = node.Children.Where(c => !c.IsDirectory && c.Artifact != null).ToList();
                 int skippedArtifactCount = 0;
                 Parallel.ForEach(artifactChildrenSkip, child =>
                 {
-                    GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
-                        depth + 1, childAncestors, loader, progress);
-                    Interlocked.Increment(ref skippedArtifactCount);
+                    try
+                    {
+                        GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
+                            depth + 1, childAncestors, loader, progress);
+                        Interlocked.Increment(ref skippedArtifactCount);
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add($"{child.Name}: {ex.Message}");
+                    }
                 });
                 pageCount += skippedArtifactCount;
                 return;
@@ -160,16 +170,23 @@ public static class SiteGenerator
         {
             var childOutputDir = Path.Combine(outputDir, child.Name);
             GeneratePage(child, childOutputDir, directoryRoot, config, topLevelFolders,
-                depth + 1, childAncestors, ref pageCount, pageTemplate, loader, progress);
+                depth + 1, childAncestors, ref pageCount, pageTemplate, loader, progress, errors);
         }
 
         var artifactChildren = node.Children.Where(c => !c.IsDirectory && c.Artifact != null).ToList();
         int artifactPageCount = 0;
         Parallel.ForEach(artifactChildren, child =>
         {
-            GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
-                depth + 1, childAncestors, loader, progress);
-            Interlocked.Increment(ref artifactPageCount);
+            try
+            {
+                GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
+                    depth + 1, childAncestors, loader, progress);
+                Interlocked.Increment(ref artifactPageCount);
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"{child.Name}: {ex.Message}");
+            }
         });
         pageCount += artifactPageCount;
     }
