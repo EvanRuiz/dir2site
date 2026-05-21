@@ -225,10 +225,19 @@ public partial class MainWindowViewModel : ViewModelBase
         IsLoading = true;
         var progress = new Progress<string>(msg => StatusText = msg);
 
+        // Re-scan from disk so any YAML edits since last load are picked up
+        StatusText = "Scanning for changes...";
+        var freshRoot = await Task.Run(() =>
+        {
+            var files     = new List<string>();
+            var artifacts = new List<string>();
+            return DirectoryTraverser.BuildTree(DirectoryRoot!, files, artifacts, progress);
+        });
+
         // Generate previews first so site settings (PDF resize/quality) affect output
         StatusText = "Generating previews...";
         var config = Dir2SiteConfig;
-        var root   = DirItems[0];
+        var root   = freshRoot;
         await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, progress));
 
         StatusText = "Generating site...";

@@ -63,9 +63,42 @@ public static class SiteGenerator
         IProgress<string>? progress)
     {
         var label = depth == 0 ? "index.html" : $"{node.Name}/index.html";
-        progress?.Report($"Generating {label}...");
 
         Directory.CreateDirectory(outputDir);
+
+        // Depth-0 children don't carry the root node name — "Home" is the implicit root
+        var childAncestors = depth == 0
+            ? (IList<string>)[]
+            : [.. ancestorNames, node.Name];
+
+        var indexHtmlPath = Path.Combine(outputDir, "index.html");
+        if (File.Exists(indexHtmlPath))
+        {
+            var indexMtime  = File.GetLastWriteTimeUtc(indexHtmlPath);
+            var sourceMtime = GetCollectionSourceMtime(node);
+            if (indexMtime >= sourceMtime)
+            {
+                progress?.Report($"Skipping {label} (up to date)");
+                foreach (var child in node.Children.Where(c => c.IsDirectory))
+                {
+                    var childOutputDir = Path.Combine(outputDir, child.Name);
+                    GeneratePage(child, childOutputDir, directoryRoot, config, topLevelFolders,
+                        depth + 1, childAncestors, ref pageCount, pageTemplate, loader, progress);
+                }
+                var artifactChildrenSkip = node.Children.Where(c => !c.IsDirectory && c.Artifact != null).ToList();
+                int skippedArtifactCount = 0;
+                Parallel.ForEach(artifactChildrenSkip, child =>
+                {
+                    GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
+                        depth + 1, childAncestors, loader, progress);
+                    Interlocked.Increment(ref skippedArtifactCount);
+                });
+                pageCount += skippedArtifactCount;
+                return;
+            }
+        }
+
+        progress?.Report($"Generating {label}...");
 
         var pageTitle = depth == 0 ? config.Title : node.Name;
         var prefix = RelativePrefix(depth);
@@ -120,13 +153,8 @@ public static class SiteGenerator
         context.PushGlobal(globals);
 
         var html = pageTemplate.Render(context);
-        File.WriteAllText(Path.Combine(outputDir, "index.html"), html, Encoding.UTF8);
+        File.WriteAllText(indexHtmlPath, html, Encoding.UTF8);
         pageCount++;
-
-        // Depth-0 children don't carry the root node name — "Home" is the implicit root
-        var childAncestors = depth == 0
-            ? (IList<string>)[]
-            : [.. ancestorNames, node.Name];
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
         {
@@ -144,6 +172,17 @@ public static class SiteGenerator
             Interlocked.Increment(ref artifactPageCount);
         });
         pageCount += artifactPageCount;
+    }
+
+    private static DateTime GetCollectionSourceMtime(DirectoryTreeItem node)
+    {
+        var dirMtime = Directory.GetLastWriteTimeUtc(node.FullPath);
+        var yamlMtimes = node.Children
+            .Where(c => !c.IsDirectory && c.Artifact != null)
+            .Select(c => YamlParser.FindYamlMetaPath(c.FullPath))
+            .Where(p => p != null)
+            .Select(p => File.GetLastWriteTimeUtc(p!));
+        return yamlMtimes.Prepend(dirMtime).Max();
     }
 
     private static ScriptObject MakeCrumb(string name, string href, bool isActive)
@@ -308,6 +347,19 @@ public static class SiteGenerator
         var stem = Path.GetFileNameWithoutExtension(item.Name);
         var outputDir = Path.Combine(parentOutputDir, stem);
         Directory.CreateDirectory(outputDir);
+
+        var yamlPath     = YamlParser.FindYamlMetaPath(item.FullPath);
+        var indexHtmlPath = Path.Combine(outputDir, "index.html");
+        if (yamlPath != null && File.Exists(indexHtmlPath))
+        {
+            var yamlMtime  = File.GetLastWriteTimeUtc(yamlPath);
+            var indexMtime = File.GetLastWriteTimeUtc(indexHtmlPath);
+            if (indexMtime >= yamlMtime)
+            {
+                progress?.Report($"Skipping {stem}/index.html (up to date)");
+                return;
+            }
+        }
 
         progress?.Report($"Generating {stem}/index.html...");
 
