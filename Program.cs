@@ -1,5 +1,7 @@
 ﻿using Avalonia;
 using System;
+using System.IO;
+using System.Threading.Tasks;
 using Velopack;
 
 namespace dir2site;
@@ -12,8 +14,33 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         VelopackApp.Build().Run();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    }
+
+    private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(Path.GetTempPath(), "dir2site-crash.txt"),
+                $"[{DateTime.Now}] Unhandled exception (terminating={e.IsTerminating}):\n{e.ExceptionObject}\n");
+        }
+        catch { }
+    }
+
+    private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        try
+        {
+            File.AppendAllText(
+                Path.Combine(Path.GetTempPath(), "dir2site-crash.txt"),
+                $"[{DateTime.Now}] Unobserved task exception:\n{e.Exception}\n\n");
+            e.SetObserved();
+        }
+        catch { }
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.

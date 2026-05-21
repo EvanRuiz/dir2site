@@ -86,6 +86,30 @@
             </StackPanel>
         </Border>
 
+        <!-- Error banner -->
+        <Border DockPanel.Dock="Top"
+                Background="#C0392B"
+                Padding="10,6"
+                IsVisible="{Binding HasErrors}">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding ErrorText}"
+                           FontSize="12"
+                           Foreground="White"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"/>
+                <Button Grid.Column="1"
+                        Content="✕"
+                        Command="{Binding DismissErrorsCommand}"
+                        Foreground="White"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        FontSize="14"
+                        Padding="8,2"
+                        VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
         <!-- Fill area: welcome panel or content, whichever is active -->
         <Panel>
 
