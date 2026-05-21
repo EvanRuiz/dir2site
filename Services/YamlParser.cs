@@ -211,8 +211,8 @@ public static class YamlParser
     /// "my_beautiful_photo"   → "My Beautiful Photo"
     /// "myBeautifulPhoto"     → "My Beautiful Photo"
     /// "TheQuickBrownFox"     → "The Quick Brown Fox"
-    /// "IMG_1234"             → "Img 1234"
-    /// "XMLParser"            → "Xml Parser"
+    /// "IMG_1234"             → "IMG 1234"
+    /// "XMLParser"            → "XML Parser"
     /// </example>
     public static string PrettifyFilename(string filePath)
     {
@@ -229,7 +229,13 @@ public static class YamlParser
             s = Regex.Replace(s, @"\s+", " ").Trim();
             if (s.Length == 0) return segment;
             return string.Join(' ', s.Split(' ')
-                .Select(w => w.Length == 0 ? w : char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant()));
+                .Select(w =>
+                {
+                    if (w.Length == 0) return w;
+                    // Preserve all-caps abbreviations (e.g., IMG, XML, NASA)
+                    if (w.All(c => !char.IsLetter(c) || char.IsUpper(c))) return w;
+                    return char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant();
+                }));
         });
 
         return string.Join('-', segments);
