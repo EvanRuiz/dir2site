@@ -10,7 +10,8 @@ public enum ArtifactType
     Deepzoom,
     Directory,
     Pdf,
-    MarkdownPage,
+    // Serialized as "markdown" — the camelCase of the enum name must match the YAML type token.
+    Markdown,
 }
 
 public class Artifact

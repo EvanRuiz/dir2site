@@ -7,12 +7,21 @@
              x:Class="dir2site.Views.ArtifactView"
              x:DataType="vm:ArtifactViewModel">
 
-<StackPanel Orientation="Horizontal">
+    <StackPanel>
+        <!-- Markdown artifacts: Skia-rendered flowed article (no site generation required) -->
+        <ScrollViewer MaxHeight="500"
+                      HorizontalScrollBarVisibility="Disabled"
+                      IsVisible="{Binding IsMarkdown}">
+            <Image Source="{Binding MarkdownImage}" Stretch="Uniform" />
+        </ScrollViewer>
+
+        <!-- Non-markdown artifacts: thumbnail + metadata -->
+        <StackPanel Orientation="Horizontal" IsVisible="{Binding !IsMarkdown}">
             <Image Source="{Binding PreviewPath, Converter={x:Static conv:PathToBitmapConverter.Instance}}"
                    Stretch="Uniform"
                    MaxHeight="100"
                   />
-            
+
             <StackPanel Spacing="12" Margin="16">
 
             <TextBlock Text="{Binding Caption}"
@@ -41,6 +50,7 @@
                        FontFamily="Monospace" />
 
         </StackPanel>
-            </StackPanel>
+        </StackPanel>
+    </StackPanel>
 
 </UserControl>

@@ -178,6 +178,17 @@ public static class DirectoryTraverser
                 if (!alreadyHasBoth)
                     jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact, ArtifactType.Pdf));
             }
+
+            if (PreviewGenerator.IsMarkdownFile(file))
+            {
+                var alreadyHasBoth = !string.IsNullOrEmpty(artifact.Preview)
+                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
+                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
+                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge);
+
+                if (!alreadyHasBoth)
+                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact, ArtifactType.Markdown));
+            }
         }
 
         foreach (var child in node.Children)
@@ -214,6 +225,20 @@ public static class DirectoryTraverser
                             job.FilePath, job.TraversalRoot,
                             config.PdfResizeEnabled, config.PdfMaxWidth, config.PdfQuality,
                             progress);
+                        if (!result.HasValue) return;
+
+                        if (string.IsNullOrEmpty(job.Artifact.Preview))      job.Artifact.Preview      = result.Value.Preview;
+                        if (string.IsNullOrEmpty(job.Artifact.PreviewLarge)) job.Artifact.PreviewLarge = result.Value.PreviewLarge;
+
+                        var yaml = YamlParser.FindYamlMetaPath(job.FilePath);
+                        if (yaml != null)
+                            YamlParser.UpdatePreviewFields(yaml, job.Artifact.Preview!, job.Artifact.PreviewLarge!);
+                        break;
+                    }
+                    case ArtifactType.Markdown:
+                    {
+                        // Pure CPU (SkiaSharp) — safe to run in the parallel pass.
+                        var result = MarkdownPreviewRenderer.RenderToWebpPreviews(job.FilePath, job.TraversalRoot, progress);
                         if (!result.HasValue) return;
 
                         if (string.IsNullOrEmpty(job.Artifact.Preview))      job.Artifact.Preview      = result.Value.Preview;

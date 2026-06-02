@@ -47,6 +47,7 @@ public static class SiteGenerator
             [], ref pageCount, pageTemplate, loader, progress, errors);
 
         int assetCount = CopyPreviewAssets(rootItem, directoryRoot, siteRoot, progress);
+        assetCount += CopyVerbatimUnderscoreFolders(directoryRoot, siteRoot, progress);
         CopyLogoAsset(directoryRoot, siteRoot, config.Logo);
 
         return ($"Site generated: {pageCount} pages, {assetCount} assets → _site/", [.. errors]);
@@ -243,7 +244,7 @@ public static class SiteGenerator
         else
         {
             caption = item.Artifact?.Caption ?? item.Name;
-            badge = item.Artifact?.Type.ToString() ?? "File";
+            badge = item.Artifact != null ? TypeBadge(item.Artifact.Type) : "File";
             var stem = Path.GetFileNameWithoutExtension(item.Name);
             href = $"{stem}/";
             imgSrc = item.Artifact != null ? GetPreviewSrc(item.Artifact, directoryRoot, prefix, stem) : "";
@@ -257,6 +258,13 @@ public static class SiteGenerator
         obj.SetValue("is_folder", item.IsDirectory, readOnly: true);
         return obj;
     }
+
+    // Human-friendly label shown on cards and artifact pages in the generated site.
+    private static string TypeBadge(ArtifactType type) => type switch
+    {
+        ArtifactType.Markdown => "Article",
+        _ => type.ToString(),
+    };
 
     private static (Artifact, string)? FindFirstArtifactWithPreview(DirectoryTreeItem node)
     {
@@ -337,6 +345,45 @@ public static class SiteGenerator
             CopyFolderPreviews(child, directoryRoot, siteRoot, ref count, progress);
     }
 
+    // Copies every "_"-prefixed folder (e.g. _media) verbatim into _site at its relative path, so
+    // markdown articles can reference static includes. _site itself and "."-prefixed folders
+    // (.git, .dir2site, …) are skipped. Underscore folders are not scanned as artifacts.
+    private static int CopyVerbatimUnderscoreFolders(string directoryRoot, string siteRoot, IProgress<string>? progress)
+    {
+        int count = 0;
+        WalkForUnderscoreFolders(directoryRoot, directoryRoot, siteRoot, ref count, progress);
+        return count;
+    }
+
+    private static void WalkForUnderscoreFolders(string current, string directoryRoot, string siteRoot, ref int count, IProgress<string>? progress)
+    {
+        IEnumerable<string> dirs;
+        try { dirs = Directory.EnumerateDirectories(current); }
+        catch { return; }
+
+        foreach (var dir in dirs)
+        {
+            var name = Path.GetFileName(dir);
+            if (name.StartsWith('.')) continue;          // .git, .dir2site, …
+            if (name.Equals("_site", StringComparison.OrdinalIgnoreCase)) continue;
+
+            if (name.StartsWith('_'))
+            {
+                var rel = Path.GetRelativePath(directoryRoot, dir);
+                var destRoot = Path.Combine(siteRoot, rel);
+                foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                {
+                    var fileRel = Path.GetRelativePath(dir, file);
+                    CopyFileIfNewer(file, Path.Combine(destRoot, fileRel), progress, Path.Combine(rel, fileRel));
+                    count++;
+                }
+                continue; // don't descend further — the whole subtree was copied
+            }
+
+            WalkForUnderscoreFolders(dir, directoryRoot, siteRoot, ref count, progress);
+        }
+    }
+
     private static void CopyLogoAsset(string directoryRoot, string siteRoot, string logoFilename)
     {
         if (string.IsNullOrEmpty(logoFilename)) return;
@@ -366,9 +413,15 @@ public static class SiteGenerator
         var indexHtmlPath = Path.Combine(outputDir, "index.html");
         if (yamlPath != null && File.Exists(indexHtmlPath))
         {
-            var yamlMtime  = File.GetLastWriteTimeUtc(yamlPath);
+            var sourceMtime = File.GetLastWriteTimeUtc(yamlPath);
+            // Markdown pages render from the .md body, so its mtime must also invalidate the page.
+            if (artifact.Type == ArtifactType.Markdown && File.Exists(item.FullPath))
+            {
+                var mdMtime = File.GetLastWriteTimeUtc(item.FullPath);
+                if (mdMtime > sourceMtime) sourceMtime = mdMtime;
+            }
             var indexMtime = File.GetLastWriteTimeUtc(indexHtmlPath);
-            if (indexMtime >= yamlMtime)
+            if (indexMtime >= sourceMtime)
             {
                 progress?.Report($"Skipping {stem}/index.html (up to date)");
                 return;
@@ -409,7 +462,7 @@ public static class SiteGenerator
         artifactObj.SetValue("caption", caption, readOnly: true);
         artifactObj.SetValue("credit", artifact.Credit ?? "", readOnly: true);
         artifactObj.SetValue("date", artifact.Date ?? "", readOnly: true);
-        artifactObj.SetValue("badge", artifact.Type.ToString(), readOnly: true);
+        artifactObj.SetValue("badge", TypeBadge(artifact.Type), readOnly: true);
         artifactObj.SetValue("preview_src", previewSrc, readOnly: true);
 
         string templateName;
@@ -429,6 +482,11 @@ public static class SiteGenerator
                 artifactObj.SetValue("author", (artifact as Document)?.Author ?? "", readOnly: true);
                 artifactObj.SetValue("bookreader_data", BuildBookReaderData(artifact, stem), readOnly: true);
                 templateName = "artifact-pdf";
+                break;
+
+            case ArtifactType.Markdown:
+                artifactObj.SetValue("html_content", MarkdownRenderer.ToHtml(item.FullPath), readOnly: true);
+                templateName = "artifact-markdown";
                 break;
 
             default:

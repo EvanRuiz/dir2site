@@ -21,6 +21,36 @@ public partial class ArtifactViewModel : ViewModelBase
     [ObservableProperty] public partial string? RootFolder { get; set; }
     [ObservableProperty] public partial string? TraversalRoot { get; set; }
 
+    // Markdown live preview (runtime only) — populated when the artifact is a MarkdownPage.
+    [ObservableProperty] public partial bool IsMarkdown { get; set; }
+    public string? MarkdownFilePath { get; set; }
+
+    private Bitmap? _markdownImage;
+    private bool _markdownRendered;
+
+    /// <summary>
+    /// The article rendered to a bitmap by the Skia float-flow engine, produced on first access
+    /// (no site generation required). Null when this artifact is not Markdown or rendering failed.
+    /// </summary>
+    public Bitmap? MarkdownImage
+    {
+        get
+        {
+            if (!IsMarkdown || MarkdownFilePath == null) return null;
+            if (!_markdownRendered)
+            {
+                _markdownRendered = true;
+                try
+                {
+                    var png = MarkdownPreviewRenderer.RenderArticlePng(MarkdownFilePath);
+                    if (png != null) { using var ms = new MemoryStream(png); _markdownImage = new Bitmap(ms); }
+                }
+                catch { _markdownImage = null; }
+            }
+            return _markdownImage;
+        }
+    }
+
     public string? PreviewPath => TraversalRoot == null || RootFolder == null || Preview == null
         ? null
         : PreviewGenerator.ResolvePreviewPath(TraversalRoot, RootFolder, Preview);

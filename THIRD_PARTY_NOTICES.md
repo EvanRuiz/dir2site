@@ -18,6 +18,7 @@ To regenerate this file after dependency changes, run: `scripts/generate-notices
 | EmbedIO | 3.5.2 | MIT | [https://github.com/unosquare/embedio](https://github.com/unosquare/embedio) |
 | Magick.NET-Q8-AnyCPU | 14.13.1 | Apache-2.0 | [https://github.com/dlemstra/Magick.NET](https://github.com/dlemstra/Magick.NET) |
 | Mapster | 10.0.7 | MIT | [https://github.com/MapsterMapper/Mapster](https://github.com/MapsterMapper/Mapster) |
+| Markdig | 1.2.0 | BSD-2-Clause | [https://github.com/xoofx/markdig](https://github.com/xoofx/markdig) |
 | MessageBox.Avalonia | 3.0.0 | MIT | [https://github.com/AvaloniaCommunity/MessageBox.Avalonia](https://github.com/AvaloniaCommunity/MessageBox.Avalonia) |
 | NetVips | 3.1.0 | MIT | [https://github.com/kleisauke/net-vips](https://github.com/kleisauke/net-vips) |
 | NetVips.Native.linux-x64 | 8.17.3 | LGPL-2.1 | [https://github.com/libvips/libvips](https://github.com/libvips/libvips) |
