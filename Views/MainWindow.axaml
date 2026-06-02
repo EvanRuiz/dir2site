@@ -285,6 +285,25 @@
                                     FontSize="11"
                                     Padding="6,3"/>
                         </StackPanel>
+
+                        <Separator HorizontalAlignment="Stretch" Margin="0,6,0,0"/>
+
+                        <!-- Deploy over SFTP -->
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Deploy:" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+                            <Button Content="Configure…"
+                                    Command="{Binding ConfigureSftpCommand}"
+                                    FontSize="11" Padding="6,3"/>
+                            <Button Content="Quick Sync"
+                                    Command="{Binding QuickSyncCommand}"
+                                    FontSize="11" Padding="6,3"/>
+                            <Button Content="Verify &amp; Repair"
+                                    Command="{Binding VerifyAndRepairCommand}"
+                                    FontSize="11" Padding="6,3"/>
+                            <CheckBox Content="Force full re-upload"
+                                      IsChecked="{Binding ForceFullReupload}"
+                                      FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 

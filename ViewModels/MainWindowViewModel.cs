@@ -13,6 +13,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using dir2site.Models;
 using dir2site.Services;
+using dir2site.SftpSync.Core;
+using dir2site.SftpSync.Core.Credentials;
+using dir2site.SftpSync.Ui;
 using Velopack;
 using Velopack.Sources;
 
@@ -58,6 +61,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartServerCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConfigureSftpCommand))]
+    [NotifyCanExecuteChangedFor(nameof(QuickSyncCommand))]
+    [NotifyCanExecuteChangedFor(nameof(VerifyAndRepairCommand))]
     private string? _directoryRoot;
     
     [ObservableProperty] public partial ObservableCollection<DirectoryTreeItem> DirItems { get; set; } = [];
@@ -67,6 +73,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GenerateSiteCommand))]
+    [NotifyCanExecuteChangedFor(nameof(QuickSyncCommand))]
+    [NotifyCanExecuteChangedFor(nameof(VerifyAndRepairCommand))]
     private bool _isLoading;
 
     [ObservableProperty]
@@ -99,6 +107,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _serverUrl = string.Empty;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(QuickSyncCommand))]
+    [NotifyCanExecuteChangedFor(nameof(VerifyAndRepairCommand))]
+    private bool _hasSftpProfile;
+
+    [ObservableProperty]
+    private bool _forceFullReupload;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GenerateSiteCommand))]
@@ -207,6 +223,7 @@ public partial class MainWindowViewModel : ViewModelBase
             DirItems.Add(root);
 
             await LoadOrCreateDir2SiteConfig();
+            HasSftpProfile = DirectoryRoot != null && SftpProfileStore.Exists(DirectoryRoot);
 
             IsLoading = false;
             StatusText = $"{files.Count:N0} files · {artifacts.Count:N0} artifacts";
@@ -280,10 +297,113 @@ public partial class MainWindowViewModel : ViewModelBase
         if (result.Errors.Count > 0)
             AppendError(string.Join("\n", result.Errors));
         StartServerCommand.NotifyCanExecuteChanged();
+        QuickSyncCommand.NotifyCanExecuteChanged();
+        VerifyAndRepairCommand.NotifyCanExecuteChanged();
     }
 
     private bool CanGenerateSite() =>
         DirectoryRoot != null && DirItems.Count > 0 && Dir2SiteConfig != null && !IsLoading;
+
+    // ---- SFTP deploy --------------------------------------------------------
+
+    [RelayCommand(CanExecute = nameof(CanConfigureSftp))]
+    private async Task ConfigureSftp()
+    {
+        if (DirectoryRoot == null || TopLevel is not Window owner) return;
+        var dialog = new SftpSettingsView(DirectoryRoot);
+        var saved = await dialog.ShowDialog<bool>(owner);
+        if (saved)
+        {
+            HasSftpProfile = true;
+            StatusText = "SFTP settings saved";
+        }
+    }
+
+    private bool CanConfigureSftp() => DirectoryRoot != null;
+
+    [RelayCommand(CanExecute = nameof(CanSync))]
+    private Task QuickSync() => RunSync(verify: false, force: ForceFullReupload);
+
+    [RelayCommand(CanExecute = nameof(CanSync))]
+    private Task VerifyAndRepair() => RunSync(verify: true, force: false);
+
+    private bool CanSync() =>
+        DirectoryRoot != null &&
+        Directory.Exists(Path.Combine(DirectoryRoot, "_site")) &&
+        HasSftpProfile &&
+        !IsLoading;
+
+    private async Task RunSync(bool verify, bool force)
+    {
+        if (DirectoryRoot == null) return;
+
+        var profile = SftpProfileStore.Load(DirectoryRoot);
+        if (profile == null)
+        {
+            AppendError("No SFTP profile configured. Use Configure… first.");
+            return;
+        }
+
+        var siteRoot = Path.Combine(DirectoryRoot, "_site");
+        var secret = CredentialStoreFactory.Create()
+            .Get(SftpProfileStore.CredentialKey(DirectoryRoot, profile));
+
+        IsLoading = true;
+        var progress = new Progress<string>(msg => StatusText = msg);
+
+        try
+        {
+            var result = await Task.Run(() => verify
+                ? SftpSyncService.VerifyAndRepair(siteRoot, profile, secret, progress)
+                : SftpSyncService.QuickSync(siteRoot, profile, secret, force, progress));
+
+            StatusText = result.Summary;
+            if (result.Errors.Count > 0)
+                AppendError(string.Join("\n", result.Errors));
+
+            if (result.StaleRemote.Count > 0)
+                await HandleStaleFiles(profile, secret, siteRoot, result.StaleRemote);
+        }
+        catch (Exception ex)
+        {
+            StatusText = "Sync failed";
+            AppendError(ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task HandleStaleFiles(
+        SftpProfile profile, string? secret, string siteRoot, IReadOnlyList<string> stale)
+    {
+        if (TopLevel is not Window owner) return;
+
+        var dialog = new StaleFilesView(stale);
+        var toDelete = await dialog.ShowDialog<IReadOnlyList<string>?>(owner);
+        if (toDelete == null || toDelete.Count == 0) return;
+
+        IsLoading = true;
+        var progress = new Progress<string>(msg => StatusText = msg);
+        try
+        {
+            var result = await Task.Run(() =>
+                SftpSyncService.DeleteRemote(siteRoot, profile, secret, toDelete, progress));
+            StatusText = result.Summary;
+            if (result.Errors.Count > 0)
+                AppendError(string.Join("\n", result.Errors));
+        }
+        catch (Exception ex)
+        {
+            StatusText = "Delete failed";
+            AppendError(ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
 
     public async Task CheckForUpdatesAsync()
     {

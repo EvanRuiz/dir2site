@@ -1,0 +1,45 @@
+<!-- SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:dir2site.SftpSync.Ui"
+        mc:Ignorable="d" d:DesignWidth="520" d:DesignHeight="460"
+        x:Class="dir2site.SftpSync.Ui.StaleFilesView"
+        x:DataType="vm:StaleFilesViewModel"
+        Width="520" Height="460"
+        WindowStartupLocation="CenterOwner"
+        Title="Stale Remote Files">
+
+    <DockPanel Margin="16">
+
+        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"
+                   Text="These files exist on the server but not in your local site. Select any you want to delete from the server, or choose Ignore to leave them untouched."/>
+
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+            <Button Content="Select All" Command="{Binding SelectAllCommand}"/>
+            <Button Content="Deselect All" Command="{Binding DeselectAllCommand}"/>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="8" Margin="0,12,0,0">
+            <Button Content="Delete Selected" Command="{Binding DeleteSelectedCommand}"
+                    Background="#C0392B" Foreground="White"/>
+            <Button Content="Ignore" Command="{Binding IgnoreCommand}"/>
+        </StackPanel>
+
+        <Border BorderBrush="#444" BorderThickness="1" CornerRadius="4">
+            <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding Items}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:StaleFileItem">
+                            <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Path}"
+                                      Margin="6,2" FontFamily="Courier New"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
+</Window>

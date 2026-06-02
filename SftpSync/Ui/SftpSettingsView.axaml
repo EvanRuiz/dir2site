@@ -1,0 +1,82 @@
+<!-- SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:dir2site.SftpSync.Ui"
+        mc:Ignorable="d" d:DesignWidth="460" d:DesignHeight="480"
+        x:Class="dir2site.SftpSync.Ui.SftpSettingsView"
+        x:DataType="vm:SftpSettingsViewModel"
+        Width="460" Height="500"
+        WindowStartupLocation="CenterOwner"
+        Title="SFTP Deploy Settings">
+
+    <DockPanel Margin="16">
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="8" Margin="0,12,0,0">
+            <Button Content="Test Connection" Command="{Binding TestConnectionCommand}"
+                    IsEnabled="{Binding !IsBusy}"/>
+            <Button Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding !IsBusy}"/>
+            <Button Content="Cancel" Command="{Binding CancelCommand}"/>
+        </StackPanel>
+
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding Status}"
+                   TextWrapping="Wrap" Foreground="#4A9EFF" Margin="0,12,0,0"/>
+
+        <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Label Width="110">Host</Label>
+                <TextBox Text="{Binding Host}" Width="220" Watermark="sftp.example.com"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Label Width="110">Port</Label>
+                <NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" Increment="1" Width="120"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Label Width="110">Username</Label>
+                <TextBox Text="{Binding Username}" Width="220"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Label Width="110">Remote path</Label>
+                <TextBox Text="{Binding RemotePath}" Width="220" Watermark="/var/www/html or public_html"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Label Width="110">Manifest path</Label>
+                <TextBox Text="{Binding ManifestPath}" Width="220"
+                         Watermark="(optional, outside web root)"/>
+            </StackPanel>
+
+            <Separator/>
+
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Label Width="110">Authentication</Label>
+                <RadioButton GroupName="Auth" Content="Password"
+                             IsChecked="{Binding IsPasswordAuth}"/>
+                <RadioButton GroupName="Auth" Content="SSH key"
+                             IsChecked="{Binding IsKeyAuth}"/>
+            </StackPanel>
+
+            <!-- Password auth -->
+            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsPasswordAuth}">
+                <Label Width="110">Password</Label>
+                <TextBox Text="{Binding Password}" Width="220" PasswordChar="•"/>
+            </StackPanel>
+
+            <!-- Key auth -->
+            <StackPanel Spacing="8" IsVisible="{Binding IsKeyAuth}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Label Width="110">Private key</Label>
+                    <TextBox Text="{Binding PrivateKeyPath}" Width="150"/>
+                    <Button Content="Browse…" Command="{Binding BrowseKeyCommand}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Label Width="110">Passphrase</Label>
+                    <TextBox Text="{Binding Passphrase}" Width="220" PasswordChar="•"
+                             Watermark="(optional)"/>
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
+    </DockPanel>
+</Window>
