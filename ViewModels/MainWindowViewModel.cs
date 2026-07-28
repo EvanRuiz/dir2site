@@ -347,6 +347,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var siteRoot = Path.Combine(DirectoryRoot, "_site");
         var secret = CredentialStoreFactory.Create()
             .Get(SftpProfileStore.CredentialKey(DirectoryRoot, profile));
+        var verifier = CreateHostKeyVerifier(profile);
 
         IsLoading = true;
         var progress = new Progress<string>(msg => StatusText = msg);
@@ -354,8 +355,8 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             var result = await Task.Run(() => verify
-                ? SftpSyncService.VerifyAndRepair(siteRoot, profile, secret, progress)
-                : SftpSyncService.QuickSync(siteRoot, profile, secret, force, progress));
+                ? SftpSyncService.VerifyAndRepair(siteRoot, profile, secret, progress, default, verifier)
+                : SftpSyncService.QuickSync(siteRoot, profile, secret, force, progress, default, verifier));
 
             StatusText = result.Summary;
             if (result.Errors.Count > 0)
@@ -384,12 +385,14 @@ public partial class MainWindowViewModel : ViewModelBase
         var toDelete = await dialog.ShowDialog<IReadOnlyList<string>?>(owner);
         if (toDelete == null || toDelete.Count == 0) return;
 
+        var verifier = CreateHostKeyVerifier(profile);
+
         IsLoading = true;
         var progress = new Progress<string>(msg => StatusText = msg);
         try
         {
             var result = await Task.Run(() =>
-                SftpSyncService.DeleteRemote(siteRoot, profile, secret, toDelete, progress));
+                SftpSyncService.DeleteRemote(siteRoot, profile, secret, toDelete, progress, default, verifier));
             StatusText = result.Summary;
             if (result.Errors.Count > 0)
                 AppendError(string.Join("\n", result.Errors));
@@ -403,6 +406,19 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsLoading = false;
         }
+    }
+
+    // Prompts on the main window for an unknown/changed host key. SftpSyncService pins the
+    // accepted fingerprint onto the in-memory profile; persisting it here is what stops the
+    // prompt reappearing on every sync.
+    private HostKeyVerifier? CreateHostKeyVerifier(SftpProfile profile)
+    {
+        if (TopLevel is not Window owner) return null;
+        return HostKeyPromptView.CreateVerifier(owner, _ =>
+        {
+            if (DirectoryRoot != null)
+                SftpProfileStore.Save(DirectoryRoot, profile);
+        });
     }
 
     public async Task CheckForUpdatesAsync()

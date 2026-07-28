@@ -29,10 +29,9 @@ public static class SftpSyncService
     // ---- public operations -------------------------------------------------
 
     /// <summary>Verifies the connection and credentials. Throws on failure.</summary>
-    public static void TestConnection(SftpProfile profile, string? secret)
+    public static void TestConnection(SftpProfile profile, string? secret, HostKeyVerifier? hostKeyVerifier = null)
     {
-        using var client = CreateClient(profile, secret);
-        client.Connect();
+        using var client = Connect(profile, secret, hostKeyVerifier);
         client.Disconnect();
     }
 
@@ -47,14 +46,14 @@ public static class SftpSyncService
         string? secret,
         bool forceFull = false,
         IProgress<string>? progress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        HostKeyVerifier? hostKeyVerifier = null)
     {
         var local = SyncManifestBuilder.BuildLocal(siteRoot);
         if (local.Files.Count == 0)
             return new SyncResult("Nothing to sync — _site/ is empty.", 0, [], []);
 
-        using var client = CreateClient(profile, secret);
-        client.Connect();
+        using var client = Connect(profile, secret, hostKeyVerifier);
 
         var manifestPath = ManifestRemotePath(profile);
         var note = "";
@@ -95,12 +94,12 @@ public static class SftpSyncService
         SftpProfile profile,
         string? secret,
         IProgress<string>? progress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        HostKeyVerifier? hostKeyVerifier = null)
     {
         var local = SyncManifestBuilder.BuildLocal(siteRoot);
 
-        using var client = CreateClient(profile, secret);
-        client.Connect();
+        using var client = Connect(profile, secret, hostKeyVerifier);
 
         var manifestPath = ManifestRemotePath(profile);
         var remoteRoot   = NormalizeDir(profile.RemotePath);
@@ -133,10 +132,10 @@ public static class SftpSyncService
         string? secret,
         IReadOnlyList<string> relPaths,
         IProgress<string>? progress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        HostKeyVerifier? hostKeyVerifier = null)
     {
-        using var client = CreateClient(profile, secret);
-        client.Connect();
+        using var client = Connect(profile, secret, hostKeyVerifier);
 
         var remoteRoot = NormalizeDir(profile.RemotePath);
         var errors = new List<string>();
@@ -175,6 +174,66 @@ public static class SftpSyncService
     }
 
     // ---- connection --------------------------------------------------------
+
+    /// <summary>
+    /// Builds a client and connects it, refusing unless the server's host key is either already
+    /// pinned on the profile or accepted by <paramref name="verifier"/>. Without this check
+    /// SSH.NET trusts any key, so anyone on the network path could impersonate the server and
+    /// collect the password during the handshake.
+    /// </summary>
+    private static SftpClient Connect(SftpProfile p, string? secret, HostKeyVerifier? verifier)
+    {
+        var client = CreateClient(p, secret);
+
+        // Captured so a refusal can be reported as itself, rather than as SSH.NET's generic
+        // "key exchange negotiation failed", which gives the user nothing to act on.
+        HostKeyInfo? refused = null;
+
+        client.HostKeyReceived += (_, e) =>
+        {
+            var offered = HostKeyFingerprintFormatter.Format(e.HostKey);
+            var known   = string.IsNullOrWhiteSpace(p.HostKeyFingerprint) ? null : p.HostKeyFingerprint;
+
+            if (known == offered)
+            {
+                e.CanTrust = true;
+                return;
+            }
+
+            var info = new HostKeyInfo(
+                p.Host, p.Port <= 0 ? 22 : p.Port, e.HostKeyName, e.KeyLength, offered, known);
+
+            // No verifier means nobody is able to answer the question, so fail closed.
+            e.CanTrust = verifier is not null && verifier(info);
+            if (e.CanTrust) p.HostKeyFingerprint = offered;
+            else refused = info;
+        };
+
+        try
+        {
+            client.Connect();
+        }
+        catch when (refused is not null)
+        {
+            client.Dispose();
+            throw new SftpHostKeyRejectedException(
+                refused.IsChanged
+                    ? $"The host key for {refused.Host} has CHANGED and was not accepted.\n" +
+                      $"Expected {refused.KnownFingerprint}\n" +
+                      $"Offered  {refused.Fingerprint}\n" +
+                      "If you did not rebuild or migrate this server, do not connect — " +
+                      "someone may be impersonating it."
+                    : $"The host key for {refused.Host} ({refused.Fingerprint}) was not accepted, " +
+                      "so the connection was refused.");
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
+
+        return client;
+    }
 
     private static SftpClient CreateClient(SftpProfile p, string? secret)
     {
@@ -266,6 +325,7 @@ public static class SftpSyncService
             var tmp = manifestPath + ".tmp";
             using (var up = new MemoryStream(bytes))
                 client.UploadFile(up, tmp, canOverride: true);
+
             if (TryExists(client, manifestPath))
                 client.DeleteFile(manifestPath);
             client.RenameFile(tmp, manifestPath);

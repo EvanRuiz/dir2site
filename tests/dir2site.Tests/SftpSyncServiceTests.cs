@@ -238,4 +238,88 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
 
         Assert.ThrowsAny<Exception>(() => SftpSyncService.TestConnection(d.Profile, null));
     }
+
+    // ---- host key verification ---------------------------------------------
+
+    [SkippableFact]
+    public void HostKeyFingerprint_MatchesWhatSshKeygenReports()
+    {
+        Skip.IfNot(_fx.Available, _fx.Reason);
+        // Guards the fingerprint format: if ours drifts from OpenSSH's, a user comparing the
+        // prompt against `ssh-keygen -lf` would see a mismatch and distrust a genuine server.
+        Assert.StartsWith("SHA256:", _fx.HostKeyFingerprint);
+        Assert.Equal(_fx.SshKeygenHostKeyFingerprint(), _fx.HostKeyFingerprint);
+    }
+
+    [SkippableFact]
+    public void UnknownHostKey_WithNoVerifier_IsRefused()
+    {
+        Skip.IfNot(_fx.Available, _fx.Reason);
+        var d = _fx.NewDeployment();
+        d.Profile.HostKeyFingerprint = ""; // never trusted before
+
+        // Nobody can answer the question, so this must fail closed rather than silently
+        // trusting whatever the server offered.
+        Assert.ThrowsAny<Exception>(() => SftpSyncService.TestConnection(d.Profile, null));
+    }
+
+    [SkippableFact]
+    public void UnknownHostKey_WhenVerifierAccepts_ConnectsAndPinsFingerprint()
+    {
+        Skip.IfNot(_fx.Available, _fx.Reason);
+        var d = _fx.NewDeployment();
+        d.Profile.HostKeyFingerprint = "";
+
+        HostKeyInfo? seen = null;
+        SftpSyncService.TestConnection(d.Profile, null, info => { seen = info; return true; });
+
+        Assert.NotNull(seen);
+        Assert.False(seen!.IsChanged);   // first contact, not a key change
+        Assert.Null(seen.KnownFingerprint);
+        Assert.Equal(_fx.HostKeyFingerprint, seen.Fingerprint);
+        Assert.Equal(_fx.HostKeyFingerprint, d.Profile.HostKeyFingerprint); // so we don't ask again
+    }
+
+    [SkippableFact]
+    public void UnknownHostKey_WhenVerifierDeclines_IsRefusedAndNotPinned()
+    {
+        Skip.IfNot(_fx.Available, _fx.Reason);
+        var d = _fx.NewDeployment();
+        d.Profile.HostKeyFingerprint = "";
+
+        Assert.Throws<SftpHostKeyRejectedException>(
+            () => SftpSyncService.TestConnection(d.Profile, null, _ => false));
+        Assert.Equal("", d.Profile.HostKeyFingerprint);
+    }
+
+    [SkippableFact]
+    public void ChangedHostKey_IsReportedAsChanged_AndRefusedWhenDeclined()
+    {
+        Skip.IfNot(_fx.Available, _fx.Reason);
+        var d = _fx.NewDeployment();
+        const string stale = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        d.Profile.HostKeyFingerprint = stale;
+
+        HostKeyInfo? seen = null;
+        var ex = Assert.Throws<SftpHostKeyRejectedException>(
+            () => SftpSyncService.TestConnection(d.Profile, null, info => { seen = info; return false; }));
+
+        Assert.NotNull(seen);
+        Assert.True(seen!.IsChanged);                       // flagged as a change, not first contact
+        Assert.Equal(stale, seen.KnownFingerprint);
+        Assert.Contains("CHANGED", ex.Message);
+        Assert.Equal(stale, d.Profile.HostKeyFingerprint);  // declining must not overwrite the pin
+    }
+
+    [SkippableFact]
+    public void PinnedHostKey_ConnectsWithoutConsultingVerifier()
+    {
+        Skip.IfNot(_fx.Available, _fx.Reason);
+        var d = _fx.NewDeployment();   // fixture pins the server's real fingerprint
+
+        var asked = false;
+        SftpSyncService.TestConnection(d.Profile, null, _ => { asked = true; return true; });
+
+        Assert.False(asked); // an already-trusted key must not re-prompt on every sync
+    }
 }

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Linq;
 using System.Threading;
 using dir2site.SftpSync.Core;
 
@@ -30,6 +31,12 @@ public sealed class SftpServerFixture : IDisposable
     public string ClientKeyPath { get; }
     public string WrongKeyPath { get; }
 
+    /// <summary>The server's real host key fingerprint, in the SHA256:base64 form profiles pin.</summary>
+    public string HostKeyFingerprint { get; } = "";
+
+    private readonly string _keygenPath = "";
+    private readonly string _hostKeyPubPath = "";
+
     public SftpServerFixture()
     {
         BaseDir = Path.Combine(Path.GetTempPath(), "d2s-sshd-" + Guid.NewGuid().ToString("N"));
@@ -53,6 +60,10 @@ public sealed class SftpServerFixture : IDisposable
             RunOrThrow(keygen, ["-q", "-t", "ed25519", "-f", hostKey, "-N", ""]);
             RunOrThrow(keygen, ["-q", "-t", "ed25519", "-f", ClientKeyPath, "-N", ""]);
             RunOrThrow(keygen, ["-q", "-t", "ed25519", "-f", WrongKeyPath, "-N", ""]);
+
+            HostKeyFingerprint = ReadPublicKeyFingerprint(hostKey + ".pub");
+            _keygenPath = keygen;
+            _hostKeyPubPath = hostKey + ".pub";
 
             var authKeys = Path.Combine(BaseDir, "authorized_keys");
             File.WriteAllText(authKeys, File.ReadAllText(ClientKeyPath + ".pub"));
@@ -115,11 +126,44 @@ public sealed class SftpServerFixture : IDisposable
             RemotePath = remoteDir,
             AuthMethod = SftpAuthMethod.Key,
             PrivateKeyPath = ClientKeyPath,
+            // Pin the real key so the tests exercise the trusted-key path rather than an
+            // accept-everything stub. Host-key refusal is covered explicitly in its own tests.
+            HostKeyFingerprint = HostKeyFingerprint,
         };
         return new Deployment(profile, siteDir, remoteDir);
     }
 
     public sealed record Deployment(SftpProfile Profile, string SiteDir, string RemoteDir);
+
+    /// <summary>
+    /// What OpenSSH itself reports for the host key, used to prove our formatter agrees with the
+    /// string a user would compare against. `ssh-keygen -lf` prints "&lt;bits&gt; SHA256:&lt;b64&gt; &lt;comment&gt;".
+    /// </summary>
+    public string SshKeygenHostKeyFingerprint()
+    {
+        var psi = new ProcessStartInfo(_keygenPath)
+        {
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+        };
+        psi.ArgumentList.Add("-lf");
+        psi.ArgumentList.Add(_hostKeyPubPath);
+
+        using var p = Process.Start(psi)!;
+        var stdout = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+
+        return stdout.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                     .First(f => f.StartsWith("SHA256:", StringComparison.Ordinal));
+    }
+
+    // An OpenSSH .pub line is "<algo> <base64 keyblob> [comment]"; the fingerprint is taken over
+    // the decoded blob, which is the same bytes SSH.NET hands to HostKeyReceived.
+    private static string ReadPublicKeyFingerprint(string pubKeyPath)
+    {
+        var fields = File.ReadAllText(pubKeyPath).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return HostKeyFingerprintFormatter.Format(Convert.FromBase64String(fields[1]));
+    }
 
     public void Dispose()
     {

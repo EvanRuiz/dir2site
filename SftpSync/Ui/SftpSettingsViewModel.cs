@@ -32,6 +32,7 @@ public partial class SftpSettingsViewModel : ViewModelBase
         _manifestPath = profile.ManifestPath;
         _privateKeyPath = profile.PrivateKeyPath;
         _isKeyAuth = profile.AuthMethod == SftpAuthMethod.Key;
+        _hostKeyFingerprint = profile.HostKeyFingerprint;
 
         var existingSecret = _credentials.Get(SftpProfileStore.CredentialKey(projectRoot, profile));
         if (_isKeyAuth) _passphrase = existingSecret ?? string.Empty;
@@ -55,6 +56,13 @@ public partial class SftpSettingsViewModel : ViewModelBase
     [ObservableProperty] private string _status = string.Empty;
     [ObservableProperty] private bool _isBusy;
 
+    // The trusted host key travels with the profile. Pointing the profile at a different server
+    // must drop it, otherwise the new host would inherit the old one's trust.
+    private string _hostKeyFingerprint = string.Empty;
+
+    partial void OnHostChanged(string value) => _hostKeyFingerprint = string.Empty;
+    partial void OnPortChanged(int value) => _hostKeyFingerprint = string.Empty;
+
     public bool IsPasswordAuth => !IsKeyAuth;
     partial void OnIsKeyAuthChanged(bool value) => OnPropertyChanged(nameof(IsPasswordAuth));
 
@@ -67,6 +75,7 @@ public partial class SftpSettingsViewModel : ViewModelBase
         ManifestPath = ManifestPath.Trim(),
         AuthMethod = IsKeyAuth ? SftpAuthMethod.Key : SftpAuthMethod.Password,
         PrivateKeyPath = PrivateKeyPath.Trim(),
+        HostKeyFingerprint = _hostKeyFingerprint,
     };
 
     private string CurrentSecret => IsKeyAuth ? Passphrase : Password;
@@ -90,9 +99,13 @@ public partial class SftpSettingsViewModel : ViewModelBase
         Status = "Connecting…";
         var profile = BuildProfile();
         var secret = CurrentSecret;
+        var verifier = HostKeyPromptView.CreateVerifier(_window);
         try
         {
-            await Task.Run(() => SftpSyncService.TestConnection(profile, secret));
+            await Task.Run(() => SftpSyncService.TestConnection(profile, secret, verifier));
+            // The service pins the accepted key onto the profile it was handed; carry it back so
+            // Save persists it and the user isn't asked again.
+            _hostKeyFingerprint = profile.HostKeyFingerprint;
             Status = "✓ Connection succeeded.";
         }
         catch (Exception ex)

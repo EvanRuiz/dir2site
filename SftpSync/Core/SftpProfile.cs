@@ -34,4 +34,12 @@ public sealed class SftpProfile
 
     /// <summary>Local path to the SSH private key file (only used when <see cref="AuthMethod"/> is Key).</summary>
     public string PrivateKeyPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The server host key this profile trusts, as <c>SHA256:base64</c> (the OpenSSH format).
+    /// Empty until the user accepts a key. Once set, a server presenting a different key is
+    /// refused until the user explicitly accepts the change — this is what makes the password
+    /// safe to send, since without it any machine on the path could impersonate the server.
+    /// </summary>
+    public string HostKeyFingerprint { get; set; } = string.Empty;
 }
