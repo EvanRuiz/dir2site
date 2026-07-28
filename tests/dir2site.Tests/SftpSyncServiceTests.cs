@@ -270,13 +270,13 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
         var d = _fx.NewDeployment();
         d.Profile.HostKeyFingerprint = "";
 
-        HostKeyInfo? seen = null;
-        SftpSyncService.TestConnection(d.Profile, null, info => { seen = info; return true; });
+        var verifier = new FakeVerifier(accept: true);
+        SftpSyncService.TestConnection(d.Profile, null, verifier);
 
-        Assert.NotNull(seen);
-        Assert.False(seen!.IsChanged);   // first contact, not a key change
-        Assert.Null(seen.KnownFingerprint);
-        Assert.Equal(_fx.HostKeyFingerprint, seen.Fingerprint);
+        Assert.NotNull(verifier.Seen);
+        Assert.False(verifier.Seen!.IsChanged);   // first contact, not a key change
+        Assert.Null(verifier.Seen.KnownFingerprint);
+        Assert.Equal(_fx.HostKeyFingerprint, verifier.Seen.Fingerprint);
         Assert.Equal(_fx.HostKeyFingerprint, d.Profile.HostKeyFingerprint); // so we don't ask again
     }
 
@@ -288,7 +288,7 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
         d.Profile.HostKeyFingerprint = "";
 
         Assert.Throws<SftpHostKeyRejectedException>(
-            () => SftpSyncService.TestConnection(d.Profile, null, _ => false));
+            () => SftpSyncService.TestConnection(d.Profile, null, new FakeVerifier(accept: false)));
         Assert.Equal("", d.Profile.HostKeyFingerprint);
     }
 
@@ -300,13 +300,13 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
         const string stale = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         d.Profile.HostKeyFingerprint = stale;
 
-        HostKeyInfo? seen = null;
+        var verifier = new FakeVerifier(accept: false);
         var ex = Assert.Throws<SftpHostKeyRejectedException>(
-            () => SftpSyncService.TestConnection(d.Profile, null, info => { seen = info; return false; }));
+            () => SftpSyncService.TestConnection(d.Profile, null, verifier));
 
-        Assert.NotNull(seen);
-        Assert.True(seen!.IsChanged);                       // flagged as a change, not first contact
-        Assert.Equal(stale, seen.KnownFingerprint);
+        Assert.NotNull(verifier.Seen);
+        Assert.True(verifier.Seen!.IsChanged);              // flagged as a change, not first contact
+        Assert.Equal(stale, verifier.Seen.KnownFingerprint);
         Assert.Contains("CHANGED", ex.Message);
         Assert.Equal(stale, d.Profile.HostKeyFingerprint);  // declining must not overwrite the pin
     }
@@ -317,9 +317,22 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
         Skip.IfNot(_fx.Available, _fx.Reason);
         var d = _fx.NewDeployment();   // fixture pins the server's real fingerprint
 
-        var asked = false;
-        SftpSyncService.TestConnection(d.Profile, null, _ => { asked = true; return true; });
+        var verifier = new FakeVerifier(accept: true);
+        SftpSyncService.TestConnection(d.Profile, null, verifier);
 
-        Assert.False(asked); // an already-trusted key must not re-prompt on every sync
+        Assert.False(verifier.WasAsked); // an already-trusted key must not re-prompt on every sync
+    }
+
+    /// <summary>Answers a fixed way and records what it was shown.</summary>
+    private sealed class FakeVerifier(bool accept) : IHostKeyVerifier
+    {
+        public HostKeyInfo? Seen { get; private set; }
+        public bool WasAsked => Seen is not null;
+
+        public bool Verify(HostKeyInfo info)
+        {
+            Seen = info;
+            return accept;
+        }
     }
 }

@@ -25,17 +25,21 @@ public partial class HostKeyPromptView : Window
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     /// <summary>
-    /// Builds a <see cref="HostKeyVerifier"/> that prompts on <paramref name="owner"/> and, when
+    /// Builds an <see cref="IHostKeyVerifier"/> that prompts on <paramref name="owner"/> and, when
     /// the user accepts, calls <paramref name="onAccepted"/> so the fingerprint can be persisted.
     /// </summary>
+    public static IHostKeyVerifier CreateVerifier(Window owner, Action<HostKeyInfo>? onAccepted = null) =>
+        new PromptVerifier(owner, onAccepted);
+
     /// <remarks>
-    /// The verifier is invoked by SSH.NET on its own connection thread while the caller's
+    /// <see cref="Verify"/> is invoked by SSH.NET on its own connection thread while the caller's
     /// <c>Task.Run</c> is blocked waiting for it, so the prompt is marshalled to the UI thread and
     /// the connection thread waits for the answer. That is safe here precisely because sync work
     /// never runs on the UI thread; calling it from the UI thread would deadlock.
     /// </remarks>
-    public static HostKeyVerifier CreateVerifier(Window owner, Action<HostKeyInfo>? onAccepted = null) =>
-        info =>
+    private sealed class PromptVerifier(Window owner, Action<HostKeyInfo>? onAccepted) : IHostKeyVerifier
+    {
+        public bool Verify(HostKeyInfo info)
         {
             var answer = new TaskCompletionSource<bool>();
             Dispatcher.UIThread.Post(async () =>
@@ -54,5 +58,6 @@ public partial class HostKeyPromptView : Window
             var accepted = answer.Task.GetAwaiter().GetResult();
             if (accepted) onAccepted?.Invoke(info);
             return accepted;
-        };
+        }
+    }
 }

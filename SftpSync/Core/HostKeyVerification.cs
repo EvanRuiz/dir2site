@@ -24,10 +24,18 @@ public sealed record HostKeyInfo(
 }
 
 /// <summary>
-/// Decides whether to trust <paramref name="info"/>. Returning true connects and pins the key.
-/// Implementations run on the connection's background thread and may block (e.g. to prompt).
+/// Decides whether an offered host key should be trusted. Implemented outside this assembly —
+/// by the desktop app's prompt, or by whatever a future consumer of this engine wants — which is
+/// what keeps <c>SftpSync.Core</c> free of any UI dependency.
 /// </summary>
-public delegate bool HostKeyVerifier(HostKeyInfo info);
+public interface IHostKeyVerifier
+{
+    /// <summary>
+    /// Returns true to connect and pin <paramref name="info"/>'s fingerprint, false to refuse.
+    /// Called on the connection's background thread and may block (e.g. to prompt the user).
+    /// </summary>
+    bool Verify(HostKeyInfo info);
+}
 
 /// <summary>Thrown when a host key was not trusted, so the connection was refused.</summary>
 public sealed class SftpHostKeyRejectedException(string message) : Exception(message);

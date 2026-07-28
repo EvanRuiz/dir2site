@@ -29,7 +29,7 @@ public static class SftpSyncService
     // ---- public operations -------------------------------------------------
 
     /// <summary>Verifies the connection and credentials. Throws on failure.</summary>
-    public static void TestConnection(SftpProfile profile, string? secret, HostKeyVerifier? hostKeyVerifier = null)
+    public static void TestConnection(SftpProfile profile, string? secret, IHostKeyVerifier? hostKeyVerifier = null)
     {
         using var client = Connect(profile, secret, hostKeyVerifier);
         client.Disconnect();
@@ -47,7 +47,7 @@ public static class SftpSyncService
         bool forceFull = false,
         IProgress<string>? progress = null,
         CancellationToken ct = default,
-        HostKeyVerifier? hostKeyVerifier = null)
+        IHostKeyVerifier? hostKeyVerifier = null)
     {
         var local = SyncManifestBuilder.BuildLocal(siteRoot);
         if (local.Files.Count == 0)
@@ -95,7 +95,7 @@ public static class SftpSyncService
         string? secret,
         IProgress<string>? progress = null,
         CancellationToken ct = default,
-        HostKeyVerifier? hostKeyVerifier = null)
+        IHostKeyVerifier? hostKeyVerifier = null)
     {
         var local = SyncManifestBuilder.BuildLocal(siteRoot);
 
@@ -133,7 +133,7 @@ public static class SftpSyncService
         IReadOnlyList<string> relPaths,
         IProgress<string>? progress = null,
         CancellationToken ct = default,
-        HostKeyVerifier? hostKeyVerifier = null)
+        IHostKeyVerifier? hostKeyVerifier = null)
     {
         using var client = Connect(profile, secret, hostKeyVerifier);
 
@@ -181,7 +181,7 @@ public static class SftpSyncService
     /// SSH.NET trusts any key, so anyone on the network path could impersonate the server and
     /// collect the password during the handshake.
     /// </summary>
-    private static SftpClient Connect(SftpProfile p, string? secret, HostKeyVerifier? verifier)
+    private static SftpClient Connect(SftpProfile p, string? secret, IHostKeyVerifier? verifier)
     {
         var client = CreateClient(p, secret);
 
@@ -204,7 +204,7 @@ public static class SftpSyncService
                 p.Host, p.Port <= 0 ? 22 : p.Port, e.HostKeyName, e.KeyLength, offered, known);
 
             // No verifier means nobody is able to answer the question, so fail closed.
-            e.CanTrust = verifier is not null && verifier(info);
+            e.CanTrust = verifier is not null && verifier.Verify(info);
             if (e.CanTrust) p.HostKeyFingerprint = offered;
             else refused = info;
         };

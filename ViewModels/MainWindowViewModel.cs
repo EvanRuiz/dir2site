@@ -411,7 +411,7 @@ public partial class MainWindowViewModel : ViewModelBase
     // Prompts on the main window for an unknown/changed host key. SftpSyncService pins the
     // accepted fingerprint onto the in-memory profile; persisting it here is what stops the
     // prompt reappearing on every sync.
-    private HostKeyVerifier? CreateHostKeyVerifier(SftpProfile profile)
+    private IHostKeyVerifier? CreateHostKeyVerifier(SftpProfile profile)
     {
         if (TopLevel is not Window owner) return null;
         return HostKeyPromptView.CreateVerifier(owner, _ =>
