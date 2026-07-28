@@ -326,9 +326,19 @@ public static class SftpSyncService
             using (var up = new MemoryStream(bytes))
                 client.UploadFile(up, tmp, canOverride: true);
 
-            if (TryExists(client, manifestPath))
-                client.DeleteFile(manifestPath);
-            client.RenameFile(tmp, manifestPath);
+            // Rename first and only fall back to delete-then-rename if the server refuses to
+            // clobber. Deleting up front would leave no manifest at all if the link dropped
+            // before the rename landed, forcing the next run into a full re-upload.
+            try
+            {
+                client.RenameFile(tmp, manifestPath);
+            }
+            catch
+            {
+                if (TryExists(client, manifestPath))
+                    client.DeleteFile(manifestPath);
+                client.RenameFile(tmp, manifestPath);
+            }
         }
         catch (Exception ex)
         {
