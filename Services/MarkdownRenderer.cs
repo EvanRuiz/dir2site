@@ -36,7 +36,8 @@ public static partial class MarkdownRenderer
     /// <summary>
     /// Renders Markdown text to HTML. When <paramref name="rewriteRelativeUrls"/> is true,
     /// relative <c>src</c>/<c>href</c> URLs (in both Markdown links/images and raw HTML) are
-    /// prefixed with <c>../</c> (see <see cref="ToHtml(string)"/>).
+    /// prefixed with <c>../</c> (see <see cref="ToHtml(string)"/>). URLs inside <c>&lt;pre&gt;</c>
+    /// and <c>&lt;code&gt;</c> spans are left verbatim so documented markup renders as written.
     /// </summary>
     public static string ToHtml(string markdown, bool rewriteRelativeUrls)
     {
@@ -47,16 +48,26 @@ public static partial class MarkdownRenderer
     // Rewrites relative src=""/href="" attributes — covering both Markdig-emitted links/images and
     // raw HTML tags the author embedded (e.g. a floated <img>) — so they resolve from the nested
     // artifact page. Absolute, rooted, and anchor URLs are left untouched.
+    //
+    // <pre>/<code> spans are matched by the same pass purely so they can be skipped: an article
+    // that documents HTML markup must render its samples verbatim. Markdig escapes " to &quot;
+    // inside code but leaves ' alone, so without this a single-quoted src='…' in a fenced block
+    // would be silently rewritten.
     private static string RewriteRelativeUrls(string html) =>
         AttrUrlRegex().Replace(html, m =>
         {
+            if (m.Groups["skip"].Success) return m.Value;
             var url = m.Groups["url"].Value;
             if (!IsRelativeUrl(url)) return m.Value;
             var q = m.Groups["q"].Value;
             return $"{m.Groups["attr"].Value}{q}../{url}{q}";
         });
 
-    [GeneratedRegex("""(?<attr>\b(?:src|href)\s*=\s*)(?<q>["'])(?<url>[^"']*)\k<q>""", RegexOptions.IgnoreCase)]
+    // The (?<![\w-]) guard keeps the attribute name whole, so data-src="…" and the like are left
+    // alone rather than being treated as a bare src.
+    [GeneratedRegex(
+        """(?<skip><pre\b[^>]*>.*?</pre>|<code\b[^>]*>.*?</code>)|(?<attr>(?<![\w-])(?:src|href)\s*=\s*)(?<q>["'])(?<url>[^"']*)\k<q>""",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex AttrUrlRegex();
 
     // A URL is relative (and thus needs the ../ prefix) when it is not rooted, not an anchor,
