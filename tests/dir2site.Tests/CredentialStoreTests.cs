@@ -88,6 +88,9 @@ public class CredentialStoreTests : IDisposable
     public void EncryptedFile_IsNotReadableByOtherUsers()
     {
         Skip.If(OperatingSystem.IsWindows(), "Unix file modes only; Windows relies on AppData ACLs.");
+        // Unreachable — Skip.If throws — but the CA1416 analyzer doesn't recognise it as a
+        // platform guard, so the narrowing check has to be visible in the code.
+        if (OperatingSystem.IsWindows()) return;
 
         // The AES key is derived from non-secret material (username + machine name), so these
         // permissions are the actual barrier between another local account and the SSH password.
