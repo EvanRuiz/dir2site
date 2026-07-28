@@ -12,15 +12,20 @@ using dir2site.SftpSync.Core;
 namespace dir2site.Tests;
 
 /// <summary>
-/// Spins up a throwaway, unprivileged OpenSSH <c>sshd</c> on a free loopback port with key-only
-/// auth and the in-process <c>internal-sftp</c> subsystem. Used by <see cref="SftpSyncServiceTests"/>.
+/// Spins up a throwaway <c>rclone serve sftp</c> on a free loopback port with key-only auth,
+/// serving a temp directory. Used by <see cref="SftpSyncServiceTests"/>.
 ///
-/// If a usable <c>sshd</c>/<c>ssh-keygen</c> isn't present (e.g. Windows, or a CI image without
-/// openssh-server), <see cref="Available"/> is false and the integration tests skip cleanly.
+/// rclone authenticates against its own <c>authorized_keys</c> rather than OS accounts, so this
+/// runs unprivileged and identically on Windows, macOS and Linux — which <c>sshd</c> cannot do on
+/// Windows, where it needs privileges to mint a user token. The binary is fetched and verified
+/// against a pinned hash by <see cref="RcloneTool"/>; see <c>tests/tools/rclone/README.md</c>.
+///
+/// If no rclone is pinned for this platform, <see cref="Available"/> is false and the integration
+/// tests skip cleanly.
 /// </summary>
 public sealed class SftpServerFixture : IDisposable
 {
-    private Process? _sshd;
+    private Process? _server;
 
     public bool Available { get; }
     public string Reason { get; } = "";
@@ -31,6 +36,9 @@ public sealed class SftpServerFixture : IDisposable
     public string ClientKeyPath { get; }
     public string WrongKeyPath { get; }
 
+    /// <summary>The directory rclone serves. Remote paths in profiles are relative to this.</summary>
+    public string ServedRoot { get; }
+
     /// <summary>The server's real host key fingerprint, in the SHA256:base64 form profiles pin.</summary>
     public string HostKeyFingerprint { get; } = "";
 
@@ -39,22 +47,24 @@ public sealed class SftpServerFixture : IDisposable
 
     public SftpServerFixture()
     {
-        BaseDir = Path.Combine(Path.GetTempPath(), "d2s-sshd-" + Guid.NewGuid().ToString("N"));
+        BaseDir = Path.Combine(Path.GetTempPath(), "d2s-sftp-" + Guid.NewGuid().ToString("N"));
+        ServedRoot = Path.Combine(BaseDir, "srv");
         ClientKeyPath = Path.Combine(BaseDir, "clientkey");
         WrongKeyPath = Path.Combine(BaseDir, "wrongkey");
 
-        var sshd = FindBinary("sshd", "/usr/sbin/sshd", "/usr/local/sbin/sshd");
-        var keygen = FindBinary("ssh-keygen", "/usr/bin/ssh-keygen", "/usr/local/bin/ssh-keygen");
-        if (sshd == null || keygen == null)
+        var rclone = RcloneTool.Resolve(out var rcloneReason);
+        var keygen = FindKeygen();
+        if (rclone == null || keygen == null)
         {
-            Reason = "sshd/ssh-keygen not found on this platform — integration tests skipped.";
+            Reason = rclone == null
+                ? rcloneReason
+                : "ssh-keygen not found on this platform — integration tests skipped.";
             return;
         }
 
         try
         {
-            Directory.CreateDirectory(Path.Combine(BaseDir, "srv"));
-            Directory.CreateDirectory(Path.Combine(BaseDir, "run"));
+            Directory.CreateDirectory(ServedRoot);
 
             var hostKey = Path.Combine(BaseDir, "hostkey");
             RunOrThrow(keygen, ["-q", "-t", "ed25519", "-f", hostKey, "-N", ""]);
@@ -67,35 +77,36 @@ public sealed class SftpServerFixture : IDisposable
 
             var authKeys = Path.Combine(BaseDir, "authorized_keys");
             File.WriteAllText(authKeys, File.ReadAllText(ClientKeyPath + ".pub"));
-            Chmod600(hostKey, ClientKeyPath, WrongKeyPath, authKeys);
 
             Port = FreePort();
-            var config = Path.Combine(BaseDir, "sshd_config");
-            File.WriteAllText(config, $"""
-                Port {Port}
-                ListenAddress 127.0.0.1
-                HostKey {hostKey}
-                PidFile {Path.Combine(BaseDir, "run", "sshd.pid")}
-                AuthorizedKeysFile {authKeys}
-                PasswordAuthentication no
-                KbdInteractiveAuthentication no
-                PubkeyAuthentication yes
-                StrictModes no
-                UsePAM no
-                LogLevel ERROR
-                Subsystem sftp internal-sftp
-                """);
 
-            _sshd = Process.Start(new ProcessStartInfo(sshd, $"-D -f \"{config}\" -E \"{Path.Combine(BaseDir, "sshd.log")}\"")
+            var psi = new ProcessStartInfo(rclone)
             {
                 UseShellExecute = false,
                 RedirectStandardError = true,
                 RedirectStandardOutput = true,
-            });
-
-            if (!WaitForPort(Port, TimeSpan.FromSeconds(8)))
+            };
+            foreach (var a in new[]
             {
-                Reason = "sshd did not accept connections in time.";
+                "serve", "sftp",
+                "--addr", $"127.0.0.1:{Port}",
+                "--key", hostKey,
+                "--authorized-keys", authKeys,
+                // Keep rclone off the developer's real config and cache.
+                "--config", Path.Combine(BaseDir, "rclone.conf"),
+                "--cache-dir", Path.Combine(BaseDir, "cache"),
+                // Tests mutate the served tree directly to simulate server-side changes, so the
+                // VFS must never answer from a cached listing.
+                "--dir-cache-time", "0s",
+                "--log-file", Path.Combine(BaseDir, "rclone.log"),
+                ServedRoot,
+            }) psi.ArgumentList.Add(a);
+
+            _server = Process.Start(psi);
+
+            if (!WaitForPort(Port, TimeSpan.FromSeconds(15)))
+            {
+                Reason = "rclone did not accept connections in time.";
                 Dispose();
                 return;
             }
@@ -104,7 +115,7 @@ public sealed class SftpServerFixture : IDisposable
         }
         catch (Exception ex)
         {
-            Reason = $"Could not start sshd: {ex.Message}";
+            Reason = $"Could not start rclone: {ex.Message}";
             Dispose();
         }
     }
@@ -114,7 +125,7 @@ public sealed class SftpServerFixture : IDisposable
     {
         var id = Guid.NewGuid().ToString("N");
         var siteDir = Path.Combine(BaseDir, "site", id);
-        var remoteDir = Path.Combine(BaseDir, "srv", id);
+        var remoteDir = Path.Combine(ServedRoot, id);
         Directory.CreateDirectory(siteDir);
         Directory.CreateDirectory(remoteDir);
 
@@ -123,7 +134,7 @@ public sealed class SftpServerFixture : IDisposable
             Host = "127.0.0.1",
             Port = Port,
             Username = User,
-            RemotePath = remoteDir,
+            RemotePath = "/" + id,
             AuthMethod = SftpAuthMethod.Key,
             PrivateKeyPath = ClientKeyPath,
             // Pin the real key so the tests exercise the trusted-key path rather than an
@@ -132,6 +143,10 @@ public sealed class SftpServerFixture : IDisposable
         };
         return new Deployment(profile, siteDir, remoteDir);
     }
+
+    /// <summary>Maps a server-relative remote path to where it actually lands on disk.</summary>
+    public string LocalPathFor(string remotePath) =>
+        Path.Combine(ServedRoot, remotePath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
 
     public sealed record Deployment(SftpProfile Profile, string SiteDir, string RemoteDir);
 
@@ -167,25 +182,20 @@ public sealed class SftpServerFixture : IDisposable
 
     public void Dispose()
     {
-        try { if (_sshd is { HasExited: false }) _sshd.Kill(entireProcessTree: true); } catch { }
-        try { _sshd?.Dispose(); } catch { }
+        try { if (_server is { HasExited: false }) _server.Kill(entireProcessTree: true); } catch { }
+        try { _server?.Dispose(); } catch { }
         try { Directory.Delete(BaseDir, recursive: true); } catch { }
     }
 
     // ---- helpers -----------------------------------------------------------
 
-    private static string? FindBinary(string name, params string[] candidates)
+    private static string? FindKeygen()
     {
-        foreach (var c in candidates)
-            if (File.Exists(c)) return c;
-        return null;
-    }
+        string[] candidates = OperatingSystem.IsWindows()
+            ? [Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "OpenSSH", "ssh-keygen.exe")]
+            : ["/usr/bin/ssh-keygen", "/usr/local/bin/ssh-keygen", "/opt/homebrew/bin/ssh-keygen"];
 
-    private static void Chmod600(params string[] paths)
-    {
-        if (OperatingSystem.IsWindows()) return;
-        foreach (var p in paths)
-            File.SetUnixFileMode(p, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private static int FreePort()

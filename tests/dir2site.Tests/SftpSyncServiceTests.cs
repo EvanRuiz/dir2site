@@ -10,7 +10,7 @@ namespace dir2site.Tests;
 
 /// <summary>
 /// End-to-end tests against a real (throwaway) SFTP server. They skip automatically when no
-/// <c>sshd</c> is available (see <see cref="SftpServerFixture"/>).
+/// vendored rclone matches this platform (see <see cref="SftpServerFixture"/>).
 /// </summary>
 public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
 {
@@ -211,12 +211,12 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
     {
         Skip.IfNot(_fx.Available, _fx.Reason);
         var d = _fx.NewDeployment();
-        d.Profile.ManifestPath = Path.Combine(_fx.BaseDir, "manifests", Guid.NewGuid().ToString("N") + ".json");
+        d.Profile.ManifestPath = "/manifests/" + Guid.NewGuid().ToString("N") + ".json";
         Write(d.SiteDir, "index.html", "home");
 
         SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
 
-        Assert.True(File.Exists(d.Profile.ManifestPath));
+        Assert.True(File.Exists(_fx.LocalPathFor(d.Profile.ManifestPath)));
         Assert.False(RemoteHas(d.RemoteDir, ".dir2site-manifest.json")); // not in the web root
         Assert.Equal(0, SftpSyncService.QuickSync(d.SiteDir, d.Profile, null).Uploaded); // custom manifest is used
     }

@@ -64,3 +64,6 @@ nunit-*.xml
 .idea/**/dictionaries
 .idea/**/shelf
 .idea/**/avalonia.xml
+
+# Test tools fetched on demand and verified against pinned hashes (see RcloneTool.cs).
+tests/tools/rclone/.cache/
