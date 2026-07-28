@@ -32,10 +32,22 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # The SFTP integration tests drive a real server on a loopback port, using the rclone
-      # vendored under tests/tools/rclone. Nothing to install: it runs unprivileged and the
-      # same way on all three runners, so the deploy engine is covered everywhere rather than
-      # skipping on Windows.
+      # The SFTP integration tests drive a real server on a loopback port. RcloneTool fetches
+      # rclone on first use and verifies it against hashes pinned in the repo, so there is
+      # nothing to install and it behaves the same on all three runners — the deploy engine is
+      # covered everywhere rather than skipping on Windows. Caching it keeps the download to
+      # roughly once per rclone version rather than once per job.
+      - name: Cache rclone
+        uses: actions/cache@v4
+        with:
+          path: tests/tools/rclone/.cache
+          key: rclone-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/dir2site.Tests/RcloneTool.cs') }}
+
+      # Without this an unreachable download would skip the integration tests, and a run covering
+      # nothing would report green. Locally it stays unset so being offline is not a hard stop.
+      - name: Require the SFTP integration tests to run
+        run: echo "DIR2SITE_REQUIRE_SFTP_TESTS=1" >> $GITHUB_ENV
+        shell: bash
 
       # Opts in to the tests that read and write the real login keychain. Safe on an ephemeral
       # runner; left off locally so `dotnet test` never touches a developer's own keychain.
