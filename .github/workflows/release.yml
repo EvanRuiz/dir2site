@@ -11,7 +11,19 @@ on:
         required: true
 
 jobs:
+  # Gate: nothing is published unless the full matrix passes. This must run before
+  # create-release, which publishes a non-draft GitHub Release as its first act — testing any
+  # later could not stop a bad release, only discover one.
+  #
+  # For a tag push the triggering ref is already the tag; for workflow_dispatch it is the
+  # default branch, so the tag is passed explicitly (same reason as the fix in #68).
+  test:
+    uses: ./.github/workflows/tests.yml
+    with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
+
   create-release:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write

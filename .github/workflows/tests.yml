@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Reusable build + test matrix. Called by ci.yml on pull requests and by release.yml as the
+# gate in front of create-release, so one definition covers both and a release can never be
+# published from a commit whose tests failed.
+name: Tests
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref to check out. Defaults to the triggering ref.'
+        required: false
+        type: string
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # The SFTP integration tests drive a real sshd on a loopback port. macOS runners already
+      # ship one; Linux needs it installed, or those tests would skip and quietly leave the
+      # deploy engine untested. Windows has no sshd and skips them by design — Linux and macOS
+      # cover that ground.
+      - name: Install openssh-server
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y openssh-server
+
+      # Opts in to the tests that read and write the real login keychain. Safe on an ephemeral
+      # runner; left off locally so `dotnet test` never touches a developer's own keychain.
+      - name: Allow keychain-backed tests
+        if: runner.os == 'macOS'
+        run: echo "DIR2SITE_TEST_KEYCHAIN=1" >> $GITHUB_ENV
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Test
+        run: dotnet test -c Release --no-build --logger "console;verbosity=normal"
