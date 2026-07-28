@@ -84,6 +84,27 @@ public class CredentialStoreTests : IDisposable
         Assert.Equal("v", new EncryptedFileCredentialStore(_dir).Get("k"));
     }
 
+    [SkippableFact]
+    public void EncryptedFile_IsNotReadableByOtherUsers()
+    {
+        Skip.If(OperatingSystem.IsWindows(), "Unix file modes only; Windows relies on AppData ACLs.");
+
+        // The AES key is derived from non-secret material (username + machine name), so these
+        // permissions are the actual barrier between another local account and the SSH password.
+        var store = new EncryptedFileCredentialStore(_dir);
+        store.Set("key1", "hunter2");
+
+        var files = Directory.GetFiles(_dir, "*.aes");
+        Assert.Single(files);
+
+        Assert.Equal(
+            UnixFileMode.UserRead | UnixFileMode.UserWrite,
+            File.GetUnixFileMode(files[0]));
+        Assert.Equal(
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute,
+            File.GetUnixFileMode(_dir));
+    }
+
     [Fact]
     public void Factory_ReturnsAUsableStore()
     {
