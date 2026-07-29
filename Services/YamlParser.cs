@@ -107,9 +107,17 @@ public static class YamlParser
     ];
 
     /// <summary>
-    /// Updates (or adds) the preview and previewLarge keys in an existing YAML meta file,
-    /// preserving all other fields.
+    /// Updates (or adds) the preview and previewLarge keys in an existing YAML meta file, leaving
+    /// the rest of the document exactly as the user wrote it — comments, key order and all.
     /// </summary>
+    /// <remarks>
+    /// This runs for every artifact on every generate, so it is the app's most frequent YAML
+    /// write. It used to round-trip the file through a dictionary, which kept other fields' values
+    /// but discarded every comment and any formatting the user had applied. Sidecars are exactly
+    /// the files people annotate by hand, so the edit is now surgical
+    /// (<see cref="YamlDocumentEditor"/>), with the old whole-file rewrite kept only as a fallback
+    /// for documents that cannot be edited in place.
+    /// </remarks>
     public static void UpdatePreviewFields(
         string yamlPath,
         string previewFileName,
@@ -120,17 +128,81 @@ public static class YamlParser
         try { yaml = File.ReadAllText(yamlPath); }
         catch { return; }
 
+        var updates = new List<KeyValuePair<string, string>>
+        {
+            new("preview", previewFileName),
+            new("previewLarge", previewLargeFileName),
+        };
+        if (imageFileName != null)
+            updates.Add(new("image", imageFileName));
+
+        var editor = YamlDocumentEditor.TryLoad(yaml);
+        if (editor != null && editor.SetAll(updates))
+        {
+            // Nothing to do when the values already match — rewriting would only churn mtimes,
+            // which SiteGenerator uses to decide what needs regenerating.
+            if (editor.IsModified)
+                File.WriteAllText(yamlPath, editor.Text);
+            return;
+        }
+
+        FallbackRewrite(yamlPath, yaml, updates);
+    }
+
+    // Last resort for a file the editor cannot splice (unparseable, or a non-scalar sitting on one
+    // of these keys). Preserves other fields' values but not comments or formatting.
+    private static void FallbackRewrite(
+        string yamlPath, string yaml, List<KeyValuePair<string, string>> updates)
+    {
         Dictionary<object, object> doc;
         try { doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml) ?? new(); }
         catch { doc = new(); }
 
-        doc["preview"] = previewFileName;
-        doc["previewLarge"] = previewLargeFileName;
-        if (imageFileName != null)
-            doc["image"] = imageFileName;
+        foreach (var (key, value) in updates)
+            doc[key] = value;
 
         File.WriteAllText(yamlPath, Serializer.Serialize(doc));
     }
+
+    /// <summary>
+    /// Writes the project config back to <paramref name="configPath"/>, changing only the values
+    /// that actually differ and leaving the user's comments, key order and formatting in place.
+    /// Creates the file from scratch when it doesn't exist yet.
+    /// </summary>
+    /// <remarks>
+    /// Generate Site calls this every run, so a whole-file rewrite here meant a hand-edited
+    /// dir2site.yaml lost its comments the first time the user clicked Generate.
+    /// </remarks>
+    public static void SaveDir2SiteConfig(string configPath, Dir2SiteModel config)
+    {
+        string existing;
+        try { existing = File.Exists(configPath) ? File.ReadAllText(configPath) : ""; }
+        catch { existing = ""; }
+
+        if (existing.Length > 0 && YamlDocumentEditor.TryLoad(existing) is { } editor && Apply(editor, config))
+        {
+            if (editor.IsModified)
+                File.WriteAllText(configPath, editor.Text);
+            return;
+        }
+
+        File.WriteAllText(configPath, SerializeToYaml(config));
+    }
+
+    // Ordered as the model declares them, which is also the order a freshly created file uses,
+    // so an appended key lands where a reader would expect it.
+    private static bool Apply(YamlDocumentEditor editor, Dir2SiteModel c) =>
+        editor.Set("title", c.Title) &&
+        editor.Set("footer", c.Footer) &&
+        editor.Set("logo", c.Logo) &&
+        editor.Set("primaryColor", c.PrimaryColor) &&
+        editor.Set("secondaryColor", c.SecondaryColor) &&
+        editor.Set("backgroundColor", c.BackgroundColor) &&
+        editor.Set("navbarDark", c.NavbarDark) &&
+        editor.Set("siteUrl", c.SiteUrl) &&
+        editor.Set("pdfResizeEnabled", c.PdfResizeEnabled) &&
+        editor.Set("pdfMaxWidth", c.PdfMaxWidth) &&
+        editor.Set("pdfQuality", c.PdfQuality);
 
     public static T DeserializeAs<T>(string yaml) where T : new() =>
         Deserializer.Deserialize<T>(yaml);
