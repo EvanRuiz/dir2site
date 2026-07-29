@@ -45,6 +45,11 @@ public sealed class YamlDocumentEditor
     /// </summary>
     public static YamlDocumentEditor? TryLoad(string text)
     {
+        // An empty or whitespace-only file is an empty mapping: there is nothing to preserve and
+        // everything to add, so editing it is well defined.
+        if (string.IsNullOrWhiteSpace(text))
+            return new YamlDocumentEditor("");
+
         try
         {
             var stream = new YamlStream();
@@ -102,12 +107,105 @@ public sealed class YamlDocumentEditor
     public bool SetAll(IEnumerable<KeyValuePair<string, string>> values) =>
         values.All(kv => Set(kv.Key, kv.Value));
 
+    /// <summary>
+    /// Replaces (or appends) a whole top-level block — a nested mapping or sequence — given its
+    /// body as YAML at zero indentation.
+    /// </summary>
+    /// <remarks>
+    /// Everything outside the block keeps its comments and formatting, which is the point.
+    /// Comments <em>inside</em> the block do not survive, because the block is rewritten wholesale
+    /// from app-owned data rather than edited value by value. That is the accepted trade for
+    /// sections the app manages, like <c>deploy:</c>.
+    /// </remarks>
+    public bool SetBlock(string key, string blockBody)
+    {
+        var root = Root();
+        if (root == null) return false;
+
+        var indented = string.Join('\n',
+            blockBody.TrimEnd('\r', '\n').Split('\n').Select(l => l.Length == 0 ? l : "  " + l));
+        var replacement = key + ":\n" + indented;
+
+        var keyNode = root.Children.Keys.OfType<YamlScalarNode>().FirstOrDefault(k => k.Value == key);
+        if (keyNode == null)
+        {
+            var trimmed = _text.TrimEnd('\r', '\n');
+            var separator = trimmed.Length == 0 ? "" : "\n";
+            return TryCommit(trimmed + separator + replacement + "\n");
+        }
+
+        if (!TryEntryExtent(root, keyNode, out var start, out var end)) return false;
+        return TryCommit(_text[..start] + replacement + "\n" + _text[end..]);
+    }
+
+    /// <summary>Removes a top-level key and its value. No-op when the key isn't there.</summary>
+    public bool RemoveKey(string key)
+    {
+        var root = Root();
+        if (root == null) return false;
+
+        var keyNode = root.Children.Keys.OfType<YamlScalarNode>().FirstOrDefault(k => k.Value == key);
+        if (keyNode == null) return true;
+
+        if (!TryEntryExtent(root, keyNode, out var start, out var end)) return false;
+        return TryCommit(_text[..start] + _text[end..]);
+    }
+
+    /// <summary>
+    /// The character span of a whole top-level entry, key through value, ending just past its
+    /// final newline.
+    /// </summary>
+    /// <remarks>
+    /// A nested mapping or sequence cannot supply this itself: YamlDotNet reports its End mark at
+    /// the <em>start</em> of its content, so `deploy:` spans only "deploy:\n  ". The reliable
+    /// bound is the next top-level key — minus any comment or blank lines directly above it, which
+    /// belong to that key and must not be swallowed.
+    /// </remarks>
+    private bool TryEntryExtent(YamlMappingNode root, YamlScalarNode keyNode, out int start, out int end)
+    {
+        var entryStart = (int)keyNode.Start.Index;
+        start = entryStart;
+        end = 0;
+        if (entryStart < 0 || entryStart > _text.Length) return false;
+
+        var next = root.Children.Keys
+            .OfType<YamlScalarNode>()
+            .Select(k => (int)k.Start.Index)
+            .Where(i => i > entryStart)
+            .DefaultIfEmpty(_text.Length)
+            .Min();
+
+        if (next > _text.Length) return false;
+
+        if (next < _text.Length)
+        {
+            // Rewind over lines leading up to the next key that are blank or pure comment.
+            var cursor = next;
+            while (cursor > entryStart)
+            {
+                var lineStart = _text.LastIndexOf('\n', cursor - 2) + 1;
+                if (lineStart <= entryStart) break;
+
+                var line = _text[lineStart..cursor].Trim();
+                if (line.Length != 0 && !line.StartsWith('#')) break;
+
+                cursor = lineStart;
+            }
+            next = cursor;
+        }
+
+        end = next;
+        return end >= entryStart;
+    }
+
     // ---- internals ---------------------------------------------------------
 
     // Re-parsed before every edit: indices from a previous parse are stale the moment the text
     // changes. These documents are small, so this is cheaper than tracking offset deltas.
     private YamlMappingNode? Root()
     {
+        if (_text.Length == 0) return new YamlMappingNode();
+
         try
         {
             var stream = new YamlStream();

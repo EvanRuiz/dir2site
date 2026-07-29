@@ -29,7 +29,10 @@ public static class SftpProfileStore
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..16];
 
     private static string PathFor(string projectRoot) =>
-        Path.Combine(ProfilesDir, Hash(NormalizeProject(projectRoot)) + ".json");
+        Path.Combine(ProfilesDir, ProjectKey(projectRoot) + ".json");
+
+    /// <summary>Stable per-project filename stem, shared with <see cref="DeployLocalStore"/>.</summary>
+    public static string ProjectKey(string projectRoot) => Hash(NormalizeProject(projectRoot));
 
     public static bool Exists(string projectRoot) => File.Exists(PathFor(projectRoot));
 
