@@ -28,10 +28,25 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private readonly PreviewServerService _previewServer = new();
 
-    private readonly UpdateManager _updateManager = new(
-        new GithubSource("https://github.com/EvanRuiz/dir2site", null, false),
-        new UpdateOptions { ExplicitChannel = RuntimeInformation.RuntimeIdentifier });
+    // Null when Velopack isn't initialised — a test host, or anything that didn't run
+    // VelopackApp.Build(). Auto-update is then simply unavailable, rather than the whole view
+    // model being impossible to construct.
+    private readonly UpdateManager? _updateManager = TryCreateUpdateManager();
     private UpdateInfo? _pendingUpdate;
+
+    private static UpdateManager? TryCreateUpdateManager()
+    {
+        try
+        {
+            return new UpdateManager(
+                new GithubSource("https://github.com/EvanRuiz/dir2site", null, false),
+                new UpdateOptions { ExplicitChannel = RuntimeInformation.RuntimeIdentifier });
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
@@ -54,9 +69,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public MainWindowViewModel()
     {
-        _statusText = _updateManager.IsInstalled
+        _statusText = _updateManager is { IsInstalled: true }
             ? $"v{_updateManager.CurrentVersion}"
             : "Development Build";
+        // The property-changed handlers only fire on change, so without this the very first state
+        // — no project open — would show disabled buttons and no explanation.
+        RefreshSyncBlockedReason();
         _ = CheckForUpdatesAsync();
     }
 
@@ -493,6 +511,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
+            if (_updateManager == null) return;
             _pendingUpdate = await _updateManager.CheckForUpdatesAsync();
             if (_pendingUpdate != null)
             {
@@ -509,7 +528,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanDownloadUpdate))]
     private async Task DownloadUpdate()
     {
-        if (_pendingUpdate == null) return;
+        if (_pendingUpdate == null || _updateManager == null) return;
         IsDownloading = true;
         try
         {
@@ -528,7 +547,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanRestartAndUpdate))]
     private void RestartAndUpdate()
     {
-        if (_pendingUpdate == null) return;
+        if (_pendingUpdate == null || _updateManager == null) return;
         _updateManager.ApplyUpdatesAndRestart(_pendingUpdate);
     }
 
