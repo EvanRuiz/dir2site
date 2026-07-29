@@ -135,6 +135,55 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _forceFullReupload;
 
+    /// <summary>Every configured deploy target, for the picker in the deploy row.</summary>
+    public ObservableCollection<DeployTarget> DeployTargetList { get; } = [];
+
+    /// <summary>The target Quick Sync and Verify act on.</summary>
+    [ObservableProperty]
+    private DeployTarget? _selectedTarget;
+
+    /// <summary>Only worth showing the picker when there is a choice to make.</summary>
+    public bool HasMultipleTargets => DeployTargetList.Count > 1;
+
+    // Set while loading a project, so populating the picker isn't mistaken for the user choosing.
+    private bool _loadingTargets;
+
+    partial void OnSelectedTargetChanged(DeployTarget? value)
+    {
+        if (_loadingTargets) return;
+        if (value == null || DirectoryRoot == null || Dir2SiteConfig?.Deploy == null) return;
+        if (string.Equals(Dir2SiteConfig.Deploy.Active, value.Name, StringComparison.Ordinal)) return;
+
+        // Remember the choice, so the next session deploys where the user left off.
+        Dir2SiteConfig.Deploy.Active = value.Name;
+        DeployTargets.Save(ConfigPath()!, Dir2SiteConfig.Deploy);
+        StatusText = $"Deploy target: {value.Name}";
+    }
+
+    private string? ConfigPath() =>
+        DirectoryRoot == null ? null : Path.Combine(DirectoryRoot, "dir2site.yaml");
+
+    private void ReloadDeployTargets()
+    {
+        DeployTargetList.Clear();
+        if (DirectoryRoot == null || Dir2SiteConfig == null)
+        {
+            HasSftpProfile = false;
+            OnPropertyChanged(nameof(HasMultipleTargets));
+            return;
+        }
+
+        var deploy = DeployTargets.Resolve(DirectoryRoot, Dir2SiteConfig);
+        foreach (var t in deploy.Targets) DeployTargetList.Add(t);
+
+        _loadingTargets = true;
+        try { SelectedTarget = DeployTargets.Active(deploy); }
+        finally { _loadingTargets = false; }
+
+        OnPropertyChanged(nameof(HasMultipleTargets));
+        HasSftpProfile = DeployTargetList.Count > 0 && !string.IsNullOrWhiteSpace(SelectedTarget?.Host);
+    }
+
     /// <summary>Why the deploy buttons are disabled, or empty when they aren't.</summary>
     [ObservableProperty]
     private string _syncBlockedReason = string.Empty;
@@ -160,6 +209,10 @@ public partial class MainWindowViewModel : ViewModelBase
             _ = StopServer();
         RefreshSyncBlockedReason();
     }
+
+    // The targets belong to the project config, so they follow it — including when it is reloaded
+    // from disk after a hand edit.
+    partial void OnDir2SiteConfigChanged(Dir2SiteModel? value) => ReloadDeployTargets();
 
     [RelayCommand(CanExecute = nameof(CanStartServer))]
     private async Task StartServer()
@@ -257,7 +310,7 @@ public partial class MainWindowViewModel : ViewModelBase
             DirItems.Add(root);
 
             await LoadOrCreateDir2SiteConfig();
-            HasSftpProfile = DirectoryRoot != null && SftpProfileStore.Exists(DirectoryRoot);
+            ReloadDeployTargets();
 
             IsLoading = false;
             StatusText = $"{files.Count:N0} files · {artifacts.Count:N0} artifacts";
@@ -344,12 +397,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanConfigureSftp))]
     private async Task ConfigureSftp()
     {
-        if (DirectoryRoot == null || TopLevel is not Window owner) return;
-        var dialog = new SftpSettingsView(DirectoryRoot);
+        if (DirectoryRoot == null || Dir2SiteConfig == null || TopLevel is not Window owner) return;
+        var dialog = new SftpSettingsView(DirectoryRoot, Dir2SiteConfig, ConfigPath()!);
         var saved = await dialog.ShowDialog<bool>(owner);
         if (saved)
         {
-            HasSftpProfile = true;
+            ReloadDeployTargets();
             StatusText = "SFTP settings saved";
         }
     }
@@ -401,17 +454,19 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (DirectoryRoot == null) return;
 
-        var profile = SftpProfileStore.Load(DirectoryRoot);
-        if (profile == null)
+        var target = SelectedTarget;
+        if (target == null)
         {
-            AppendError("No SFTP profile configured. Use Configure… first.");
+            AppendError("No deploy target configured. Use Configure… first.");
             return;
         }
 
+        var profile = DeployTargets.ToProfile(DirectoryRoot, target);
+
         var siteRoot = Path.Combine(DirectoryRoot, "_site");
         var secret = CredentialStoreFactory.Create()
-            .Get(SftpProfileStore.CredentialKey(DirectoryRoot, profile));
-        var verifier = CreateHostKeyVerifier(profile);
+            .Get(DeployTargets.CredentialKey(DirectoryRoot, target));
+        var verifier = CreateHostKeyVerifier(target, profile);
 
         IsLoading = true;
         IsSyncing = true;
@@ -461,7 +516,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var toDelete = await dialog.ShowDialog<IReadOnlyList<string>?>(owner);
         if (toDelete == null || toDelete.Count == 0) return;
 
-        var verifier = CreateHostKeyVerifier(profile);
+        var verifier = CreateHostKeyVerifier(SelectedTarget, profile);
 
         IsLoading = true;
         IsSyncing = true;
@@ -497,13 +552,16 @@ public partial class MainWindowViewModel : ViewModelBase
     // Prompts on the main window for an unknown/changed host key. SftpSyncService pins the
     // accepted fingerprint onto the in-memory profile; persisting it here is what stops the
     // prompt reappearing on every sync.
-    private IHostKeyVerifier? CreateHostKeyVerifier(SftpProfile profile)
+    private IHostKeyVerifier? CreateHostKeyVerifier(DeployTarget? target, SftpProfile profile)
     {
         if (TopLevel is not Window owner) return null;
         return HostKeyPromptView.CreateVerifier(owner, _ =>
         {
-            if (DirectoryRoot != null)
-                SftpProfileStore.Save(DirectoryRoot, profile);
+            // The service pins the accepted key onto the profile; persist it against the target so
+            // the prompt doesn't reappear on every sync.
+            if (target == null || Dir2SiteConfig?.Deploy == null || ConfigPath() is not { } path) return;
+            target.HostKeyFingerprint = profile.HostKeyFingerprint;
+            DeployTargets.Save(path, Dir2SiteConfig.Deploy);
         });
     }
 

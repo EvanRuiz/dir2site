@@ -5,10 +5,11 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:dir2site.SftpSync.Ui"
+        xmlns:m="using:dir2site.Models"
         mc:Ignorable="d" d:DesignWidth="460" d:DesignHeight="480"
         x:Class="dir2site.SftpSync.Ui.SftpSettingsView"
         x:DataType="vm:SftpSettingsViewModel"
-        Width="460" Height="500"
+        Width="480" Height="600" MinWidth="420" MinHeight="480" CanResize="True"
         WindowStartupLocation="CenterOwner"
         Title="SFTP Deploy Settings">
 
@@ -26,6 +27,28 @@
                    TextWrapping="Wrap" Foreground="#4A9EFF" Margin="0,12,0,0"/>
 
         <StackPanel Spacing="8">
+            <!-- Several targets per project: staging and production, typically. -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Label Width="110">Target</Label>
+                <ComboBox ItemsSource="{Binding Targets}"
+                          SelectedItem="{Binding SelectedTarget}"
+                          Width="140">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="m:DeployTarget">
+                            <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Content="New" Command="{Binding AddTargetCommand}"/>
+                <Button Content="Delete" Command="{Binding DeleteTargetCommand}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Label Width="110">Name</Label>
+                <TextBox Text="{Binding TargetName}" Width="220" Watermark="production"/>
+            </StackPanel>
+
+            <Separator/>
+
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Label Width="110">Host</Label>
                 <TextBox Text="{Binding Host}" Width="220" Watermark="sftp.example.com"/>

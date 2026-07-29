@@ -6,6 +6,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:dir2site.ViewModels"
         xmlns:v="using:dir2site.Views"
+        xmlns:m="using:dir2site.Models"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="dir2site.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -292,6 +293,18 @@
                         <StackPanel Spacing="4" Margin="0,4,0,0">
                             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                 <TextBlock Text="Deploy:" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+                                <!-- Only worth the space when there's actually a choice to make. -->
+                                <ComboBox ItemsSource="{Binding DeployTargetList}"
+                                          SelectedItem="{Binding SelectedTarget}"
+                                          IsVisible="{Binding HasMultipleTargets}"
+                                          MinWidth="120" FontSize="11" Padding="6,2"
+                                          VerticalAlignment="Center">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="m:DeployTarget">
+                                            <TextBlock Text="{Binding Name}" FontSize="11"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
                                 <Button Content="Configure…"
                                         Command="{Binding ConfigureSftpCommand}"
                                         FontSize="11" Padding="6,3"/>

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
+using dir2site.Models;
 
 namespace dir2site.SftpSync.Ui;
 
@@ -13,9 +14,9 @@ public partial class SftpSettingsView : Window
         InitializeComponent();
     }
 
-    public SftpSettingsView(string projectRoot) : this()
+    public SftpSettingsView(string projectRoot, Dir2SiteModel config, string configPath) : this()
     {
-        DataContext = new SftpSettingsViewModel(this, projectRoot);
+        DataContext = new SftpSettingsViewModel(this, projectRoot, config, configPath);
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);

@@ -1,11 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
+using System;
+using System.IO;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using dir2site.Models;
 using dir2site.SftpSync.Ui;
 using Xunit;
 
@@ -16,13 +19,24 @@ namespace dir2site.Tests;
 /// renamed property, a missing converter — fails here rather than showing up as a control that
 /// silently never appears.
 /// </summary>
-public class SftpSettingsViewTests
+public class SftpSettingsViewTests : IDisposable
 {
+    private readonly string _project = Path.Combine(
+        Path.GetTempPath(), "d2s-dlg-" + Guid.NewGuid().ToString("N"));
+
+    public SftpSettingsViewTests() => Directory.CreateDirectory(_project);
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_project, recursive: true); } catch { }
+    }
+
     // The view is itself a Window, and its real constructor wires up the view model exactly as
     // the app does — so these tests exercise the production path, not a stand-in.
-    private static (SftpSettingsView view, SftpSettingsViewModel vm) Show()
+    private (SftpSettingsView view, SftpSettingsViewModel vm) Show()
     {
-        var view = new SftpSettingsView("/tmp/d2s-project-that-need-not-exist");
+        var view = new SftpSettingsView(
+            _project, new Dir2SiteModel(), Path.Combine(_project, "dir2site.yaml"));
         view.Show();
         Dispatcher.UIThread.RunJobs();
         return (view, (SftpSettingsViewModel)view.DataContext!);
