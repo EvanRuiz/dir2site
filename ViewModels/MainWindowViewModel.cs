@@ -257,7 +257,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 Title = Path.GetFileName(DirectoryRoot) is { Length: > 0 } n ? n : "My Site",
                 Footer = $"© {DateTime.Now.Year}",
             };
-            await File.WriteAllTextAsync(configPath, YamlParser.SerializeToYaml(Dir2SiteConfig));
+            var created = Dir2SiteConfig;
+            await Task.Run(() => YamlParser.SaveDir2SiteConfig(configPath, created));
         }
     }
 
@@ -266,9 +267,10 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (DirectoryRoot == null || DirItems.Count == 0 || Dir2SiteConfig == null) return;
 
-        await File.WriteAllTextAsync(
-            Path.Combine(DirectoryRoot, "dir2site.yaml"),
-            YamlParser.SerializeToYaml(Dir2SiteConfig));
+        // Surgical: only changed values are rewritten, so a hand-edited config keeps its comments.
+        var config = Dir2SiteConfig;
+        var configPath = Path.Combine(DirectoryRoot, "dir2site.yaml");
+        await Task.Run(() => YamlParser.SaveDir2SiteConfig(configPath, config));
 
         IsLoading = true;
         var progress = new Progress<string>(msg => StatusText = msg);
@@ -284,8 +286,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Generate previews first so site settings (PDF resize/quality) affect output
         StatusText = "Generating previews...";
-        var config = Dir2SiteConfig;
-        var root   = freshRoot;
+        var root = freshRoot;
         await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, progress));
 
         StatusText = "Generating site...";
