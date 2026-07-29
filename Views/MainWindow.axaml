@@ -289,20 +289,33 @@
                         <Separator HorizontalAlignment="Stretch" Margin="0,6,0,0"/>
 
                         <!-- Deploy over SFTP -->
-                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="Deploy:" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
-                            <Button Content="Configure…"
-                                    Command="{Binding ConfigureSftpCommand}"
-                                    FontSize="11" Padding="6,3"/>
-                            <Button Content="Quick Sync"
-                                    Command="{Binding QuickSyncCommand}"
-                                    FontSize="11" Padding="6,3"/>
-                            <Button Content="Verify &amp; Repair"
-                                    Command="{Binding VerifyAndRepairCommand}"
-                                    FontSize="11" Padding="6,3"/>
-                            <CheckBox Content="Force full re-upload"
-                                      IsChecked="{Binding ForceFullReupload}"
-                                      FontSize="11" VerticalAlignment="Center"/>
+                        <StackPanel Spacing="4" Margin="0,4,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <TextBlock Text="Deploy:" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+                                <Button Content="Configure…"
+                                        Command="{Binding ConfigureSftpCommand}"
+                                        FontSize="11" Padding="6,3"/>
+                                <Button Content="Quick Sync"
+                                        Command="{Binding QuickSyncCommand}"
+                                        ToolTip.Tip="{Binding SyncBlockedReason}"
+                                        FontSize="11" Padding="6,3"/>
+                                <Button Content="Verify &amp; Repair"
+                                        Command="{Binding VerifyAndRepairCommand}"
+                                        ToolTip.Tip="{Binding SyncBlockedReason}"
+                                        FontSize="11" Padding="6,3"/>
+                                <!-- Replaces nothing; appears only while a sync is actually running. -->
+                                <Button Content="Cancel"
+                                        Command="{Binding CancelSyncCommand}"
+                                        IsVisible="{Binding IsSyncing}"
+                                        FontSize="11" Padding="6,3"/>
+                                <CheckBox Content="Force full re-upload"
+                                          IsChecked="{Binding ForceFullReupload}"
+                                          FontSize="11" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <!-- A greyed-out button that never says why is its own small bug. -->
+                            <TextBlock Text="{Binding SyncBlockedReason}"
+                                       IsVisible="{Binding SyncBlockedReason, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                       FontSize="11" Opacity="0.7" TextWrapping="Wrap"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>

@@ -6,6 +6,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
@@ -116,6 +117,20 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _forceFullReupload;
 
+    /// <summary>Why the deploy buttons are disabled, or empty when they aren't.</summary>
+    [ObservableProperty]
+    private string _syncBlockedReason = string.Empty;
+
+    /// <summary>True while a sync is running, so the UI can offer Cancel.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelSyncCommand))]
+    private bool _isSyncing;
+
+    // Non-null only for the duration of a sync. Cancel is a user action on an operation that can
+    // run for minutes over a slow link, so the token has to reach the engine — which has always
+    // honoured it; the UI simply never supplied one.
+    private CancellationTokenSource? _syncCancellation;
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GenerateSiteCommand))]
     [NotifyCanExecuteChangedFor(nameof(ChooseLogoCommand))]
@@ -125,6 +140,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (_previewServer.IsRunning)
             _ = StopServer();
+        RefreshSyncBlockedReason();
     }
 
     [RelayCommand(CanExecute = nameof(CanStartServer))]
@@ -328,11 +344,40 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanSync))]
     private Task VerifyAndRepair() => RunSync(verify: true, force: false);
 
-    private bool CanSync() =>
-        DirectoryRoot != null &&
-        Directory.Exists(Path.Combine(DirectoryRoot, "_site")) &&
-        HasSftpProfile &&
-        !IsLoading;
+    [RelayCommand(CanExecute = nameof(CanCancelSync))]
+    private void CancelSync()
+    {
+        StatusText = "Cancelling…";
+        _syncCancellation?.Cancel();
+    }
+
+    private bool CanCancelSync() => IsSyncing;
+
+    private bool CanSync() => BlockedReason() == null;
+
+    /// <summary>
+    /// The single source of truth for both whether a sync can start and what to tell the user when
+    /// it can't — a disabled button with no explanation is its own small bug.
+    /// </summary>
+    private string? BlockedReason()
+    {
+        if (DirectoryRoot == null) return "Choose a project folder first.";
+        if (!Directory.Exists(Path.Combine(DirectoryRoot, "_site")))
+            return "Generate the site first — there is no _site folder to deploy.";
+        if (!HasSftpProfile) return "No SFTP profile configured. Use Configure… first.";
+        if (IsLoading) return "Busy.";
+        return null;
+    }
+
+    // CanExecute is re-evaluated by the toolkit on the properties above; keep the message in step.
+    private void RefreshSyncBlockedReason()
+    {
+        var reason = BlockedReason();
+        SyncBlockedReason = reason is null or "Busy." ? string.Empty : reason;
+    }
+
+    partial void OnHasSftpProfileChanged(bool value) => RefreshSyncBlockedReason();
+    partial void OnIsLoadingChanged(bool value) => RefreshSyncBlockedReason();
 
     private async Task RunSync(bool verify, bool force)
     {
@@ -351,13 +396,16 @@ public partial class MainWindowViewModel : ViewModelBase
         var verifier = CreateHostKeyVerifier(profile);
 
         IsLoading = true;
+        IsSyncing = true;
+        _syncCancellation = new CancellationTokenSource();
+        var token = _syncCancellation.Token;
         var progress = new Progress<string>(msg => StatusText = msg);
 
         try
         {
             var result = await Task.Run(() => verify
-                ? SftpSyncService.VerifyAndRepair(siteRoot, profile, secret, progress, default, verifier)
-                : SftpSyncService.QuickSync(siteRoot, profile, secret, force, progress, default, verifier));
+                ? SftpSyncService.VerifyAndRepair(siteRoot, profile, secret, progress, token, verifier)
+                : SftpSyncService.QuickSync(siteRoot, profile, secret, force, progress, token, verifier));
 
             StatusText = result.Summary;
             if (result.Errors.Count > 0)
@@ -366,6 +414,12 @@ public partial class MainWindowViewModel : ViewModelBase
             if (result.StaleRemote.Count > 0)
                 await HandleStaleFiles(profile, secret, siteRoot, result.StaleRemote);
         }
+        catch (OperationCanceledException)
+        {
+            // The user asked for this, so it isn't an error. Files already uploaded stay put; the
+            // next Quick Sync picks up where this left off.
+            StatusText = "Sync cancelled";
+        }
         catch (Exception ex)
         {
             StatusText = "Sync failed";
@@ -373,6 +427,9 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         finally
         {
+            _syncCancellation?.Dispose();
+            _syncCancellation = null;
+            IsSyncing = false;
             IsLoading = false;
         }
     }
@@ -389,14 +446,21 @@ public partial class MainWindowViewModel : ViewModelBase
         var verifier = CreateHostKeyVerifier(profile);
 
         IsLoading = true;
+        IsSyncing = true;
+        _syncCancellation = new CancellationTokenSource();
+        var token = _syncCancellation.Token;
         var progress = new Progress<string>(msg => StatusText = msg);
         try
         {
             var result = await Task.Run(() =>
-                SftpSyncService.DeleteRemote(siteRoot, profile, secret, toDelete, progress, default, verifier));
+                SftpSyncService.DeleteRemote(siteRoot, profile, secret, toDelete, progress, token, verifier));
             StatusText = result.Summary;
             if (result.Errors.Count > 0)
                 AppendError(string.Join("\n", result.Errors));
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = "Delete cancelled";
         }
         catch (Exception ex)
         {
@@ -405,6 +469,9 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         finally
         {
+            _syncCancellation?.Dispose();
+            _syncCancellation = null;
+            IsSyncing = false;
             IsLoading = false;
         }
     }
