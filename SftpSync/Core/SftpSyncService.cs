@@ -36,6 +36,65 @@ public static class SftpSyncService
     }
 
     /// <summary>
+    /// Verifies the connection <em>and</em> that the profile's remote path is somewhere we could
+    /// actually deploy to. Throws on connection or auth failure; a path problem comes back in the
+    /// result rather than as an exception, because it is a thing the user can fix in the dialog.
+    /// </summary>
+    /// <remarks>
+    /// Checking only the connection was misleading: "connection succeeded" told the user nothing
+    /// about a mistyped remote path, which then failed at the first real deploy.
+    /// </remarks>
+    public static ConnectionCheck CheckConnection(
+        SftpProfile profile, string? secret, IHostKeyVerifier? hostKeyVerifier = null)
+    {
+        using var client = Connect(profile, secret, hostKeyVerifier);
+        try
+        {
+            var path = string.IsNullOrWhiteSpace(profile.RemotePath) ? "." : profile.RemotePath;
+
+            if (!client.Exists(path))
+                return new ConnectionCheck(RemotePathState.Missing, path);
+
+            if (!client.GetAttributes(path).IsDirectory)
+                return new ConnectionCheck(RemotePathState.NotADirectory, path);
+
+            // Nothing in SFTP reports "can I write here" directly, and permission bits lie when
+            // the account maps to a different uid, so probe with a real create and clean up.
+            var probe = CombineRemote(path, ".dir2site-write-test-" + Guid.NewGuid().ToString("N")[..8]);
+            try
+            {
+                using (var s = client.Create(probe)) { }
+                client.DeleteFile(probe);
+            }
+            catch
+            {
+                return new ConnectionCheck(RemotePathState.NotWritable, path);
+            }
+
+            return new ConnectionCheck(RemotePathState.Writable, path);
+        }
+        finally
+        {
+            client.Disconnect();
+        }
+    }
+
+    /// <summary>Creates the profile's remote path, including any missing parents.</summary>
+    public static void CreateRemotePath(
+        SftpProfile profile, string? secret, IHostKeyVerifier? hostKeyVerifier = null)
+    {
+        using var client = Connect(profile, secret, hostKeyVerifier);
+        try
+        {
+            EnsureDir(client, profile.RemotePath, new HashSet<string>(StringComparer.Ordinal));
+        }
+        finally
+        {
+            client.Disconnect();
+        }
+    }
+
+    /// <summary>
     /// Fast-path deploy: diff the local site against the server manifest (last-uploaded snapshot)
     /// and upload only new/changed files. Reports — but never deletes — stale remote files.
     /// When <paramref name="forceFull"/> is true, ignores the manifest and re-uploads everything.

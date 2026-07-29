@@ -37,6 +37,41 @@ public interface IHostKeyVerifier
     bool Verify(HostKeyInfo info);
 }
 
+/// <summary>What a connection test found at the profile's remote path.</summary>
+public enum RemotePathState
+{
+    /// <summary>Exists, is a directory, and a file could be created in it.</summary>
+    Writable,
+
+    /// <summary>Exists and is a directory, but nothing can be written there.</summary>
+    NotWritable,
+
+    /// <summary>Nothing at that path — offer to create it.</summary>
+    Missing,
+
+    /// <summary>Something is there, but it's a file, not a directory.</summary>
+    NotADirectory,
+}
+
+/// <summary>
+/// Result of <see cref="SftpSyncService.CheckConnection"/>: the connection and credentials worked,
+/// and this is what was found at <paramref name="Path"/>.
+/// </summary>
+public sealed record ConnectionCheck(RemotePathState State, string Path)
+{
+    public bool CanDeploy => State == RemotePathState.Writable;
+
+    /// <summary>A message suitable for showing directly in the settings dialog.</summary>
+    public string Describe() => State switch
+    {
+        RemotePathState.Writable      => $"✓ Connected. {Path} is writable.",
+        RemotePathState.NotWritable   => $"Connected, but {Path} is not writable by this account.",
+        RemotePathState.Missing       => $"Connected, but {Path} does not exist.",
+        RemotePathState.NotADirectory => $"Connected, but {Path} is a file, not a directory.",
+        _                             => "Connected.",
+    };
+}
+
 /// <summary>Thrown when a host key was not trusted, so the connection was refused.</summary>
 public sealed class SftpHostKeyRejectedException(string message) : Exception(message);
 

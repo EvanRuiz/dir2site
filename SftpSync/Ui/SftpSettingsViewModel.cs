@@ -56,12 +56,29 @@ public partial class SftpSettingsViewModel : ViewModelBase
     [ObservableProperty] private string _status = string.Empty;
     [ObservableProperty] private bool _isBusy;
 
+    /// <summary>True when a create-it button should be offered for a missing remote path.</summary>
+    [ObservableProperty] private bool _canCreateRemotePath;
+
     // The trusted host key travels with the profile. Pointing the profile at a different server
     // must drop it, otherwise the new host would inherit the old one's trust.
     private string _hostKeyFingerprint = string.Empty;
 
-    partial void OnHostChanged(string value) => _hostKeyFingerprint = string.Empty;
-    partial void OnPortChanged(int value) => _hostKeyFingerprint = string.Empty;
+    public bool HasPinnedHostKey => !string.IsNullOrEmpty(_hostKeyFingerprint);
+
+    /// <summary>The pinned fingerprint, so the user can compare it against `ssh-keygen -lf`.</summary>
+    public string HostKeyFingerprintDisplay =>
+        HasPinnedHostKey ? _hostKeyFingerprint : "Not yet trusted";
+
+    partial void OnHostChanged(string value) => ResetHostKey();
+    partial void OnPortChanged(int value) => ResetHostKey();
+
+    private void ResetHostKey()
+    {
+        _hostKeyFingerprint = string.Empty;
+        CanCreateRemotePath = false;   // a different server says nothing about the old path
+        OnPropertyChanged(nameof(HostKeyFingerprintDisplay));
+        OnPropertyChanged(nameof(HasPinnedHostKey));
+    }
 
     public bool IsPasswordAuth => !IsKeyAuth;
     partial void OnIsKeyAuthChanged(bool value) => OnPropertyChanged(nameof(IsPasswordAuth));
@@ -97,16 +114,23 @@ public partial class SftpSettingsViewModel : ViewModelBase
     {
         IsBusy = true;
         Status = "Connecting…";
+        CanCreateRemotePath = false;
         var profile = BuildProfile();
         var secret = CurrentSecret;
         var verifier = HostKeyPromptView.CreateVerifier(_window);
         try
         {
-            await Task.Run(() => SftpSyncService.TestConnection(profile, secret, verifier));
+            var check = await Task.Run(() => SftpSyncService.CheckConnection(profile, secret, verifier));
             // The service pins the accepted key onto the profile it was handed; carry it back so
             // Save persists it and the user isn't asked again.
             _hostKeyFingerprint = profile.HostKeyFingerprint;
-            Status = "✓ Connection succeeded.";
+            OnPropertyChanged(nameof(HostKeyFingerprintDisplay));
+            OnPropertyChanged(nameof(HasPinnedHostKey));
+
+            Status = check.Describe();
+            // Offering to create it is the whole point of checking — a missing path is the most
+            // common way a deploy target is wrong, and it's one click to fix.
+            CanCreateRemotePath = check.State == RemotePathState.Missing;
         }
         catch (Exception ex)
         {
@@ -116,6 +140,44 @@ public partial class SftpSettingsViewModel : ViewModelBase
         {
             IsBusy = false;
         }
+    }
+
+    [RelayCommand]
+    private async Task CreateRemotePath()
+    {
+        IsBusy = true;
+        Status = "Creating…";
+        var profile = BuildProfile();
+        var secret = CurrentSecret;
+        var verifier = HostKeyPromptView.CreateVerifier(_window);
+        try
+        {
+            await Task.Run(() => SftpSyncService.CreateRemotePath(profile, secret, verifier));
+            var check = await Task.Run(() => SftpSyncService.CheckConnection(profile, secret, verifier));
+            Status = check.Describe();
+            CanCreateRemotePath = check.State == RemotePathState.Missing;
+        }
+        catch (Exception ex)
+        {
+            Status = $"✗ {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Drops the pinned host key. A server that was legitimately rebuilt otherwise leaves the user
+    /// facing a "KEY CHANGED" warning with no way to say "yes, I know".
+    /// </summary>
+    [RelayCommand]
+    private void ForgetHostKey()
+    {
+        _hostKeyFingerprint = string.Empty;
+        OnPropertyChanged(nameof(HostKeyFingerprintDisplay));
+        OnPropertyChanged(nameof(HasPinnedHostKey));
+        Status = "Host key forgotten — you'll be asked to confirm it on the next connection.";
     }
 
     [RelayCommand]

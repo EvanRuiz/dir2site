@@ -48,6 +48,26 @@
                          Watermark="(optional, outside web root)"/>
             </StackPanel>
 
+            <!-- Shown only when a test found the remote path missing. -->
+            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding CanCreateRemotePath}">
+                <Label Width="110"/>
+                <Button Content="Create remote folder" Command="{Binding CreateRemotePathCommand}"
+                        IsEnabled="{Binding !IsBusy}"/>
+            </StackPanel>
+
+            <Separator/>
+
+            <!-- The pinned key, so a rebuilt server can be re-trusted deliberately rather than
+                 leaving the user stuck at a KEY CHANGED warning. -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Label Width="110">Host key</Label>
+                <SelectableTextBlock Text="{Binding HostKeyFingerprintDisplay}"
+                                     FontFamily="Courier New" FontSize="11"
+                                     VerticalAlignment="Center" Width="220" TextWrapping="Wrap"/>
+                <Button Content="Forget" Command="{Binding ForgetHostKeyCommand}"
+                        IsVisible="{Binding HasPinnedHostKey}"/>
+            </StackPanel>
+
             <Separator/>
 
             <StackPanel Orientation="Horizontal" Spacing="12">
