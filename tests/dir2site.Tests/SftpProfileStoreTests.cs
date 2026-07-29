@@ -16,25 +16,15 @@ namespace dir2site.Tests;
 public class SftpProfileStoreTests : IDisposable
 {
     private readonly string _projectRoot = Path.Combine(Path.GetTempPath(), "d2s-proj-" + Guid.NewGuid().ToString("N"));
-    private readonly HashSet<string> _preexisting;
 
-    public SftpProfileStoreTests()
-    {
-        _preexisting = Snapshot();
-    }
-
+    // Delete precisely this test's own file. Diffing the directory before and after would also
+    // sweep up files written by other test classes, which xUnit runs in parallel.
     public void Dispose()
     {
-        foreach (var f in Snapshot().Except(_preexisting))
-        {
-            try { File.Delete(f); } catch { /* best effort */ }
-        }
+        var mine = Path.Combine(
+            SftpProfileStore.ProfilesDir, SftpProfileStore.ProjectKey(_projectRoot) + ".json");
+        try { File.Delete(mine); } catch { /* best effort */ }
     }
-
-    private static HashSet<string> Snapshot() =>
-        Directory.Exists(SftpProfileStore.ProfilesDir)
-            ? Directory.GetFiles(SftpProfileStore.ProfilesDir).ToHashSet()
-            : new HashSet<string>();
 
     private static SftpProfile Sample() => new()
     {
