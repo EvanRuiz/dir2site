@@ -102,13 +102,13 @@ public class SftpSettingsViewTests : IDisposable
 
         // Manifest path and the host key belong behind Advanced; the essentials shouldn't compete
         // with them for attention. A collapsed expander doesn't build its content at all.
-        Assert.Empty(view.GetVisualDescendants().OfType<SelectableTextBlock>()
-                         .Where(t => t.Text == "Not yet trusted"));
+        Assert.DoesNotContain(view.GetVisualDescendants().OfType<SelectableTextBlock>(),
+                              t => t.Text == "Not yet trusted");
 
         Expand(view);
 
-        Assert.NotEmpty(view.GetVisualDescendants().OfType<SelectableTextBlock>()
-                            .Where(t => t.Text == "Not yet trusted"));
+        Assert.Contains(view.GetVisualDescendants().OfType<SelectableTextBlock>(),
+                        t => t.Text == "Not yet trusted");
     }
 
     [AvaloniaFact]

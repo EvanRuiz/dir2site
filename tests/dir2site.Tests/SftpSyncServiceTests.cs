@@ -49,7 +49,7 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
         Assert.Empty(r.Errors);
         Assert.True(RemoteHas(d.RemoteDir, "index.html"));
         Assert.True(RemoteHas(d.RemoteDir, "about/index.html"));
-        Assert.True(RemoteHas(d.RemoteDir, ".dir2site-manifest.json"));
+        Assert.True(RemoteHas(d.RemoteDir, ".ht-dir2site"));
     }
 
     [SkippableFact]
@@ -117,7 +117,7 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
         var r = SftpSyncService.VerifyAndRepair(d.SiteDir, d.Profile, null);
 
         Assert.Contains("stray.html", r.StaleRemote);
-        Assert.DoesNotContain(".dir2site-manifest.json", r.StaleRemote); // manifest must be ignored
+        Assert.DoesNotContain(".ht-dir2site", r.StaleRemote); // manifest must be ignored
     }
 
     [SkippableFact]
@@ -165,12 +165,12 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
     {
         var d = Seeded(("index.html", "home"), ("a.html", "a"));
         SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
-        File.Delete(Path.Combine(d.RemoteDir, ".dir2site-manifest.json")); // simulate new machine / lost manifest
+        File.Delete(Path.Combine(d.RemoteDir, ".ht-dir2site")); // simulate new machine / lost manifest
 
         var r = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
 
         Assert.Equal(2, r.Uploaded);
-        Assert.True(RemoteHas(d.RemoteDir, ".dir2site-manifest.json"));
+        Assert.True(RemoteHas(d.RemoteDir, ".ht-dir2site"));
     }
 
     [SkippableFact]
@@ -217,7 +217,7 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
         SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
 
         Assert.True(File.Exists(_fx.LocalPathFor(d.Profile.ManifestPath)));
-        Assert.False(RemoteHas(d.RemoteDir, ".dir2site-manifest.json")); // not in the web root
+        Assert.False(RemoteHas(d.RemoteDir, ".ht-dir2site")); // not in the web root
         Assert.Equal(0, SftpSyncService.QuickSync(d.SiteDir, d.Profile, null).Uploaded); // custom manifest is used
     }
 

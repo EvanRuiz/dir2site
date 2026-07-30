@@ -17,7 +17,19 @@ namespace dir2site.SftpSync.Core;
 /// </summary>
 public static class SftpSyncService
 {
-    private const string DefaultManifestName = ".dir2site-manifest.json";
+    /// <summary>
+    /// Default manifest filename. The <c>.ht</c> prefix is deliberate: Apache's stock config
+    /// refuses to serve anything matching <c>^\.ht</c>, so on the shared hosting that most SFTP
+    /// deployments target this file is unreachable over HTTP with no configuration at all.
+    ///
+    /// It matters because the manifest lists every deployed path with its size and mtime — the
+    /// files are already public, but the index isn't, and it would reveal anything uploaded but
+    /// never linked to. Other servers need a rule; see the guidance in the settings dialog.
+    /// </summary>
+    private const string DefaultManifestName = ".ht-dir2site";
+
+    /// <summary>The default manifest filename, for UI that has to talk about it.</summary>
+    public static string DefaultManifestFileName => DefaultManifestName;
 
     /// <param name="StaleRemote">Files present remotely but not locally — reported, never auto-deleted.</param>
     public sealed record SyncResult(

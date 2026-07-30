@@ -198,6 +198,11 @@ public partial class SftpSettingsViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Server rules for keeping the deploy manifest unreadable over HTTP.</summary>
+    [RelayCommand]
+    private async Task ManifestPrivacy() =>
+        await new ManifestPrivacyView().ShowDialog(_window);
+
     /// <summary>
     /// Opens the server so a deploy folder can be picked by looking rather than typed from memory.
     /// </summary>

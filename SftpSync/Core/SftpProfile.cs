@@ -25,7 +25,7 @@ public sealed class SftpProfile
 
     /// <summary>
     /// Optional explicit path for the manifest file. When empty, the manifest is written as
-    /// <c>.dir2site-manifest.json</c> inside <see cref="RemotePath"/>. Set this to a location
+    /// <c>.ht-dir2site</c> inside <see cref="RemotePath"/>. Set this to a location
     /// outside the public web root to avoid serving it.
     /// </summary>
     public string ManifestPath { get; set; } = string.Empty;
