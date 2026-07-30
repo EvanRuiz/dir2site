@@ -89,4 +89,9 @@
         <Message Text="App bundle: $(_AppBundle)" Importance="High" />
     </Target>
 
+    <ItemGroup>
+        <!-- The test project reaches a few internal seams, e.g. PersistAcceptedHostKey. -->
+        <InternalsVisibleTo Include="dir2site.Tests" />
+    </ItemGroup>
+
 </Project>

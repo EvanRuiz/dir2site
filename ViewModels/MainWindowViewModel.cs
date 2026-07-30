@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using dir2site.Models;
@@ -520,6 +521,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         IsLoading = true;
         IsSyncing = true;
+        _syncCancellation?.Dispose();   // RunSync's has already finished with; don't leak it
         _syncCancellation = new CancellationTokenSource();
         var token = _syncCancellation.Token;
         var progress = new Progress<string>(msg => StatusText = msg);
@@ -555,14 +557,33 @@ public partial class MainWindowViewModel : ViewModelBase
     private IHostKeyVerifier? CreateHostKeyVerifier(DeployTarget? target, SftpProfile profile)
     {
         if (TopLevel is not Window owner) return null;
-        return HostKeyPromptView.CreateVerifier(owner, _ =>
+        return HostKeyPromptView.CreateVerifier(owner, info =>
         {
-            // The service pins the accepted key onto the profile; persist it against the target so
-            // the prompt doesn't reappear on every sync.
-            if (target == null || Dir2SiteConfig?.Deploy == null || ConfigPath() is not { } path) return;
-            target.HostKeyFingerprint = profile.HostKeyFingerprint;
-            DeployTargets.Save(path, Dir2SiteConfig.Deploy);
+            if (target == null) return;
+
+            // Use info.Fingerprint, not profile.HostKeyFingerprint. PromptVerifier invokes this
+            // callback *before* it returns, and Connect only writes the pin onto the profile after
+            // Verify returns — so the profile still holds the previous value here: empty on first
+            // contact, the stale one after a key change. Persisting that meant the target was never
+            // pinned and the trust prompt reappeared on every single deploy, which trains people to
+            // click through the one dialog that must not become routine.
+            var accepted = info.Fingerprint;
+
+            // Hop to the UI thread: this runs on SSH.NET's connection thread, and the config is
+            // owned by the view model.
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (ConfigPath() is { } path) PersistAcceptedHostKey(target, accepted, path);
+            });
         });
+    }
+
+    /// <summary>Pins an accepted host key onto a target and writes it to the project config.</summary>
+    internal void PersistAcceptedHostKey(DeployTarget target, string fingerprint, string configPath)
+    {
+        if (Dir2SiteConfig?.Deploy == null) return;
+        target.HostKeyFingerprint = fingerprint;
+        DeployTargets.Save(configPath, Dir2SiteConfig.Deploy);
     }
 
     public async Task CheckForUpdatesAsync()

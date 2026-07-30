@@ -323,6 +323,23 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
         Assert.False(verifier.WasAsked); // an already-trusted key must not re-prompt on every sync
     }
 
+    [SkippableFact]
+    public void ChangedHostKey_WhenAccepted_IsRepinnedToTheNewKey()
+    {
+        Skip.IfNot(_fx.Available, _fx.Reason);
+        var d = _fx.NewDeployment();
+        const string stale = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        d.Profile.HostKeyFingerprint = stale;
+
+        // A legitimately rebuilt server: the user is warned, accepts, and must not be asked again.
+        var verifier = new FakeVerifier(accept: true);
+        SftpSyncService.TestConnection(d.Profile, null, verifier);
+
+        Assert.True(verifier.Seen!.IsChanged);
+        Assert.Equal(_fx.HostKeyFingerprint, d.Profile.HostKeyFingerprint);
+        Assert.NotEqual(stale, d.Profile.HostKeyFingerprint);
+    }
+
     /// <summary>Answers a fixed way and records what it was shown.</summary>
     private sealed class FakeVerifier(bool accept) : IHostKeyVerifier
     {

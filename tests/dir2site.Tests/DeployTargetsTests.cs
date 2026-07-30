@@ -63,6 +63,8 @@ public class DeployTargetsTests : IDisposable
         Assert.Equal("production", reloaded.Deploy.Active);
         Assert.Equal("/srv/staging", reloaded.Deploy.Targets[1].RemotePath);
         Assert.Equal(2222, reloaded.Deploy.Targets[1].Port);
+        // The pin has to survive the round-trip, or every deploy re-prompts for trust.
+        Assert.Equal("SHA256:abc", reloaded.Deploy.Targets[0].HostKeyFingerprint);
     }
 
     [Fact]
