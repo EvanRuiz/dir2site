@@ -36,6 +36,10 @@ public sealed class YamlDocumentEditor
     /// <summary>The current document text.</summary>
     public string Text => _text;
 
+    // Spliced-in text has to match the file it's going into, or a CRLF document ends up with mixed
+    // endings and needless git churn on Windows.
+    private string Eol => _text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+
     /// <summary>True once an edit has actually changed the text.</summary>
     public bool IsModified { get; private set; }
 
@@ -122,20 +126,20 @@ public sealed class YamlDocumentEditor
         var root = Root();
         if (root == null) return false;
 
-        var indented = string.Join('\n',
-            blockBody.TrimEnd('\r', '\n').Split('\n').Select(l => l.Length == 0 ? l : "  " + l));
-        var replacement = key + ":\n" + indented;
+        var lines = blockBody.TrimEnd('\r', '\n').Replace("\r\n", "\n").Split('\n');
+        var indented = string.Join(Eol, lines.Select(l => l.Length == 0 ? l : "  " + l));
+        var replacement = key + ":" + Eol + indented;
 
         var keyNode = root.Children.Keys.OfType<YamlScalarNode>().FirstOrDefault(k => k.Value == key);
         if (keyNode == null)
         {
             var trimmed = _text.TrimEnd('\r', '\n');
-            var separator = trimmed.Length == 0 ? "" : "\n";
-            return TryCommit(trimmed + separator + replacement + "\n");
+            var separator = trimmed.Length == 0 ? "" : Eol;
+            return TryCommit(trimmed + separator + replacement + Eol);
         }
 
         if (!TryEntryExtent(root, keyNode, out var start, out var end)) return false;
-        return TryCommit(_text[..start] + replacement + "\n" + _text[end..]);
+        return TryCommit(_text[..start] + replacement + Eol + _text[end..]);
     }
 
     /// <summary>Removes a top-level key and its value. No-op when the key isn't there.</summary>
@@ -183,7 +187,7 @@ public sealed class YamlDocumentEditor
             var cursor = next;
             while (cursor > entryStart)
             {
-                var lineStart = _text.LastIndexOf('\n', cursor - 2) + 1;
+                var lineStart = cursor < 2 ? 0 : _text.LastIndexOf('\n', cursor - 2) + 1;
                 if (lineStart <= entryStart) break;
 
                 var line = _text[lineStart..cursor].Trim();
@@ -234,7 +238,7 @@ public sealed class YamlDocumentEditor
         // A block scalar's span swallows its trailing newline; dropping it would weld the next
         // line onto this one.
         var replaced = _text[start..end];
-        var suffix = replaced.EndsWith('\n') ? "\n" : "";
+        var suffix = replaced.EndsWith('\n') ? Eol : "";
 
         var indent = (int)keyNode.Start.Column - 1;
         return TryCommit(_text[..start] + (emitted ?? Emit(value, indent)) + suffix + _text[end..]);
@@ -242,33 +246,32 @@ public sealed class YamlDocumentEditor
 
     private bool AddKey(YamlMappingNode root, string key, string value, string? emitted)
     {
-        // Append after the last entry so existing order — and anything trailing it — is left alone.
-        var lastValue = root.Children.Values.LastOrDefault();
-        var insertAt = lastValue == null ? _text.Length : (int)lastValue.End.Index;
-        if (insertAt > _text.Length) return false;
-
+        // Append at the end of the document rather than after the last entry's value node. For a
+        // block mapping or sequence YamlDotNet reports End.Index at the *start* of its content
+        // (see TryEntryExtent), so inserting there drops the new key into the middle of the block.
+        // That produced invalid YAML, TryCommit rejected it, and the caller fell back to a
+        // whole-file rewrite — destroying every comment. Which fired constantly, because
+        // DeployTargets always appends `deploy:` last and hand-written configs routinely omit
+        // optional scalars. Appending at EOF always re-parses cleanly.
         var indent = root.Children.Keys.OfType<YamlScalarNode>().FirstOrDefault() is { } firstKey
             ? (int)firstKey.Start.Column - 1
             : 0;
 
         var line = new string(' ', indent) + key + ": " + (emitted ?? Emit(value, indent));
+        var body = _text.TrimEnd('\r', '\n');
+        var separator = body.Length == 0 ? "" : Eol;
 
-        // Land on a line of our own without inventing blank lines the user didn't have.
-        var needsLeadingNewline = insertAt > 0 && _text[insertAt - 1] != '\n';
-        var prefix = needsLeadingNewline ? "\n" : "";
-        var suffix = insertAt < _text.Length ? "\n" : "";
-
-        return TryCommit(_text[..insertAt] + prefix + line + suffix + _text[insertAt..]);
+        return TryCommit(body + separator + line + Eol);
     }
 
     /// <summary>Renders a value as YAML, as a literal block when it spans lines.</summary>
-    private static string Emit(string value, int indent)
+    private string Emit(string value, int indent)
     {
         if (value.Contains('\n'))
         {
-            var body = value.TrimEnd('\n');
+            var body = value.Replace("\r\n", "\n").TrimEnd('\n');
             var pad = new string(' ', indent + 2);
-            return "|\n" + string.Join('\n', body.Split('\n').Select(l => pad + l));
+            return "|" + Eol + string.Join(Eol, body.Split('\n').Select(l => pad + l));
         }
 
         // Serialize() round-trips through the emitter, which decides the quoting.

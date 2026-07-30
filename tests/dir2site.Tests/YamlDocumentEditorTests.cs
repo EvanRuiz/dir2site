@@ -173,6 +173,60 @@ public class YamlDocumentEditorTests
     }
 
     [Fact]
+    public void AddingAKeyToADocumentEndingInABlock_StaysSurgical()
+    {
+        // Regression: AddKey used to insert at the last value node's End.Index. For a block that
+        // index points at the *start* of its content, so the key landed mid-block, the re-parse
+        // failed, and the caller fell back to a whole-file rewrite — losing every comment. This is
+        // the normal shape of a dir2site.yaml, since `deploy:` is always appended last.
+        const string yaml =
+            """
+            # notes I want to keep
+            title: My Site
+            deploy:
+              active: production
+              targets:
+              - name: production
+                host: 127.0.0.1
+            """;
+        var editor = YamlDocumentEditor.TryLoad(yaml)!;
+
+        Assert.True(editor.Set("siteUrl", "https://example.com"));
+
+        Assert.True(editor.IsModified);
+        Assert.Contains("# notes I want to keep", editor.Text);
+        Assert.Equal("https://example.com", Value(editor.Text, "siteUrl"));
+        Assert.Equal("My Site", Value(editor.Text, "title"));
+
+        var stream = new YamlStream();
+        stream.Load(new StringReader(editor.Text));
+        var root = (YamlMappingNode)stream.Documents[0].RootNode;
+        Assert.True(root.Children.ContainsKey(new YamlScalarNode("deploy")));
+    }
+
+    [Fact]
+    public void AddingAKeyToACrlfDocument_UsesCrlf()
+    {
+        var editor = YamlDocumentEditor.TryLoad(Annotated.Replace("\n", "\r\n"))!;
+
+        Assert.True(editor.Set("siteUrl", "https://example.com"));
+
+        // A stray bare LF would leave the file with mixed endings and churn every diff on Windows.
+        Assert.DoesNotContain("\n", editor.Text.Replace("\r\n", ""));
+    }
+
+    [Fact]
+    public void SetBlockOnACrlfDocument_UsesCrlf()
+    {
+        var editor = YamlDocumentEditor.TryLoad(Annotated.Replace("\n", "\r\n"))!;
+
+        Assert.True(editor.SetBlock("deploy", "active: production\ntargets:\n- name: production"));
+
+        Assert.DoesNotContain("\n", editor.Text.Replace("\r\n", ""));
+        Assert.Contains("# The footer shows on every page", editor.Text);
+    }
+
+    [Fact]
     public void SetAll_AppliesEveryUpdate()
     {
         var editor = YamlDocumentEditor.TryLoad(Annotated)!;
