@@ -170,6 +170,70 @@ public static class SftpSyncService
     /// and upload only new/changed files. Reports — but never deletes — stale remote files.
     /// When <paramref name="forceFull"/> is true, ignores the manifest and re-uploads everything.
     /// </summary>
+    /// <summary>
+    /// Works out what <see cref="QuickSync"/> would do, without changing anything on the server.
+    /// </summary>
+    /// <remarks>
+    /// The result is a snapshot of a moment, not a lock — see <see cref="SyncPlan"/>.
+    /// </remarks>
+    public static SyncPlan Preview(
+        string siteRoot,
+        SftpProfile profile,
+        string? secret,
+        bool forceFull = false,
+        IProgress<SyncProgress>? progress = null,
+        CancellationToken ct = default,
+        IHostKeyVerifier? hostKeyVerifier = null)
+    {
+        var local = SyncManifestBuilder.BuildLocal(siteRoot);
+        if (local.Files.Count == 0)
+            return new SyncPlan([], [], 0, "_site/ is empty — nothing to deploy.");
+
+        using var client = Connect(profile, secret, hostKeyVerifier);
+        try
+        {
+            var (diff, note) = Diff(client, profile, local, forceFull, progress, ct);
+            var bytes = diff.ToUpload.Sum(rel => local.Files.TryGetValue(rel, out var e) ? e.Size : 0);
+            return new SyncPlan(diff.ToUpload, diff.StaleRemote, bytes, note.Trim());
+        }
+        finally
+        {
+            client.Disconnect();
+        }
+    }
+
+    /// <summary>
+    /// Deploys, after a <see cref="Preview"/>. Re-diffs rather than trusting the plan: the server
+    /// can change while the user reads it, and the current local state is always what they meant to
+    /// upload. When the fresh diff differs from what was approved, the result says so.
+    /// </summary>
+    public static SyncResult Apply(
+        SyncPlan approved,
+        string siteRoot,
+        SftpProfile profile,
+        string? secret,
+        bool forceFull = false,
+        IProgress<SyncProgress>? progress = null,
+        CancellationToken ct = default,
+        IHostKeyVerifier? hostKeyVerifier = null)
+    {
+        var result = QuickSync(siteRoot, profile, secret, forceFull, progress, ct, hostKeyVerifier);
+
+        var approvedSet = approved.ToUpload.ToHashSet(StringComparer.Ordinal);
+        var actual = result.Uploaded;
+        if (actual != approvedSet.Count)
+        {
+            return result with
+            {
+                Summary = result.Summary +
+                          $" — note: {approvedSet.Count} file(s) were listed when you previewed, " +
+                          $"{actual} were uploaded; the site or the server changed in between.",
+            };
+        }
+
+        return result;
+    }
+
     public static SyncResult QuickSync(
         string siteRoot,
         SftpProfile profile,
@@ -186,25 +250,7 @@ public static class SftpSyncService
         using var client = Connect(profile, secret, hostKeyVerifier);
 
         var manifestPath = ManifestRemotePath(profile);
-        var note = "";
-
-        SyncManifest reference;
-        if (forceFull)
-        {
-            reference = new SyncManifest();
-            note = " (forced full upload)";
-        }
-        else if (TryExists(client, manifestPath))
-        {
-            reference = DownloadManifest(client, manifestPath);
-        }
-        else
-        {
-            reference = new SyncManifest();
-            note = " (no remote manifest — uploaded everything; run Verify & Repair to confirm)";
-        }
-
-        var diff = SyncManifestBuilder.Compare(local, reference);
+        var (diff, note) = Diff(client, profile, local, forceFull, progress, ct);
         var errors = UploadFiles(client, siteRoot, profile, local, diff.ToUpload, progress, ct);
 
         WriteManifest(client, manifestPath, local, errors);
@@ -587,6 +633,38 @@ public static class SftpSyncService
         string.IsNullOrWhiteSpace(p.ManifestPath)
             ? CombineRemote(NormalizeDir(p.RemotePath), DefaultManifestName)
             : p.ManifestPath.Trim();
+
+    /// <summary>
+    /// The upload/stale diff against the reference manifest, shared by Preview and QuickSync so
+    /// the plan a user is shown is produced by the same code that acts on it.
+    /// </summary>
+    private static (SyncManifestBuilder.Diff Diff, string Note) Diff(
+        SftpClient client, SftpProfile profile, SyncManifest local,
+        bool forceFull, IProgress<SyncProgress>? progress, CancellationToken ct)
+    {
+        var manifestPath = ManifestRemotePath(profile);
+        var note = "";
+
+        SyncManifest reference;
+        if (forceFull)
+        {
+            reference = new SyncManifest();
+            note = " (forced full upload)";
+        }
+        else if (TryExists(client, manifestPath))
+        {
+            progress?.Report(new SyncProgress(SyncPhase.Listing, "Reading remote manifest…"));
+            reference = DownloadManifest(client, manifestPath);
+        }
+        else
+        {
+            reference = new SyncManifest();
+            note = " (no remote manifest — uploaded everything; run Verify & Repair to confirm)";
+        }
+
+        ct.ThrowIfCancellationRequested();
+        return (SyncManifestBuilder.Compare(local, reference), note);
+    }
 
     /// <summary>Trailing-slash-free directory path; empty/"." becomes ".".</summary>
     private static string NormalizeDir(string dir)

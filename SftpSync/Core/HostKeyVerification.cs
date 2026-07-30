@@ -79,6 +79,39 @@ public sealed record ConnectionCheck(RemotePathState State, string Path)
 /// </summary>
 public sealed record RemoteListing(string Path, IReadOnlyList<string> Directories);
 
+/// <summary>
+/// What a deploy would do, worked out without changing anything, so the user can look before
+/// committing.
+/// </summary>
+/// <remarks>
+/// A plan is an observation, not a reservation. SFTP has no snapshots, so nothing stops the server
+/// changing between previewing and applying — holding the connection open would not help, it would
+/// only stop us noticing. <see cref="SftpSyncService.Apply"/> therefore re-diffs and reports when
+/// what it found no longer matches what was approved.
+/// </remarks>
+public sealed record SyncPlan(
+    IReadOnlyList<string> ToUpload,
+    IReadOnlyList<string> StaleRemote,
+    long BytesToUpload,
+    string Note)
+{
+    public bool IsEmpty => ToUpload.Count == 0;
+
+    public string Summary => IsEmpty
+        ? "Everything is already up to date."
+        : $"{ToUpload.Count} file{(ToUpload.Count == 1 ? "" : "s")} to upload"
+          + (BytesToUpload > 0 ? $" ({FormatBytes(BytesToUpload)})" : "")
+          + (StaleRemote.Count > 0 ? $", {StaleRemote.Count} stale on the server" : "");
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        < 1024L * 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.#} MB",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):0.##} GB",
+    };
+}
+
 /// <summary>What a sync is doing at the moment.</summary>
 public enum SyncPhase
 {

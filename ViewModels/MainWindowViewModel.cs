@@ -136,6 +136,10 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _forceFullReupload;
 
+    /// <summary>Show what a Quick Sync would do, and confirm, before anything is uploaded.</summary>
+    [ObservableProperty]
+    private bool _previewBeforeDeploy;
+
     /// <summary>Every configured deploy target, for the picker in the deploy row.</summary>
     public ObservableCollection<DeployTarget> DeployTargetList { get; } = [];
 
@@ -496,6 +500,11 @@ public partial class MainWindowViewModel : ViewModelBase
             .Get(DeployTargets.CredentialKey(DirectoryRoot, target));
         var verifier = CreateHostKeyVerifier(target, profile);
 
+        // Verify & Repair reconciles against the live server rather than uploading a computed
+        // plan, so there is nothing meaningful to preview for it.
+        if (PreviewBeforeDeploy && !verify && !await ConfirmPlan(siteRoot, profile, secret, force, verifier))
+            return;
+
         IsLoading = true;
         IsSyncing = true;
         _syncCancellation = new CancellationTokenSource();
@@ -535,6 +544,43 @@ public partial class MainWindowViewModel : ViewModelBase
             IsLoading = false;
             ResetSyncProgress();
         }
+    }
+
+    /// <summary>
+    /// Shows the plan and waits for a yes. Returns false when the user backs out, or when there is
+    /// nothing to do — in which case saying so beats running a deploy that uploads nothing.
+    /// </summary>
+    private async Task<bool> ConfirmPlan(
+        string siteRoot, SftpProfile profile, string? secret, bool force, IHostKeyVerifier? verifier)
+    {
+        if (TopLevel is not Window owner) return true;
+
+        IsLoading = true;
+        StatusText = "Working out what would change…";
+        SyncPlan plan;
+        try
+        {
+            plan = await Task.Run(() =>
+                SftpSyncService.Preview(siteRoot, profile, secret, force, null, default, verifier));
+        }
+        catch (Exception ex)
+        {
+            StatusText = "Preview failed";
+            AppendError(ex.Message);
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+
+        if (plan.IsEmpty)
+        {
+            StatusText = plan.Summary;
+            return false;
+        }
+
+        return await new SyncPreviewView(plan).ShowDialog<bool>(owner);
     }
 
     private async Task HandleStaleFiles(

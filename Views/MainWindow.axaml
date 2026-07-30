@@ -324,6 +324,10 @@
                                 <CheckBox Content="Force full re-upload"
                                           IsChecked="{Binding ForceFullReupload}"
                                           FontSize="11" VerticalAlignment="Center"/>
+                                <CheckBox Content="Preview first"
+                                          IsChecked="{Binding PreviewBeforeDeploy}"
+                                          ToolTip.Tip="Show what would be uploaded, and confirm, before deploying"
+                                          FontSize="11" VerticalAlignment="Center"/>
                             </StackPanel>
                             <!-- A greyed-out button that never says why is its own small bug. -->
                             <TextBlock Text="{Binding SyncBlockedReason}"
