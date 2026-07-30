@@ -10,8 +10,22 @@ internal static class ProcessHelper
 {
     public sealed record Result(int ExitCode, string StdOut, string StdErr);
 
+    /// <summary>
+    /// Test seam. When set, invocations are handed here instead of launching a process, so a test
+    /// can assert what would have appeared on the command line.
+    /// </summary>
+    /// <remarks>
+    /// Keeping secrets out of argv is the whole point of the stdin plumbing in these stores, and
+    /// argv is visible to every other process on the machine. Without a seam, a regression that
+    /// moved a secret into ArgumentList would pass every existing test, round-trips included.
+    /// </remarks>
+    internal static Func<string, string[], string?, Result>? RunOverride;
+
     public static Result Run(string fileName, string[] args, string? stdin = null)
     {
+        if (RunOverride is { } intercept) return intercept(fileName, args, stdin);
+
+
         var psi = new ProcessStartInfo(fileName)
         {
             RedirectStandardInput  = stdin != null,
