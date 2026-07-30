@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -38,7 +39,12 @@ public partial class SftpSettingsViewModel : ViewModelBase
         if (_deploy.Targets.Count == 0)
             _deploy.Targets.Add(new DeployTarget { Name = "default" });
 
-        foreach (var t in _deploy.Targets) Targets.Add(t);
+        foreach (var t in _deploy.Targets)
+        {
+            Targets.Add(t);
+            RememberIdentity(t);
+        }
+
         _selectedTarget = DeployTargets.Active(_deploy) ?? _deploy.Targets[0];
         LoadFrom(_selectedTarget);
 
@@ -82,6 +88,43 @@ public partial class SftpSettingsViewModel : ViewModelBase
         var secret = _credentials.Get(DeployTargets.CredentialKey(_projectRoot, t));
         if (IsKeyAuth) { Passphrase = secret ?? string.Empty; Password = string.Empty; }
         else { Password = secret ?? string.Empty; Passphrase = string.Empty; }
+    }
+
+    // What each target was called, and which keychain entry held its secret, when the dialog opened.
+    // The credential key is a hash of host, port and username, so editing any of those changes where
+    // the secret belongs — and without this the old entry would be left behind in the user's
+    // keychain: unreachable by the app, invisible to them, still holding a live password.
+    private readonly Dictionary<DeployTarget, (string Name, string CredentialKey)> _identityOnOpen = new();
+
+    private void RememberIdentity(DeployTarget t) =>
+        _identityOnOpen[t] = (t.Name, DeployTargets.CredentialKey(_projectRoot, t));
+
+    /// <summary>Moves a target's secret and key path when its identity changed, leaving nothing behind.</summary>
+    private void ReconcileIdentity(DeployTarget t)
+    {
+        if (!_identityOnOpen.TryGetValue(t, out var was)) { RememberIdentity(t); return; }
+
+        var nowKey = DeployTargets.CredentialKey(_projectRoot, t);
+
+        if (!string.Equals(was.CredentialKey, nowKey, StringComparison.Ordinal))
+        {
+            // Move rather than drop: the user edited a hostname, they didn't ask to forget the
+            // password. The selected target's secret is rewritten from the form right after this,
+            // which harmlessly overwrites what we carry across here.
+            var carried = _credentials.Get(was.CredentialKey);
+            if (!string.IsNullOrEmpty(carried)) _credentials.Set(nowKey, carried);
+            try { _credentials.Delete(was.CredentialKey); } catch { }
+        }
+
+        if (!string.Equals(was.Name, t.Name, StringComparison.Ordinal))
+        {
+            var keyPath = DeployLocalStore.GetPrivateKeyPath(_projectRoot, was.Name);
+            if (!string.IsNullOrEmpty(keyPath))
+                DeployLocalStore.SetPrivateKeyPath(_projectRoot, t.Name, keyPath);
+            DeployLocalStore.Remove(_projectRoot, was.Name);
+        }
+
+        RememberIdentity(t);
     }
 
     private void ApplyTo(DeployTarget t)
@@ -272,6 +315,7 @@ public partial class SftpSettingsViewModel : ViewModelBase
         var added = new DeployTarget { Name = DeployTargets.UniqueName(_deploy, "new target"), Port = 22 };
         _deploy.Targets.Add(added);
         Targets.Add(added);
+        RememberIdentity(added);
         SelectedTarget = added;
     }
 
@@ -292,6 +336,7 @@ public partial class SftpSettingsViewModel : ViewModelBase
 
         _deploy.Targets.Remove(doomed);
         Targets.Remove(doomed);
+        _identityOnOpen.Remove(doomed);
         SelectedTarget = Targets[0];
         Status = $"Deleted “{doomed.Name}”. Save to write the change to dir2site.yaml.";
     }
@@ -319,6 +364,8 @@ public partial class SftpSettingsViewModel : ViewModelBase
 
         try
         {
+            foreach (var t in Targets) ReconcileIdentity(t);
+
             _deploy.Active = SelectedTarget.Name;
             DeployTargets.Save(_configPath, _deploy);
 
