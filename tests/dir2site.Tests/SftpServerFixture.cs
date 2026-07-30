@@ -28,7 +28,7 @@ public sealed class SftpServerFixture : IDisposable
     private Process? _server;
 
     public bool Available { get; }
-    public string Reason { get; } = "";
+    public string Reason { get; private set; } = "";
 
     public int Port { get; }
     public string User { get; } = Environment.UserName;
@@ -56,9 +56,9 @@ public sealed class SftpServerFixture : IDisposable
         var keygen = FindKeygen();
         if (rclone == null || keygen == null)
         {
-            Reason = rclone == null
+            Unavailable(rclone == null
                 ? rcloneReason
-                : "ssh-keygen not found on this platform — integration tests skipped.";
+                : "ssh-keygen not found on this platform — integration tests skipped.");
             return;
         }
 
@@ -106,8 +106,8 @@ public sealed class SftpServerFixture : IDisposable
 
             if (!WaitForPort(Port, TimeSpan.FromSeconds(15)))
             {
-                Reason = "rclone did not accept connections in time.";
                 Dispose();
+                Unavailable("rclone did not accept connections in time.");
                 return;
             }
 
@@ -115,9 +115,38 @@ public sealed class SftpServerFixture : IDisposable
         }
         catch (Exception ex)
         {
-            Reason = $"Could not start rclone: {ex.Message}";
             Dispose();
+            Unavailable($"Could not start rclone: {ex.Message}");
         }
+    }
+
+    /// <summary>Set in CI, where a fixture that cannot start must fail rather than skip.</summary>
+    private static bool Required =>
+        Environment.GetEnvironmentVariable(RcloneTool.RequireEnvVar) == "1";
+
+    /// <summary>
+    /// Records why the server isn't usable — or throws, when the run has declared that these tests
+    /// must actually execute.
+    /// </summary>
+    /// <remarks>
+    /// Guarding only the rclone download left the bigger hole open: if the port wait timed out on a
+    /// loaded runner, or ssh-keygen wasn't on PATH, every test skipped and the whole integration
+    /// suite went green while covering nothing.
+    /// </remarks>
+    private void Unavailable(string reason) => Reason = ReasonOrThrow(reason);
+
+    /// <summary>
+    /// Returns the skip reason, or throws when the run has declared these tests must execute.
+    /// Separated out so both branches are directly testable — the failure this guards against is
+    /// one that would otherwise look like success.
+    /// </summary>
+    internal static string ReasonOrThrow(string reason)
+    {
+        if (Required)
+            throw new InvalidOperationException(
+                $"{reason} {RcloneTool.RequireEnvVar}=1, so the SFTP integration tests must run.");
+
+        return reason;
     }
 
     /// <summary>A fresh isolated deployment: its own remote dir under the server and a local site dir.</summary>
