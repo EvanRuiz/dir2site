@@ -54,6 +54,11 @@ public static class RcloneTool
     /// Returns the path to a verified rclone, or null with a reason when this platform has no pin
     /// or the download could not be reached. A hash mismatch never returns null — it throws.
     /// </summary>
+    // Several test classes construct their fixture at once — xUnit runs classes in parallel — and on
+    // a cold cache every one of them would download simultaneously into the same place. Serialise:
+    // the first caller fetches, the rest find it already there.
+    private static readonly object DownloadGate = new();
+
     public static string? Resolve(out string reason)
     {
         var platform = PlatformKey();
@@ -77,7 +82,12 @@ public static class RcloneTool
 
         try
         {
-            Download(platform, exe, cached, expectedBinary);
+            lock (DownloadGate)
+            {
+                // Re-check inside the lock: while waiting, another thread may have fetched it.
+                if (!File.Exists(cached) || FileSha256(cached) != expectedBinary)
+                    Download(platform, exe, cached, expectedBinary);
+            }
         }
         catch (HttpRequestException ex)
         {
@@ -102,7 +112,9 @@ public static class RcloneTool
         var expectedArchive = ArchiveSha256.First(p => p.Platform == platform).Sha256;
 
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        var scratch = destination + "." + Environment.ProcessId + ".tmp";
+        // Unique per call, not per process: parallel callers live in the same process, so a
+        // ProcessId-based name had them all writing over one another.
+        var scratch = destination + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
         var archive = scratch + ".zip";
 
         try
