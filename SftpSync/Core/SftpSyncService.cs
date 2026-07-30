@@ -220,13 +220,15 @@ public static class SftpSyncService
 
         progress?.Report("Listing remote files…");
         var remote = new SyncManifest();
+        var listErrors = new List<string>();
         if (TryExists(client, remoteRoot))
-            ListRecursive(client, remoteRoot, remote, manifestPath);
+            ListRecursive(client, remoteRoot, remote, manifestPath, listErrors, ct);
 
         // Treat the listed remote tree as the reference: anything local that's missing or
         // mismatched needs (re)uploading; anything remote-only is stale.
         var diff = SyncManifestBuilder.Compare(local, remote);
         var errors = UploadFiles(client, siteRoot, profile, local, diff.ToUpload, progress, ct);
+        errors.InsertRange(0, listErrors);
 
         WriteManifest(client, manifestPath, local, errors);
 
@@ -462,7 +464,9 @@ public static class SftpSyncService
 
     // ---- remote traversal --------------------------------------------------
 
-    private static void ListRecursive(SftpClient client, string dir, SyncManifest into, string manifestPath)
+    private static void ListRecursive(
+        SftpClient client, string dir, SyncManifest into, string manifestPath,
+        List<string>? errors = null, CancellationToken ct = default)
     {
         // Track each directory's path relative to the root rather than deriving it from the
         // server's absolute FullName — servers may canonicalize paths (symlinks, ~, /tmp →
@@ -473,10 +477,19 @@ public static class SftpSyncService
 
         while (stack.Count > 0)
         {
+            ct.ThrowIfCancellationRequested();
+
             var (current, relPrefix) = stack.Pop();
             IEnumerable<ISftpFile> entries;
             try { entries = client.ListDirectory(current); }
-            catch { continue; }
+            catch (Exception ex)
+            {
+                // Swallowing this silently made Verify under-report stale files and re-upload
+                // needlessly, with nothing to explain why — a permission problem looked like an
+                // empty directory.
+                errors?.Add($"Could not list {current}: {ex.Message}");
+                continue;
+            }
 
             foreach (var f in entries)
             {
