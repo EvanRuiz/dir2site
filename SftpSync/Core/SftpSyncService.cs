@@ -12,8 +12,12 @@ using Renci.SshNet.Sftp;
 namespace dir2site.SftpSync.Core;
 
 /// <summary>
-/// SFTP deployment engine. Mirrors the synchronous, <c>IProgress&lt;string&gt;</c>-driven style of
-/// the app's other services (callers invoke these via <c>Task.Run</c>).
+/// SFTP deployment engine. Synchronous and <see cref="IProgress{T}"/>-driven, like the app's other
+/// services (callers invoke these via <c>Task.Run</c>).
+///
+/// Progress is reported as <see cref="SyncProgress"/> rather than a string: a deploy can run for
+/// minutes, and a caller needs the counts to show a real bar. A formatted sentence throws that away
+/// and leaves the UI re-parsing its own text to get it back.
 /// </summary>
 public static class SftpSyncService
 {
@@ -171,7 +175,7 @@ public static class SftpSyncService
         SftpProfile profile,
         string? secret,
         bool forceFull = false,
-        IProgress<string>? progress = null,
+        IProgress<SyncProgress>? progress = null,
         CancellationToken ct = default,
         IHostKeyVerifier? hostKeyVerifier = null)
     {
@@ -219,7 +223,7 @@ public static class SftpSyncService
         string siteRoot,
         SftpProfile profile,
         string? secret,
-        IProgress<string>? progress = null,
+        IProgress<SyncProgress>? progress = null,
         CancellationToken ct = default,
         IHostKeyVerifier? hostKeyVerifier = null)
     {
@@ -230,7 +234,7 @@ public static class SftpSyncService
         var manifestPath = ManifestRemotePath(profile);
         var remoteRoot   = NormalizeDir(profile.RemotePath);
 
-        progress?.Report("Listing remote files…");
+        progress?.Report(new SyncProgress(SyncPhase.Listing, "Listing remote files…"));
         var remote = new SyncManifest();
         var listErrors = new List<string>();
         if (TryExists(client, remoteRoot))
@@ -259,7 +263,7 @@ public static class SftpSyncService
         SftpProfile profile,
         string? secret,
         IReadOnlyList<string> relPaths,
-        IProgress<string>? progress = null,
+        IProgress<SyncProgress>? progress = null,
         CancellationToken ct = default,
         IHostKeyVerifier? hostKeyVerifier = null)
     {
@@ -275,7 +279,8 @@ public static class SftpSyncService
             ct.ThrowIfCancellationRequested();
             var rel = relPaths[i];
             var full = CombineRemote(remoteRoot, rel);
-            progress?.Report($"Deleting {i + 1}/{relPaths.Count}: {rel}");
+            progress?.Report(new SyncProgress(
+                SyncPhase.Deleting, "Deleting", i + 1, relPaths.Count, rel));
             try
             {
                 if (TryExists(client, full))
@@ -393,7 +398,7 @@ public static class SftpSyncService
         SftpProfile profile,
         SyncManifest local,
         IReadOnlyList<string> toUpload,
-        IProgress<string>? progress,
+        IProgress<SyncProgress>? progress,
         CancellationToken ct)
     {
         var errors = new List<string>();
@@ -406,7 +411,8 @@ public static class SftpSyncService
             var rel = toUpload[i];
             var localFull = Path.Combine(siteRoot, rel.Replace('/', Path.DirectorySeparatorChar));
             var remoteFull = CombineRemote(remoteRoot, rel);
-            progress?.Report($"Uploading {i + 1}/{toUpload.Count}: {rel}");
+            progress?.Report(new SyncProgress(
+                SyncPhase.Uploading, "Uploading", i + 1, toUpload.Count, rel));
 
             try
             {

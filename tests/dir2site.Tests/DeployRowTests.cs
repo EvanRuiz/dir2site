@@ -123,6 +123,28 @@ public class DeployRowTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void TheProgressBar_AppearsWhileSyncingAndGoesDeterminateWhenCounted()
+    {
+        var (window, vm) = ShowWithProject();
+
+        var bar = window.GetVisualDescendants().OfType<ProgressBar>()
+                        .First(b => b.Height == 6);
+        Assert.False(bar.IsEffectivelyVisible);
+
+        vm.IsSyncing = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(bar.IsEffectivelyVisible);
+        Assert.True(bar.IsIndeterminate);      // nothing countable yet
+
+        vm.SyncProgressIsDeterminate = true;
+        vm.SyncProgressPercent = 37.5;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(bar.IsIndeterminate);
+        Assert.Equal(37.5, bar.Value);
+    }
+
+    [AvaloniaFact]
     public void ConfigureIsAlwaysAvailable_SoTheUserCanFixWhateverIsBlocking()
     {
         var (window, _) = ShowWithProject();

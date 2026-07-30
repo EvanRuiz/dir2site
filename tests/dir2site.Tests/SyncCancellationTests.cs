@@ -50,10 +50,9 @@ public class SyncCancellationTests(SftpServerFixture fx) : IClassFixture<SftpSer
         using var cts = new CancellationTokenSource();
         // Cancel once the engine reports it is a few files in, so the run is genuinely interrupted
         // mid-flight rather than before it began.
-        var progress = new Progress<string>(msg =>
+        var progress = new Progress<SyncProgress>(p =>
         {
-            if (msg.Contains("Uploading 5/", StringComparison.Ordinal))
-                cts.Cancel();
+            if (p.Phase == SyncPhase.Uploading && p.Index == 5) cts.Cancel();
         });
 
         Assert.ThrowsAny<OperationCanceledException>(
@@ -72,10 +71,9 @@ public class SyncCancellationTests(SftpServerFixture fx) : IClassFixture<SftpSer
             Write(d.SiteDir, $"page{i:D3}.html", new string('x', 2048));
 
         using var cts = new CancellationTokenSource();
-        var progress = new Progress<string>(msg =>
+        var progress = new Progress<SyncProgress>(p =>
         {
-            if (msg.Contains("Uploading 5/", StringComparison.Ordinal))
-                cts.Cancel();
+            if (p.Phase == SyncPhase.Uploading && p.Index == 5) cts.Cancel();
         });
         Assert.ThrowsAny<OperationCanceledException>(
             () => SftpSyncService.QuickSync(d.SiteDir, d.Profile, null, false, progress, cts.Token));

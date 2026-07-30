@@ -79,6 +79,40 @@ public sealed record ConnectionCheck(RemotePathState State, string Path)
 /// </summary>
 public sealed record RemoteListing(string Path, IReadOnlyList<string> Directories);
 
+/// <summary>What a sync is doing at the moment.</summary>
+public enum SyncPhase
+{
+    Connecting,
+    Listing,
+    Uploading,
+    Deleting,
+    WritingManifest,
+    Done,
+}
+
+/// <summary>
+/// A progress report from a running sync. Replaces a bare status string so the UI can show a real
+/// bar and a file count: "142 of 380" tells you whether to wait; "Uploading css/site.css" does not.
+/// </summary>
+/// <param name="Index">1-based position within the phase, or 0 when there is nothing to count.</param>
+/// <param name="Total">Items in this phase, or 0 when unknown.</param>
+public sealed record SyncProgress(
+    SyncPhase Phase,
+    string Message,
+    int Index = 0,
+    int Total = 0,
+    string? CurrentFile = null)
+{
+    /// <summary>True when Index/Total are meaningful enough to drive a determinate bar.</summary>
+    public bool HasCount => Total > 0;
+
+    /// <summary>Completion within the phase, 0–100, or null when it can't be known.</summary>
+    public double? Percent => HasCount ? Index * 100.0 / Total : null;
+
+    public override string ToString() =>
+        HasCount ? $"{Message} ({Index}/{Total})" : Message;
+}
+
 /// <summary>Thrown when a host key was not trusted, so the connection was refused.</summary>
 public sealed class SftpHostKeyRejectedException(string message) : Exception(message);
 

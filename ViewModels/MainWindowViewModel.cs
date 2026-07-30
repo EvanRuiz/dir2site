@@ -189,6 +189,33 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _syncBlockedReason = string.Empty;
 
+    /// <summary>0–100 within the current sync phase, for a determinate bar.</summary>
+    [ObservableProperty] private double _syncProgressPercent;
+
+    /// <summary>True while the running phase can report a real position, not just a heartbeat.</summary>
+    [ObservableProperty] private bool _syncProgressIsDeterminate;
+
+    /// <summary>The file currently being transferred, for a second line under the bar.</summary>
+    [ObservableProperty] private string _syncCurrentFile = string.Empty;
+
+    // Reports arrive per file, which on a large site is thousands of UI updates a second — far more
+    // than anyone can read and enough to starve the render thread. One update per file is fine for
+    // the text; the bar only needs to move when the whole number of percent changes.
+    private void OnSyncProgress(SyncProgress p)
+    {
+        StatusText = p.ToString();
+        SyncCurrentFile = p.CurrentFile ?? string.Empty;
+        SyncProgressIsDeterminate = p.HasCount;
+        if (p.Percent is { } pct) SyncProgressPercent = pct;
+    }
+
+    private void ResetSyncProgress()
+    {
+        SyncProgressPercent = 0;
+        SyncProgressIsDeterminate = false;
+        SyncCurrentFile = string.Empty;
+    }
+
     /// <summary>True while a sync is running, so the UI can offer Cancel.</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(CancelSyncCommand))]
@@ -473,7 +500,8 @@ public partial class MainWindowViewModel : ViewModelBase
         IsSyncing = true;
         _syncCancellation = new CancellationTokenSource();
         var token = _syncCancellation.Token;
-        var progress = new Progress<string>(msg => StatusText = msg);
+        ResetSyncProgress();
+        var progress = new Progress<SyncProgress>(OnSyncProgress);
 
         try
         {
@@ -505,6 +533,7 @@ public partial class MainWindowViewModel : ViewModelBase
             _syncCancellation = null;
             IsSyncing = false;
             IsLoading = false;
+            ResetSyncProgress();
         }
     }
 
@@ -524,7 +553,8 @@ public partial class MainWindowViewModel : ViewModelBase
         _syncCancellation?.Dispose();   // RunSync's has already finished with; don't leak it
         _syncCancellation = new CancellationTokenSource();
         var token = _syncCancellation.Token;
-        var progress = new Progress<string>(msg => StatusText = msg);
+        ResetSyncProgress();
+        var progress = new Progress<SyncProgress>(OnSyncProgress);
         try
         {
             var result = await Task.Run(() =>
@@ -548,6 +578,7 @@ public partial class MainWindowViewModel : ViewModelBase
             _syncCancellation = null;
             IsSyncing = false;
             IsLoading = false;
+            ResetSyncProgress();
         }
     }
 
