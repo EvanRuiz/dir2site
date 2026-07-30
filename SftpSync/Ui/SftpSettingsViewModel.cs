@@ -198,6 +198,28 @@ public partial class SftpSettingsViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Opens the server so a deploy folder can be picked by looking rather than typed from memory.
+    /// </summary>
+    [RelayCommand]
+    private async Task BrowseRemote()
+    {
+        if (string.IsNullOrWhiteSpace(Host) || string.IsNullOrWhiteSpace(Username))
+        {
+            Status = "Enter a host and username first — browsing needs to connect.";
+            return;
+        }
+
+        var dialog = new RemoteBrowseView(
+            BuildProfile(), CurrentSecret, HostKeyPromptView.CreateVerifier(_window));
+        var chosen = await dialog.ShowDialog<string?>(_window);
+        if (chosen == null) return;
+
+        RemotePath = chosen;
+        CanCreateRemotePath = false;   // it was picked from the server, so it exists
+        Status = $"Remote path set to {chosen}";
+    }
+
     [RelayCommand]
     private async Task CreateRemotePath()
     {

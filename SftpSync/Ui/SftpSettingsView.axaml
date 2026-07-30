@@ -80,8 +80,11 @@
             </Grid>
             <Grid Classes="row" ColumnDefinitions="110,*">
                 <Label Grid.Column="0">Remote path</Label>
-                <TextBox Grid.Column="1" Text="{Binding RemotePath}"
-                         Watermark="/var/www/html or public_html"/>
+                <DockPanel Grid.Column="1">
+                    <Button DockPanel.Dock="Right" Content="Browse server…" Margin="8,0,0,0"
+                            Command="{Binding BrowseRemoteCommand}" IsEnabled="{Binding !IsBusy}"/>
+                    <TextBox Text="{Binding RemotePath}" Watermark="/var/www/html or public_html"/>
+                </DockPanel>
             </Grid>
 
             <!-- Shown only when a test found the remote path missing. -->

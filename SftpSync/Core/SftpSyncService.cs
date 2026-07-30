@@ -79,6 +79,61 @@ public static class SftpSyncService
         }
     }
 
+    /// <summary>
+    /// Lists the directories inside <paramref name="path"/>, so the user can find a deploy target
+    /// by looking rather than by typing a path they have to already know.
+    /// </summary>
+    /// <remarks>
+    /// Directories only: this exists to choose a deploy destination, and listing every file on a
+    /// web server would bury the one thing being looked for.
+    /// </remarks>
+    public static RemoteListing ListDirectories(
+        SftpProfile profile, string? secret, string path,
+        IHostKeyVerifier? hostKeyVerifier = null, CancellationToken ct = default)
+    {
+        using var client = Connect(profile, secret, hostKeyVerifier);
+        try
+        {
+            // "." resolves to wherever the server drops us, usually the account's home.
+            var resolved = client.WorkingDirectory;
+            if (!string.IsNullOrWhiteSpace(path) && path != ".")
+                resolved = NormalizeDir(path);
+
+            var names = new List<string>();
+            foreach (var entry in client.ListDirectory(resolved))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (entry.Name is "." or "..") continue;
+                if (entry.IsDirectory) names.Add(entry.Name);
+            }
+
+            names.Sort(StringComparer.OrdinalIgnoreCase);
+            return new RemoteListing(resolved, names);
+        }
+        finally
+        {
+            client.Disconnect();
+        }
+    }
+
+    /// <summary>Creates a directory below <paramref name="parent"/> and returns its full path.</summary>
+    public static string CreateRemoteDirectory(
+        SftpProfile profile, string? secret, string parent, string name,
+        IHostKeyVerifier? hostKeyVerifier = null)
+    {
+        using var client = Connect(profile, secret, hostKeyVerifier);
+        try
+        {
+            var full = CombineRemote(NormalizeDir(parent), name.Trim());
+            EnsureDir(client, full, new HashSet<string>(StringComparer.Ordinal));
+            return full;
+        }
+        finally
+        {
+            client.Disconnect();
+        }
+    }
+
     /// <summary>Creates the profile's remote path, including any missing parents.</summary>
     public static void CreateRemotePath(
         SftpProfile profile, string? secret, IHostKeyVerifier? hostKeyVerifier = null)

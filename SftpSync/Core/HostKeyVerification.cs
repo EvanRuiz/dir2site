@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using System;
+using System.Collections.Generic;
 using System.Security.Cryptography;
 
 namespace dir2site.SftpSync.Core;
@@ -71,6 +72,12 @@ public sealed record ConnectionCheck(RemotePathState State, string Path)
         _                             => "Connected.",
     };
 }
+
+/// <summary>
+/// One level of the remote filesystem: the path actually listed — which may differ from what was
+/// asked for, since "." resolves to the account's home — and the directories inside it.
+/// </summary>
+public sealed record RemoteListing(string Path, IReadOnlyList<string> Directories);
 
 /// <summary>Thrown when a host key was not trusted, so the connection was refused.</summary>
 public sealed class SftpHostKeyRejectedException(string message) : Exception(message);
