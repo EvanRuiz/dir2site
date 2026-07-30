@@ -42,6 +42,13 @@ public class SftpSettingsViewTests : IDisposable
         return (view, (SftpSettingsViewModel)view.DataContext!);
     }
 
+    /// <summary>Opens the Advanced expander — a collapsed one doesn't build its content.</summary>
+    private static void Expand(Visual root)
+    {
+        root.GetVisualDescendants().OfType<Expander>().First().IsExpanded = true;
+        Dispatcher.UIThread.RunJobs();
+    }
+
     private static T Find<T>(Visual root, string text) where T : ContentControl =>
         root.GetVisualDescendants().OfType<T>().First(c => (c.Content as string) == text);
 
@@ -80,12 +87,28 @@ public class SftpSettingsViewTests : IDisposable
     public void HostKeyRow_ShowsNotTrusted_AndHidesForgetUntilOneIsPinned()
     {
         var (view, vm) = Show();
-        Dispatcher.UIThread.RunJobs();
+        Expand(view);
 
         var fingerprint = view.GetVisualDescendants().OfType<SelectableTextBlock>()
                               .First(t => t.Text == "Not yet trusted");
         Assert.NotNull(fingerprint);
         Assert.False(Find<Button>(view, "Forget").IsEffectivelyVisible);
+    }
+
+    [AvaloniaFact]
+    public void AdvancedSettings_AreCollapsedUntilAskedFor()
+    {
+        var (view, _) = Show();
+
+        // Manifest path and the host key belong behind Advanced; the essentials shouldn't compete
+        // with them for attention. A collapsed expander doesn't build its content at all.
+        Assert.Empty(view.GetVisualDescendants().OfType<SelectableTextBlock>()
+                         .Where(t => t.Text == "Not yet trusted"));
+
+        Expand(view);
+
+        Assert.NotEmpty(view.GetVisualDescendants().OfType<SelectableTextBlock>()
+                            .Where(t => t.Text == "Not yet trusted"));
     }
 
     [AvaloniaFact]

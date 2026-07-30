@@ -6,12 +6,23 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:dir2site.SftpSync.Ui"
         xmlns:m="using:dir2site.Models"
-        mc:Ignorable="d" d:DesignWidth="460" d:DesignHeight="480"
+        mc:Ignorable="d" d:DesignWidth="480" d:DesignHeight="560"
         x:Class="dir2site.SftpSync.Ui.SftpSettingsView"
         x:DataType="vm:SftpSettingsViewModel"
-        Width="480" Height="600" MinWidth="420" MinHeight="480" CanResize="True"
+        Width="480" Height="600" MinWidth="420" MinHeight="400" CanResize="True"
         WindowStartupLocation="CenterOwner"
         Title="SFTP Deploy Settings">
+
+    <!-- Rows are Grids with a fixed label column and a stretching input column, so fields grow
+         with the window and don't clip at larger font scales the way fixed widths did. -->
+    <Window.Styles>
+        <Style Selector="Grid.row">
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+        <Style Selector="Grid.row > Label">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </Window.Styles>
 
     <DockPanel Margin="16">
 
@@ -26,100 +37,118 @@
         <TextBlock DockPanel.Dock="Bottom" Text="{Binding Status}"
                    TextWrapping="Wrap" Foreground="#4A9EFF" Margin="0,12,0,0"/>
 
-        <StackPanel Spacing="8">
+        <ScrollViewer>
+        <StackPanel>
+
             <!-- Several targets per project: staging and production, typically. -->
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Label Width="110">Target</Label>
-                <ComboBox ItemsSource="{Binding Targets}"
-                          SelectedItem="{Binding SelectedTarget}"
-                          Width="140">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="m:DeployTarget">
-                            <TextBlock Text="{Binding Name}"/>
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-                <Button Content="New" Command="{Binding AddTargetCommand}"/>
-                <Button Content="Delete" Command="{Binding DeleteTargetCommand}"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Label Width="110">Name</Label>
-                <TextBox Text="{Binding TargetName}" Width="220" Watermark="production"/>
-            </StackPanel>
+            <Grid Classes="row" ColumnDefinitions="110,*">
+                <Label Grid.Column="0">Target</Label>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <ComboBox ItemsSource="{Binding Targets}"
+                              SelectedItem="{Binding SelectedTarget}"
+                              MinWidth="140">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="m:DeployTarget">
+                                <TextBlock Text="{Binding Name}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Content="New" Command="{Binding AddTargetCommand}"/>
+                    <Button Content="Delete" Command="{Binding DeleteTargetCommand}"/>
+                </StackPanel>
+            </Grid>
 
-            <Separator/>
+            <Grid Classes="row" ColumnDefinitions="110,*">
+                <Label Grid.Column="0">Name</Label>
+                <TextBox Grid.Column="1" Text="{Binding TargetName}" Watermark="production"/>
+            </Grid>
 
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Label Width="110">Host</Label>
-                <TextBox Text="{Binding Host}" Width="220" Watermark="sftp.example.com"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Label Width="110">Port</Label>
-                <NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" Increment="1" Width="120"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Label Width="110">Username</Label>
-                <TextBox Text="{Binding Username}" Width="220"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Label Width="110">Remote path</Label>
-                <TextBox Text="{Binding RemotePath}" Width="220" Watermark="/var/www/html or public_html"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Label Width="110">Manifest path</Label>
-                <TextBox Text="{Binding ManifestPath}" Width="220"
-                         Watermark="(optional, outside web root)"/>
-            </StackPanel>
+            <Separator Margin="0,4,0,12"/>
+
+            <Grid Classes="row" ColumnDefinitions="110,*">
+                <Label Grid.Column="0">Host</Label>
+                <TextBox Grid.Column="1" Text="{Binding Host}" Watermark="sftp.example.com"/>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="110,*">
+                <Label Grid.Column="0">Port</Label>
+                <NumericUpDown Grid.Column="1" Value="{Binding Port}" Minimum="1" Maximum="65535"
+                               Increment="1" HorizontalAlignment="Left" Width="140"/>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="110,*">
+                <Label Grid.Column="0">Username</Label>
+                <TextBox Grid.Column="1" Text="{Binding Username}"/>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="110,*">
+                <Label Grid.Column="0">Remote path</Label>
+                <TextBox Grid.Column="1" Text="{Binding RemotePath}"
+                         Watermark="/var/www/html or public_html"/>
+            </Grid>
 
             <!-- Shown only when a test found the remote path missing. -->
-            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding CanCreateRemotePath}">
-                <Label Width="110"/>
-                <Button Content="Create remote folder" Command="{Binding CreateRemotePathCommand}"
-                        IsEnabled="{Binding !IsBusy}"/>
-            </StackPanel>
+            <Grid Classes="row" ColumnDefinitions="110,*" IsVisible="{Binding CanCreateRemotePath}">
+                <Button Grid.Column="1" Content="Create remote folder"
+                        Command="{Binding CreateRemotePathCommand}"
+                        HorizontalAlignment="Left" IsEnabled="{Binding !IsBusy}"/>
+            </Grid>
 
-            <Separator/>
-
-            <!-- The pinned key, so a rebuilt server can be re-trusted deliberately rather than
-                 leaving the user stuck at a KEY CHANGED warning. -->
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Label Width="110">Host key</Label>
-                <SelectableTextBlock Text="{Binding HostKeyFingerprintDisplay}"
-                                     FontFamily="Courier New" FontSize="11"
-                                     VerticalAlignment="Center" Width="220" TextWrapping="Wrap"/>
-                <Button Content="Forget" Command="{Binding ForgetHostKeyCommand}"
-                        IsVisible="{Binding HasPinnedHostKey}"/>
-            </StackPanel>
-
-            <Separator/>
-
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <Label Width="110">Authentication</Label>
-                <RadioButton GroupName="Auth" Content="Password"
-                             IsChecked="{Binding IsPasswordAuth}"/>
-                <RadioButton GroupName="Auth" Content="SSH key"
-                             IsChecked="{Binding IsKeyAuth}"/>
-            </StackPanel>
-
-            <!-- Password auth -->
-            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsPasswordAuth}">
-                <Label Width="110">Password</Label>
-                <TextBox Text="{Binding Password}" Width="220" PasswordChar="•"/>
-            </StackPanel>
-
-            <!-- Key auth -->
-            <StackPanel Spacing="8" IsVisible="{Binding IsKeyAuth}">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Label Width="110">Private key</Label>
-                    <TextBox Text="{Binding PrivateKeyPath}" Width="150"/>
-                    <Button Content="Browse…" Command="{Binding BrowseKeyCommand}"/>
+            <Grid Classes="row" ColumnDefinitions="110,*">
+                <Label Grid.Column="0">Authentication</Label>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                    <RadioButton GroupName="Auth" Content="Password" IsChecked="{Binding IsPasswordAuth}"/>
+                    <RadioButton GroupName="Auth" Content="SSH key" IsChecked="{Binding IsKeyAuth}"/>
                 </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Label Width="110">Passphrase</Label>
-                    <TextBox Text="{Binding Passphrase}" Width="220" PasswordChar="•"
+            </Grid>
+
+            <Grid Classes="row" ColumnDefinitions="110,*" IsVisible="{Binding IsPasswordAuth}">
+                <Label Grid.Column="0">Password</Label>
+                <TextBox Grid.Column="1" Text="{Binding Password}" PasswordChar="•"/>
+            </Grid>
+
+            <StackPanel IsVisible="{Binding IsKeyAuth}">
+                <Grid Classes="row" ColumnDefinitions="110,*">
+                    <Label Grid.Column="0">Private key</Label>
+                    <DockPanel Grid.Column="1">
+                        <Button DockPanel.Dock="Right" Content="Browse…" Margin="8,0,0,0"
+                                Command="{Binding BrowseKeyCommand}"/>
+                        <TextBox Text="{Binding PrivateKeyPath}"/>
+                    </DockPanel>
+                </Grid>
+                <Grid Classes="row" ColumnDefinitions="110,*">
+                    <Label Grid.Column="0">Passphrase</Label>
+                    <TextBox Grid.Column="1" Text="{Binding Passphrase}" PasswordChar="•"
                              Watermark="(optional)"/>
-                </StackPanel>
+                </Grid>
             </StackPanel>
+
+            <!-- Things most people never touch, kept out of the way of the ones everyone does. -->
+            <Expander Header="Advanced" Margin="0,4,0,0">
+                <StackPanel Margin="0,8,0,0">
+                    <Grid Classes="row" ColumnDefinitions="110,*">
+                        <Label Grid.Column="0">Manifest path</Label>
+                        <TextBox Grid.Column="1" Text="{Binding ManifestPath}"
+                                 Watermark="(optional, outside web root)"/>
+                    </Grid>
+
+                    <!-- The pinned key, so a rebuilt server can be re-trusted deliberately rather
+                         than leaving the user stuck at a KEY CHANGED warning. -->
+                    <Grid Classes="row" ColumnDefinitions="110,*">
+                        <Label Grid.Column="0">Host key</Label>
+                        <DockPanel Grid.Column="1">
+                            <Button DockPanel.Dock="Right" Content="Forget" Margin="8,0,0,0"
+                                    Command="{Binding ForgetHostKeyCommand}"
+                                    IsVisible="{Binding HasPinnedHostKey}"/>
+                            <SelectableTextBlock Text="{Binding HostKeyFingerprintDisplay}"
+                                                 FontFamily="Courier New" FontSize="11"
+                                                 VerticalAlignment="Center" TextWrapping="Wrap"/>
+                        </DockPanel>
+                    </Grid>
+
+                    <TextBlock Text="These settings are stored in dir2site.yaml, alongside your content. Passwords and key passphrases are not — they stay in your operating system's keychain."
+                               FontSize="11" Opacity="0.7" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Expander>
+
         </StackPanel>
+        </ScrollViewer>
     </DockPanel>
 </Window>
