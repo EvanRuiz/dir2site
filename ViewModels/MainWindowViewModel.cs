@@ -502,8 +502,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Verify & Repair reconciles against the live server rather than uploading a computed
         // plan, so there is nothing meaningful to preview for it.
-        if (PreviewBeforeDeploy && !verify && !await ConfirmPlan(siteRoot, profile, secret, force, verifier))
-            return;
+        SyncPlan? approved = null;
+        if (PreviewBeforeDeploy && !verify)
+        {
+            approved = await ConfirmPlan(siteRoot, profile, secret, force, verifier);
+            if (approved == null) return;
+        }
 
         IsLoading = true;
         IsSyncing = true;
@@ -514,9 +518,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            // Apply re-diffs and reports when the deploy no longer matches what was approved; with
+            // no preview there is nothing to compare against, so QuickSync directly.
             var result = await Task.Run(() => verify
                 ? SftpSyncService.VerifyAndRepair(siteRoot, profile, secret, progress, token, verifier)
-                : SftpSyncService.QuickSync(siteRoot, profile, secret, force, progress, token, verifier));
+                : approved != null
+                    ? SftpSyncService.Apply(approved, siteRoot, profile, secret, force, progress, token, verifier)
+                    : SftpSyncService.QuickSync(siteRoot, profile, secret, force, progress, token, verifier));
 
             StatusText = result.Summary;
             if (result.Errors.Count > 0)
@@ -547,40 +555,56 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Shows the plan and waits for a yes. Returns false when the user backs out, or when there is
-    /// nothing to do — in which case saying so beats running a deploy that uploads nothing.
+    /// Shows the plan and waits for a yes, returning the approved plan so the deploy can be checked
+    /// against it. Null means don't proceed — the user backed out, or there was nothing to do, in
+    /// which case saying so beats running a deploy that uploads nothing.
     /// </summary>
-    private async Task<bool> ConfirmPlan(
+    private async Task<SyncPlan?> ConfirmPlan(
         string siteRoot, SftpProfile profile, string? secret, bool force, IHostKeyVerifier? verifier)
     {
-        if (TopLevel is not Window owner) return true;
+        if (TopLevel is not Window owner) return null;
 
+        // Previewing connects, so it can hang on an unreachable host just as a deploy can. Same
+        // cancellation source, same Cancel button.
         IsLoading = true;
+        IsSyncing = true;
+        _syncCancellation?.Dispose();
+        _syncCancellation = new CancellationTokenSource();
+        var token = _syncCancellation.Token;
+
         StatusText = "Working out what would change…";
         SyncPlan plan;
         try
         {
             plan = await Task.Run(() =>
-                SftpSyncService.Preview(siteRoot, profile, secret, force, null, default, verifier));
+                SftpSyncService.Preview(siteRoot, profile, secret, force, null, token, verifier));
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = "Preview cancelled";
+            return null;
         }
         catch (Exception ex)
         {
             StatusText = "Preview failed";
             AppendError(ex.Message);
-            return false;
+            return null;
         }
         finally
         {
+            _syncCancellation?.Dispose();
+            _syncCancellation = null;
+            IsSyncing = false;
             IsLoading = false;
         }
 
         if (plan.IsEmpty)
         {
             StatusText = plan.Summary;
-            return false;
+            return null;
         }
 
-        return await new SyncPreviewView(plan).ShowDialog<bool>(owner);
+        return await new SyncPreviewView(plan).ShowDialog<bool>(owner) ? plan : null;
     }
 
     private async Task HandleStaleFiles(

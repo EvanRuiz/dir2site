@@ -36,11 +36,17 @@ public static class SftpSyncService
     public static string DefaultManifestFileName => DefaultManifestName;
 
     /// <param name="StaleRemote">Files present remotely but not locally — reported, never auto-deleted.</param>
+    /// <param name="Attempted">
+    /// What this run decided to upload, before any of them failed. Compared against an approved
+    /// plan to detect drift — using <see cref="Uploaded"/> for that would mistake a failed upload
+    /// for the site having changed.
+    /// </param>
     public sealed record SyncResult(
         string Summary,
         int Uploaded,
         IReadOnlyList<string> StaleRemote,
-        IReadOnlyList<string> Errors);
+        IReadOnlyList<string> Errors,
+        IReadOnlyList<string> Attempted);
 
     // ---- public operations -------------------------------------------------
 
@@ -219,19 +225,27 @@ public static class SftpSyncService
     {
         var result = QuickSync(siteRoot, profile, secret, forceFull, progress, ct, hostKeyVerifier);
 
+        // Compare the plans, not the counts. A partial upload failure leaves fewer files uploaded
+        // than approved while the plan was identical, and reporting that as "the site changed"
+        // would be wrong — failures are surfaced separately as errors.
         var approvedSet = approved.ToUpload.ToHashSet(StringComparer.Ordinal);
-        var actual = result.Uploaded;
-        if (actual != approvedSet.Count)
-        {
-            return result with
-            {
-                Summary = result.Summary +
-                          $" — note: {approvedSet.Count} file(s) were listed when you previewed, " +
-                          $"{actual} were uploaded; the site or the server changed in between.",
-            };
-        }
+        if (approvedSet.SetEquals(result.Attempted)) return result;
 
-        return result;
+        var added = result.Attempted.Count(f => !approvedSet.Contains(f));
+        var dropped = approvedSet.Count(f => !result.Attempted.Contains(f));
+        var what = (added, dropped) switch
+        {
+            (> 0, > 0) => $"{added} file(s) appeared and {dropped} no longer needed uploading",
+            (> 0, _)   => $"{added} file(s) appeared",
+            (_, > 0)   => $"{dropped} file(s) no longer needed uploading",
+            _          => "the file list differed",
+        };
+
+        return result with
+        {
+            Summary = result.Summary +
+                      $" — note: {what} since you previewed; the site or the server changed in between.",
+        };
     }
 
     public static SyncResult QuickSync(
@@ -245,7 +259,7 @@ public static class SftpSyncService
     {
         var local = SyncManifestBuilder.BuildLocal(siteRoot);
         if (local.Files.Count == 0)
-            return new SyncResult("Nothing to sync — _site/ is empty.", 0, [], []);
+            return new SyncResult("Nothing to sync — _site/ is empty.", 0, [], [], []);
 
         using var client = Connect(profile, secret, hostKeyVerifier);
 
@@ -258,7 +272,8 @@ public static class SftpSyncService
         var summary = $"Quick Sync: {diff.ToUpload.Count - errors.Count} uploaded, " +
                       $"{diff.StaleRemote.Count} stale → {profile.Host}{note}";
         client.Disconnect();
-        return new SyncResult(summary, diff.ToUpload.Count - errors.Count, diff.StaleRemote, errors);
+        return new SyncResult(
+            summary, diff.ToUpload.Count - errors.Count, diff.StaleRemote, errors, diff.ToUpload);
     }
 
     /// <summary>
@@ -297,7 +312,8 @@ public static class SftpSyncService
         var summary = $"Verify & Repair: {diff.ToUpload.Count - errors.Count} repaired, " +
                       $"{diff.StaleRemote.Count} stale → {profile.Host}";
         client.Disconnect();
-        return new SyncResult(summary, diff.ToUpload.Count - errors.Count, diff.StaleRemote, errors);
+        return new SyncResult(
+            summary, diff.ToUpload.Count - errors.Count, diff.StaleRemote, errors, diff.ToUpload);
     }
 
     /// <summary>
@@ -349,7 +365,7 @@ public static class SftpSyncService
         WriteManifest(client, ManifestRemotePath(profile), local, errors);
 
         client.Disconnect();
-        return new SyncResult($"Deleted {deleted} remote file(s).", 0, [], errors);
+        return new SyncResult($"Deleted {deleted} remote file(s).", 0, [], errors, []);
     }
 
     // ---- connection --------------------------------------------------------

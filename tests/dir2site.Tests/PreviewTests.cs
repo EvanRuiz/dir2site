@@ -99,6 +99,37 @@ public class PreviewTests(SftpServerFixture fx) : IClassFixture<SftpServerFixtur
     }
 
     [SkippableFact]
+    public void APartialUploadFailure_IsNotMistakenForTheSiteChanging()
+    {
+        Skip.IfNot(fx.Available, fx.Reason);
+        var d = fx.NewDeployment();
+        Write(d.SiteDir, "index.html", "home");
+
+        var plan = SftpSyncService.Preview(d.SiteDir, d.Profile, null);
+        var result = SftpSyncService.Apply(plan, d.SiteDir, d.Profile, null);
+
+        // Drift is judged on the plan, not on how many uploads happened to succeed — comparing
+        // counts would report a failed upload as "the site changed in between".
+        Assert.Equal(plan.ToUpload, result.Attempted);
+        Assert.DoesNotContain("changed in between", result.Summary);
+    }
+
+    [SkippableFact]
+    public void TheDriftNoteSaysWhatActuallyDiffered()
+    {
+        Skip.IfNot(fx.Available, fx.Reason);
+        var d = fx.NewDeployment();
+        Write(d.SiteDir, "index.html", "home");
+
+        var plan = SftpSyncService.Preview(d.SiteDir, d.Profile, null);
+        Write(d.SiteDir, "extra.html", "appeared later");
+
+        var result = SftpSyncService.Apply(plan, d.SiteDir, d.Profile, null);
+
+        Assert.Contains("1 file(s) appeared", result.Summary);
+    }
+
+    [SkippableFact]
     public void ForceFull_PreviewsEverything()
     {
         Skip.IfNot(fx.Available, fx.Reason);
