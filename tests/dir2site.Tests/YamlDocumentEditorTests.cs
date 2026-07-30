@@ -13,7 +13,10 @@ namespace dir2site.Tests;
 /// </summary>
 public class YamlDocumentEditorTests
 {
-    private const string Annotated =
+    // Normalised deliberately: this is a source literal, and git checks .cs out with CRLF on
+    // Windows — so without this the "LF document" fixture would silently be a CRLF one there, and
+    // the tests would assert the opposite of what they claim.
+    private static readonly string Annotated = Lf(
         """
         # dir2site config — hand-edited, with notes I want to keep
         title: My Site
@@ -23,7 +26,10 @@ public class YamlDocumentEditorTests
 
         primaryColor: '#333333'   # deliberately quoted, it starts with a hash
         myOwnKey: something dir2site knows nothing about
-        """;
+        """);
+
+    /// <summary>Forces LF, whatever the checkout did to this file.</summary>
+    private static string Lf(string s) => s.Replace("\r\n", "\n");
 
     private static string Value(string yaml, string key)
     {
@@ -122,13 +128,13 @@ public class YamlDocumentEditorTests
     [Fact]
     public void BlockScalar_IsReplacedWithoutWeldingTheNextLine()
     {
-        const string yaml =
+        var yaml = Lf(
             """
             footer: |
               line one
               line two
             title: After The Block
-            """;
+            """);
         var editor = YamlDocumentEditor.TryLoad(yaml)!;
 
         Assert.True(editor.Set("footer", "now single line"));
@@ -151,12 +157,12 @@ public class YamlDocumentEditorTests
     [Fact]
     public void NonScalarValue_IsRefusedRatherThanOverwritten()
     {
-        const string yaml =
+        var yaml = Lf(
             """
             deploy:
               host: 127.0.0.1
             title: Keep Me
-            """;
+            """);
         var editor = YamlDocumentEditor.TryLoad(yaml)!;
 
         Assert.False(editor.Set("deploy", "clobbered"));
@@ -179,7 +185,7 @@ public class YamlDocumentEditorTests
         // index points at the *start* of its content, so the key landed mid-block, the re-parse
         // failed, and the caller fell back to a whole-file rewrite — losing every comment. This is
         // the normal shape of a dir2site.yaml, since `deploy:` is always appended last.
-        const string yaml =
+        var yaml = Lf(
             """
             # notes I want to keep
             title: My Site
@@ -188,7 +194,7 @@ public class YamlDocumentEditorTests
               targets:
               - name: production
                 host: 127.0.0.1
-            """;
+            """);
         var editor = YamlDocumentEditor.TryLoad(yaml)!;
 
         Assert.True(editor.Set("siteUrl", "https://example.com"));

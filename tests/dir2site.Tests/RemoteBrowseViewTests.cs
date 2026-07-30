@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
+using System;
 using System.IO;
 using System.Threading;
 using System.Linq;
@@ -22,19 +23,28 @@ public class RemoteBrowseViewTests(SftpServerFixture fx) : IClassFixture<SftpSer
     {
         var view = new RemoteBrowseView(d.Profile, null, null);
         view.Show();
-        Pump();
-        return (view, (RemoteBrowseViewModel)view.DataContext!);
+        var vm = (RemoteBrowseViewModel)view.DataContext!;
+        PumpUntil(() => !vm.IsBusy && vm.CurrentPath.Length > 0, "the first listing");
+        return (view, vm);
     }
 
-    // Listing happens on a background task; give it a moment to land on the UI thread.
-    private static void Pump()
+    /// <summary>
+    /// Listing runs on a background task, so the UI thread has to be pumped until the result lands.
+    /// Waits on the condition rather than a fixed number of iterations: a fixed count passes on a
+    /// fast machine and fails on a loaded CI runner, which is exactly what it did.
+    /// </summary>
+    private static void PumpUntil(Func<bool> done, string what, int timeoutMs = 15000)
     {
-        for (var i = 0; i < 40; i++)
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
         {
             Dispatcher.UIThread.RunJobs();
+            if (done()) return;
             Thread.Sleep(10);
-            Dispatcher.UIThread.RunJobs();
         }
+
+        Dispatcher.UIThread.RunJobs();
+        if (!done()) throw new TimeoutException($"Timed out waiting for {what}.");
     }
 
     [AvaloniaFact]
@@ -64,13 +74,13 @@ public class RemoteBrowseViewTests(SftpServerFixture fx) : IClassFixture<SftpSer
         var (_, vm) = Show(d);
         vm.SelectedDirectory = "sites";
         vm.OpenCommand.Execute(null);
-        Pump();
+        PumpUntil(() => vm.CurrentPath.EndsWith("/sites", StringComparison.Ordinal), "the descent");
 
         Assert.EndsWith("/sites", vm.CurrentPath);
         Assert.Equal(["example.com"], vm.Directories);
 
         vm.GoUpCommand.Execute(null);
-        Pump();
+        PumpUntil(() => vm.CurrentPath == d.Profile.RemotePath, "the way back up");
 
         Assert.Equal(d.Profile.RemotePath, vm.CurrentPath);
         Assert.Contains("sites", vm.Directories);
@@ -85,7 +95,7 @@ public class RemoteBrowseViewTests(SftpServerFixture fx) : IClassFixture<SftpSer
 
         vm.NewFolderName = "deploy-here";
         vm.NewFolderCommand.Execute(null);
-        Pump();
+        PumpUntil(() => vm.Directories.Contains("deploy-here"), "the new folder to appear");
 
         Assert.Contains("deploy-here", vm.Directories);
         Assert.Equal("deploy-here", vm.SelectedDirectory);
@@ -131,8 +141,9 @@ public class RemoteBrowseViewTests(SftpServerFixture fx) : IClassFixture<SftpSer
 
         while (vm.CanGoUp)
         {
+            var from = vm.CurrentPath;
             vm.GoUpCommand.Execute(null);
-            Pump();
+            PumpUntil(() => vm.CurrentPath != from, $"the move up from {from}");
         }
 
         Assert.Equal("/", vm.CurrentPath);
