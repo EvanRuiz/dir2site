@@ -17,6 +17,39 @@ public class MarkdownRendererTests
         MarkdownRenderer.ToHtml(markdown, rewriteRelativeUrls: true);
 
     [Fact]
+    public void ASingleNewline_BreaksTheLine()
+    {
+        // Standard Markdown reflows these into one line, which is not what someone writing prose
+        // in a wrapping editor means by pressing return.
+        var html = Render("First line\nSecond line");
+
+        Assert.Contains("<br", html);
+        Assert.Contains("First line", html);
+        Assert.Contains("Second line", html);
+    }
+
+    [Fact]
+    public void ABlankLine_StillStartsANewParagraph()
+    {
+        var html = Render("First para\n\nSecond para");
+
+        Assert.Contains("<p>First para</p>", html);
+        Assert.Contains("<p>Second para</p>", html);
+    }
+
+    [Fact]
+    public void ACaptionUnderAnImage_StaysOnItsOwnLine()
+    {
+        // Written without a blank line, which used to run the caption on beside the image.
+        var html = Render("![fig](_media/figure.webp)\nA caption");
+
+        var img = html.IndexOf("<img", System.StringComparison.Ordinal);
+        var br = html.IndexOf("<br", System.StringComparison.Ordinal);
+        var caption = html.IndexOf("A caption", System.StringComparison.Ordinal);
+        Assert.True(img < br && br < caption, "the break belongs between the image and its caption");
+    }
+
+    [Fact]
     public void RelativeImageAndLinkUrls_GainOneSegment()
     {
         var html = Render("![fig](_media/figure.webp)\n\n[next](other-article/)");

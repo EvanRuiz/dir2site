@@ -33,6 +33,16 @@ public class Artifact
     public string? Preview {get; set;}
     public string? PreviewLarge {get; set;}
 
+    /// <summary>
+    /// Marks this artifact as the picture for its folder's card, in place of the one the generator
+    /// would otherwise pick. Without it a collection is represented by whichever photo happens to
+    /// sort first, which is rarely the one that says what the collection is.
+    ///
+    /// Only meaningful on an artifact that has a preview, and only for the folder it sits in —
+    /// marking something deep in a subtree does not make it the cover of everything above it.
+    /// </summary>
+    public bool Cover {get; set;}
+
     // Runtime Only — not persisted to YAML
     [YamlIgnore] public string? RootFolder {get; set;}
     [YamlIgnore] public string? TraversalRoot {get; set;}

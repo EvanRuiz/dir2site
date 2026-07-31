@@ -17,6 +17,10 @@ public static partial class MarkdownRenderer
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()
         .UseYamlFrontMatter()
+        // A single newline becomes a <br> rather than a space. Standard Markdown reflows a
+        // hand-wrapped paragraph into one line, which surprises anyone writing prose in an editor
+        // that wraps for them, and offers only trailing whitespace as the way to say otherwise.
+        .UseSoftlineBreakAsHardlineBreak()
         .Build();
 
     /// <summary>

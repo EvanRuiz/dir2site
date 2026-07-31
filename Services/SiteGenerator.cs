@@ -36,6 +36,7 @@ public static class SiteGenerator
 
         var topLevelFolders = rootItem.Children
             .Where(c => c.IsDirectory)
+            .OrderBy(c => IsMenuOnly(c) ? 1 : 0)
             .ToList();
 
         // A fixed handful of files that ship with the app rather than with the project, so they're
@@ -97,20 +98,20 @@ public static class SiteGenerator
         ConcurrentBag<string> errors,
         GenerateProgressTracker tracker)
     {
-        var label = depth == 0 ? "index.html" : $"{node.Name}/index.html";
+        var label = depth == 0 ? "index.html" : $"{PublicName(node.Name)}/index.html";
 
         Directory.CreateDirectory(outputDir);
 
         // Depth-0 children don't carry the root node name — "Home" is the implicit root
         var childAncestors = depth == 0
             ? (IList<string>)[]
-            : [.. ancestorNames, node.Name];
+            : [.. ancestorNames, PublicName(node.Name)];
 
         var indexHtmlPath = Path.Combine(outputDir, "index.html");
 
         progress.Report($"Generating {label}...");
 
-        var pageTitle = depth == 0 ? config.Title : node.Name;
+        var pageTitle = depth == 0 ? config.Title : PublicName(node.Name);
         var prefix = RelativePrefix(depth);
 
         var siteObj = new ScriptObject();
@@ -127,15 +128,16 @@ public static class SiteGenerator
             .Select(f =>
             {
                 var obj = new ScriptObject();
-                obj.SetValue("name", f.Name, readOnly: true);
-                obj.SetValue("href", $"{prefix}{f.Name}/", readOnly: true);
+                obj.SetValue("name", PublicName(f.Name), readOnly: true);
+                obj.SetValue("href", $"{prefix}{PublicName(f.Name)}/", readOnly: true);
                 return (object)obj;
             })
             .ToList();
 
-        var breadcrumbs = BuildBreadcrumbs(prefix, depth, ancestorNames, node.Name);
+        var breadcrumbs = BuildBreadcrumbs(prefix, depth, ancestorNames, PublicName(node.Name));
 
         var items = node.Children
+            .Where(child => !IsMenuOnly(child))
             .Select(child => (object)BuildCardModel(child, prefix, directoryRoot))
             .ToList();
 
@@ -144,7 +146,7 @@ public static class SiteGenerator
 
         var ogTitle = depth == 0
             ? config.Title
-            : string.Join(" > ", ancestorNames.Concat([node.Name]));
+            : string.Join(" > ", ancestorNames.Concat([PublicName(node.Name)]));
 
         var ogImageResult = FindFirstArtifactWithPreview(node);
         var ogImage = ogImageResult.HasValue
@@ -171,7 +173,7 @@ public static class SiteGenerator
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
         {
-            var childOutputDir = Path.Combine(outputDir, child.Name);
+            var childOutputDir = Path.Combine(outputDir, PublicName(child.Name));
             GeneratePage(child, childOutputDir, directoryRoot, config, topLevelFolders,
                 depth + 1, childAncestors, templates, progress, errors, tracker);
         }
@@ -274,9 +276,9 @@ public static class SiteGenerator
 
         if (item.IsDirectory)
         {
-            caption = item.Name;
+            caption = PublicName(item.Name);
             badge = "Folder";
-            href = $"{item.Name}/";
+            href = $"{PublicName(item.Name)}/";
             var firstArtifactResult = FindFirstArtifactWithPreview(item);
             imgSrc = firstArtifactResult.HasValue
                 ? GetPreviewSrc(firstArtifactResult.Value.Item1, directoryRoot, prefix, firstArtifactResult.Value.Item2)
@@ -317,10 +319,12 @@ public static class SiteGenerator
     private static (Artifact, string)? FindFirstArtifactWithPreview(DirectoryTreeItem node)
     {
         // Prefer direct file children over anything in subdirectories.
-        // Among direct children: photos/deepzooms first, then alphabetical by caption.
+        // Among direct children: an explicit cover wins, then photos/deepzooms, then alphabetical
+        // by caption. The automatic order is a fallback for folders nobody has chosen a cover for.
         var direct = node.Children
             .Where(c => !c.IsDirectory && c.Artifact?.Preview != null)
-            .OrderBy(c => c.Artifact!.Type is ArtifactType.Photo or ArtifactType.Deepzoom ? 0 : 1)
+            .OrderBy(c => c.Artifact!.Cover ? 0 : 1)
+            .ThenBy(c => c.Artifact!.Type is ArtifactType.Photo or ArtifactType.Deepzoom ? 0 : 1)
             .ThenBy(c => c.Artifact!.Caption ?? c.Name, StringComparer.OrdinalIgnoreCase)
             .Select(c => (c.Artifact!, Path.GetFileNameWithoutExtension(c.Name)))
             .FirstOrDefault();
@@ -339,7 +343,7 @@ public static class SiteGenerator
     private static string GetPreviewSrc(Artifact artifact, string directoryRoot, string prefix, string stem)
     {
         if (artifact.Preview == null || artifact.RootFolder == null) return "";
-        var rel = Path.GetRelativePath(directoryRoot, artifact.RootFolder).Replace('\\', '/');
+        var rel = PublicRelativePath(Path.GetRelativePath(directoryRoot, artifact.RootFolder));
         var filename = StripDir2SitePrefix(artifact.Preview, stem);
         return rel == "." ? $"{prefix}{stem}/{filename}" : $"{prefix}{rel}/{stem}/{filename}";
     }
@@ -352,6 +356,36 @@ public static class SiteGenerator
         return normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
             ? normalized[prefix.Length..]
             : Path.GetFileName(normalized);
+    }
+
+    /// <summary>
+    /// Folders whose name starts with '-' are navigation-only: "-About" gets its page and its menu
+    /// entry, but no card in its parent's listing, and it sits after the ordinary folders in the
+    /// menu. It is somewhere you go from the nav, not one of the collections the site is presenting.
+    /// </summary>
+    private const char MenuOnlyPrefix = '-';
+
+    private static bool IsMenuOnly(DirectoryTreeItem item) =>
+        item.IsDirectory && item.Name.Length > 1 && item.Name[0] == MenuOnlyPrefix;
+
+    /// <summary>
+    /// The marker instructs the generator; it is not part of the name. It appears in no menu label,
+    /// page title, breadcrumb or URL — "-About" is published as "About".
+    /// </summary>
+    private static string PublicName(string name) =>
+        name.Length > 1 && name[0] == MenuOnlyPrefix ? name[1..] : name;
+
+    /// <summary>
+    /// Where a source path's content is published, with the marker stripped from every segment.
+    /// Everything that turns a source path into a site path goes through here, so a page, its
+    /// previews and its og:image can't disagree about where they live.
+    /// </summary>
+    private static string PublicRelativePath(string relativePath)
+    {
+        if (relativePath == "." || relativePath.Length == 0) return relativePath;
+        var parts = relativePath.Split('/', '\\');
+        for (var i = 0; i < parts.Length; i++) parts[i] = PublicName(parts[i]);
+        return string.Join('/', parts);
     }
 
     private static string RelativePrefix(int depth) =>
@@ -374,7 +408,7 @@ public static class SiteGenerator
 
             var destDir = folderRel == "."
                 ? Path.Combine(siteRoot, stem)
-                : Path.Combine(siteRoot, folderRel, stem);
+                : Path.Combine(siteRoot, PublicRelativePath(folderRel), stem);
 
             foreach (var file in Directory.EnumerateFiles(stemDir, "*", SearchOption.AllDirectories))
             {
@@ -405,7 +439,7 @@ public static class SiteGenerator
             if (name.StartsWith('_'))
             {
                 var rel = Path.GetRelativePath(directoryRoot, dir);
-                var destRoot = Path.Combine(siteRoot, rel);
+                var destRoot = Path.Combine(siteRoot, PublicRelativePath(rel));
                 foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
                 {
                     var fileRel = Path.GetRelativePath(dir, file);
@@ -463,8 +497,8 @@ public static class SiteGenerator
             .Select(f =>
             {
                 var obj = new ScriptObject();
-                obj.SetValue("name", f.Name, readOnly: true);
-                obj.SetValue("href", $"{prefix}{f.Name}/", readOnly: true);
+                obj.SetValue("name", PublicName(f.Name), readOnly: true);
+                obj.SetValue("href", $"{prefix}{PublicName(f.Name)}/", readOnly: true);
                 return (object)obj;
             })
             .ToList();
@@ -535,7 +569,7 @@ public static class SiteGenerator
     {
         var src = artifact.PreviewLarge ?? artifact.Preview;
         if (src == null || artifact.RootFolder == null) return "";
-        var rel = Path.GetRelativePath(directoryRoot, artifact.RootFolder).Replace('\\', '/');
+        var rel = PublicRelativePath(Path.GetRelativePath(directoryRoot, artifact.RootFolder));
         var filename = StripDir2SitePrefix(src, stem);
         return rel == "." ? $"{stem}/{filename}" : $"{rel}/{stem}/{filename}";
     }

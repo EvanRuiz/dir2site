@@ -21,6 +21,22 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
+    <!-- Buttons sitting on the accent-coloured update banners. A plain Foreground="White" only
+         holds for the resting state: the theme swaps the foreground for its own dark shade on
+         hover and press, which on this background turned the label black mid-click. The states
+         have to be set on the template's ContentPresenter, which is what the theme targets. -->
+    <Window.Styles>
+        <Style Selector="Button.banner">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.banner:pointerover /template/ ContentPresenter">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.banner:pressed /template/ ContentPresenter">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+    </Window.Styles>
+
     <DockPanel>
 
         <!-- Status bar pinned to bottom -->
@@ -70,15 +86,19 @@
                            FontSize="12"
                            Foreground="White"
                            VerticalAlignment="Center"/>
+                <!-- The bar sits on the accent colour, and the theme's default fill is a shade of
+                     that same accent — so it read as an empty pill whatever the progress was.
+                     White on a dimmed track matches the label and the button beside it. -->
                 <ProgressBar Value="{Binding UpdateProgress}"
                              Minimum="0" Maximum="100"
                              Width="100" Height="8"
+                             Foreground="White"
+                             Background="#59000000"
                              VerticalAlignment="Center"
                              IsVisible="{Binding IsDownloading}"/>
-                <Button Content="Update Now"
+                <Button Content="Update Now" Classes="banner"
                         Command="{Binding DownloadUpdateCommand}"
                         IsVisible="{Binding !IsDownloading}"
-                        Foreground="White"
                         FontSize="11" Padding="8,3"/>
             </StackPanel>
         </Border>
@@ -92,9 +112,8 @@
                            FontSize="12"
                            Foreground="White"
                            VerticalAlignment="Center"/>
-                <Button Content="Restart &amp; Install"
+                <Button Content="Restart &amp; Install" Classes="banner"
                         Command="{Binding RestartAndUpdateCommand}"
-                        Foreground="White"
                         FontSize="11" Padding="8,3"/>
             </StackPanel>
         </Border>
