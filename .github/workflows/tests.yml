@@ -26,12 +26,6 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
-    env:
-      # Off the Windows runner's C: system disk and onto D:, the fast ephemeral one. Outside the
-      # workspace so checkout's git clean can never delete it, and uniform across runners so a
-      # single cache path covers the matrix.
-      NUGET_PACKAGES: ${{ runner.temp }}/nuget-packages
-
     steps:
       # This job is nothing but small-file I/O — extracting a package cache, writing build output,
       # and driving a loopback SFTP server a file at a time — which is the workload real-time
@@ -52,6 +46,13 @@ jobs:
       # action was downloading a second identical copy — 297MB and ~32s on Windows, where it failed
       # to notice the preinstalled one that macOS found in a second. `dotnet` is on PATH, and with
       # no global.json it selects the newest installed SDK, which builds net10.0 whatever the patch.
+
+      # Set here rather than in a job-level env block, where the runner context does not exist.
+      # runner.temp is the fast ephemeral disk on Windows (D:) rather than the C: system disk the
+      # user profile lives on, and sits outside the workspace so checkout's clean can't reach it.
+      - name: Put the NuGet package cache on the fast disk
+        shell: bash
+        run: echo "NUGET_PACKAGES=$RUNNER_TEMP/nuget-packages" >> $GITHUB_ENV
 
       # Restore is the single biggest cost on Windows — 57s of a 73s build step, re-fetching
       # Avalonia and Magick.NET every run. Keyed on the project files, since there are no lock
