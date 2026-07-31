@@ -47,7 +47,7 @@ public class MarkdownPreviewStalenessTests : IDisposable
     private void GeneratePreviews()
     {
         var tree = DirectoryTraverser.BuildTree(_dir, new List<string>(), new List<string>());
-        DirectoryTraverser.GeneratePreviews(tree, new Dir2SiteModel(), progress: null);
+        DirectoryTraverser.GeneratePreviews(tree, new Dir2SiteModel(), progressTracker: null);
     }
 
     [AvaloniaFact]

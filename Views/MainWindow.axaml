@@ -33,11 +33,19 @@
                              Width="120"
                              Height="8"
                              VerticalAlignment="Center"/>
-                <TextBlock Text="{Binding StatusText}"
-                           FontSize="12"
-                           Foreground="#E0E0E0"
-                           VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis"/>
+                <StackPanel Spacing="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusText}"
+                               FontSize="12"
+                               Foreground="#E0E0E0"
+                               TextTrimming="CharacterEllipsis"/>
+                    <!-- The overall view of a generate; absent, and the bar stays one line. -->
+                    <TextBlock x:Name="GenerateCountersText"
+                               Text="{Binding GenerateCounters}"
+                               FontSize="11"
+                               Foreground="#9A9A9A"
+                               TextTrimming="CharacterEllipsis"
+                               IsVisible="{Binding GenerateCounters, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                </StackPanel>
             </StackPanel>
         </Border>
 

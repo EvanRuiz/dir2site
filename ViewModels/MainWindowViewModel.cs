@@ -203,6 +203,19 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The file currently being transferred, for a second line under the bar.</summary>
     [ObservableProperty] private string _syncCurrentFile = string.Empty;
 
+    /// <summary>
+    /// The overall view of a generate — "Artifacts 340/340 · Pages 12/500 (3 new)" — shown under
+    /// the status message. Empty until a generate has something to count, which is what keeps the
+    /// status bar a single line the rest of the time.
+    /// </summary>
+    [ObservableProperty] private string _generateCounters = string.Empty;
+
+    private void OnGenerateProgress(GenerateProgress p)
+    {
+        StatusText = p.Message;
+        GenerateCounters = p.Counters;
+    }
+
     // Reports arrive per file, which on a large site is thousands of UI updates a second — far more
     // than anyone can read and enough to starve the render thread. One update per file is fine for
     // the text; the bar only needs to move when the whole number of percent changes.
@@ -327,6 +340,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         IsLoading = true;
         StatusText = "Scanning...";
+        GenerateCounters = string.Empty;
 
         try
         {
@@ -393,28 +407,36 @@ public partial class MainWindowViewModel : ViewModelBase
         await Task.Run(() => YamlParser.SaveDir2SiteConfig(configPath, config));
 
         IsLoading = true;
-        var progress = new Progress<string>(msg => StatusText = msg);
+        GenerateCounters = string.Empty;
+
+        // Every stage reports through the one tracker, so the message line and the counter line
+        // always describe the same moment.
+        var sink = new Progress<GenerateProgress>(OnGenerateProgress);
+        var tracker = new GenerateProgressTracker(sink);
 
         // Re-scan from disk so any YAML edits since last load are picked up
-        StatusText = "Scanning for changes...";
+        tracker.Report("Scanning for changes...");
         var freshRoot = await Task.Run(() =>
         {
             var files     = new List<string>();
             var artifacts = new List<string>();
-            return DirectoryTraverser.BuildTree(DirectoryRoot!, files, artifacts, progress);
+            return DirectoryTraverser.BuildTree(DirectoryRoot!, files, artifacts, tracker);
         });
 
         // Generate previews first so site settings (PDF resize/quality) affect output
-        StatusText = "Generating previews...";
+        tracker.Report("Generating previews...");
         var root = freshRoot;
-        await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, progress));
+        await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, tracker));
 
-        StatusText = "Generating site...";
+        tracker.Report("Generating site...");
         var result = await Task.Run(() =>
-            SiteGenerator.Generate(DirectoryRoot, root, config, progress));
+            SiteGenerator.Generate(DirectoryRoot, root, config, tracker));
 
         IsLoading = false;
         StatusText = result.Summary;
+        // Straight from the tracker: reports reach the UI through a Progress<T> post, so the last
+        // one can still be in flight and would otherwise overwrite the final line a moment later.
+        GenerateCounters = tracker.Snapshot().Counters;
         if (result.Errors.Count > 0)
             AppendError(string.Join("\n", result.Errors));
         StartServerCommand.NotifyCanExecuteChanged();

@@ -24,8 +24,13 @@ public static class SiteGenerator
         string directoryRoot,
         DirectoryTreeItem rootItem,
         Dir2SiteModel config,
-        IProgress<string>? progress = null)
+        GenerateProgressTracker? progressTracker = null)
     {
+        // A no-op tracker rather than null: `tracker?.Method(Write(...))` would skip the write
+        // itself, which is a silent and very confusing way to generate nothing.
+        var tracker = progressTracker ?? new GenerateProgressTracker();
+        IProgress<string> progress = tracker;
+
         var siteRoot = Path.Combine(directoryRoot, "_site");
         Directory.CreateDirectory(siteRoot);
 
@@ -33,6 +38,9 @@ public static class SiteGenerator
             .Where(c => c.IsDirectory)
             .ToList();
 
+        // A fixed handful of files that ship with the app rather than with the project, so they're
+        // one step rather than a counted stage.
+        progress.Report("Copying framework assets...");
         CopyBootstrapAssets(siteRoot, progress);
         CopyOpenSeaDragonAssets(siteRoot, progress);
         CopyBookReaderAssets(siteRoot, progress);
@@ -42,15 +50,38 @@ public static class SiteGenerator
         var templates = new TemplateSet(loader);
 
         var errors = new ConcurrentBag<string>();
-        int pageCount = 0;
+        tracker.SetPageTotal(CountPages(rootItem));
         GeneratePage(rootItem, siteRoot, directoryRoot, config, topLevelFolders, 0,
-            [], ref pageCount, templates, progress, errors);
+            [], templates, progress, errors, tracker);
 
-        int assetCount = CopyPreviewAssets(rootItem, directoryRoot, siteRoot, progress);
-        assetCount += CopyVerbatimUnderscoreFolders(directoryRoot, siteRoot, progress);
-        CopyLogoAsset(directoryRoot, siteRoot, config.Logo);
+        var copyJobs = new List<CopyJob>();
+        CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs);
+        CollectUnderscoreFolderCopyJobs(directoryRoot, directoryRoot, siteRoot, copyJobs);
+        CollectLogoCopyJob(directoryRoot, siteRoot, config.Logo, copyJobs);
 
-        return ($"Site generated: {pageCount} pages, {assetCount} assets → _site/", [.. errors]);
+        tracker.SetFileTotal(copyJobs.Count);
+        foreach (var job in copyJobs)
+        {
+            tracker.FileDone(CopyFileIfNewer(job.Src, job.Dest, progress, job.Label));
+        }
+
+        return ("Site generated → _site/", [.. errors]);
+    }
+
+    /// <summary>
+    /// How many pages <see cref="GeneratePage"/> is about to write — one per directory node plus one
+    /// per artifact that gets a page of its own — using the same predicates it recurses on, so the
+    /// total can't drift from what actually gets rendered. Videos play inline and get no page.
+    /// </summary>
+    private static int CountPages(DirectoryTreeItem node)
+    {
+        var count = 1;
+        foreach (var child in node.Children)
+        {
+            if (child.IsDirectory) count += CountPages(child);
+            else if (child.Artifact != null && child.Artifact.Type != ArtifactType.Video) count++;
+        }
+        return count;
     }
 
     private static void GeneratePage(
@@ -61,10 +92,10 @@ public static class SiteGenerator
         IList<DirectoryTreeItem> topLevelFolders,
         int depth,
         IList<string> ancestorNames,
-        ref int pageCount,
         TemplateSet templates,
-        IProgress<string>? progress,
-        ConcurrentBag<string> errors)
+        IProgress<string> progress,
+        ConcurrentBag<string> errors,
+        GenerateProgressTracker tracker)
     {
         var label = depth == 0 ? "index.html" : $"{node.Name}/index.html";
 
@@ -77,7 +108,7 @@ public static class SiteGenerator
 
         var indexHtmlPath = Path.Combine(outputDir, "index.html");
 
-        progress?.Report($"Generating {label}...");
+        progress.Report($"Generating {label}...");
 
         var pageTitle = depth == 0 ? config.Title : node.Name;
         var prefix = RelativePrefix(depth);
@@ -136,14 +167,13 @@ public static class SiteGenerator
         context.PushGlobal(globals);
 
         var html = templates.Collection.Render(context);
-        WriteIfChanged(indexHtmlPath, html, Encoding.UTF8);
-        pageCount++;
+        tracker.PageDone(WriteIfChanged(indexHtmlPath, html, Encoding.UTF8));
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
         {
             var childOutputDir = Path.Combine(outputDir, child.Name);
             GeneratePage(child, childOutputDir, directoryRoot, config, topLevelFolders,
-                depth + 1, childAncestors, ref pageCount, templates, progress, errors);
+                depth + 1, childAncestors, templates, progress, errors, tracker);
         }
 
         // Videos play inline on this page, so they get no page of their own — generating one would
@@ -155,13 +185,20 @@ public static class SiteGenerator
         {
             try
             {
-                GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
+                var change = GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
                     depth + 1, childAncestors, templates, progress);
-                pageCount++;
+                tracker.PageDone(change);
+                // What happened to an artifact's own page is what "new" and "updated" mean for the
+                // artifact: a photo the site had never rendered, or one whose page now reads
+                // differently. Nothing else can say it — a yaml file's timestamp only records when
+                // it was written, not whether the site had already taken it in.
+                tracker.ArtifactChanged(change);
             }
             catch (Exception ex)
             {
                 errors.Add($"{child.Name}: {ex.Message}");
+                // A page that failed is still a page accounted for; the error is reported separately.
+                tracker.PageDone(Change.None);
             }
         }
     }
@@ -173,15 +210,21 @@ public static class SiteGenerator
     /// byte-identical files untouched keeps their mtime stable, which is what SftpSync uses to
     /// decide what needs re-uploading.
     /// </summary>
-    private static bool WriteIfChanged(string path, string content, Encoding? encoding = null)
+    /// <returns>
+    /// What happened to the page: <see cref="Change.New"/> when the site had no such page at all,
+    /// <see cref="Change.Updated"/> when it had one and the render differs, and
+    /// <see cref="Change.None"/> when the output is identical.
+    /// </returns>
+    private static Change WriteIfChanged(string path, string content, Encoding? encoding = null)
     {
-        if (File.Exists(path))
+        var existed = File.Exists(path);
+        if (existed)
         {
             try
             {
                 // ReadAllText strips any byte-order mark, so this compares text to text
                 // regardless of which encoding overload originally wrote the file.
-                if (File.ReadAllText(path) == content) return false;
+                if (File.ReadAllText(path) == content) return Change.None;
             }
             catch
             {
@@ -194,7 +237,7 @@ public static class SiteGenerator
             File.WriteAllText(path, content, encoding);
         else
             File.WriteAllText(path, content);
-        return true;
+        return existed ? Change.Updated : Change.New;
     }
 
     private static ScriptObject MakeCrumb(string name, string href, bool isActive)
@@ -314,16 +357,12 @@ public static class SiteGenerator
     private static string RelativePrefix(int depth) =>
         string.Concat(Enumerable.Repeat("../", depth));
 
-    private static int CopyPreviewAssets(DirectoryTreeItem rootItem, string directoryRoot, string siteRoot, IProgress<string>? progress)
-    {
-        int count = 0;
-        CopyFolderPreviews(rootItem, directoryRoot, siteRoot, ref count, progress);
-        return count;
-    }
+    /// <summary>One file to place in _site. Collected up front so the copy stage knows its total.</summary>
+    private sealed record CopyJob(string Src, string Dest, string Label);
 
     // Walks the tree one directory at a time. Each artifact's previews live in .dir2site/{stem}/
     // so they are self-contained — copy the whole subfolder straight into the artifact's output dir.
-    private static void CopyFolderPreviews(DirectoryTreeItem node, string directoryRoot, string siteRoot, ref int count, IProgress<string>? progress)
+    private static void CollectFolderPreviewCopyJobs(DirectoryTreeItem node, string directoryRoot, string siteRoot, List<CopyJob> jobs)
     {
         var folderRel = Path.GetRelativePath(directoryRoot, node.FullPath);
 
@@ -340,27 +379,18 @@ public static class SiteGenerator
             foreach (var file in Directory.EnumerateFiles(stemDir, "*", SearchOption.AllDirectories))
             {
                 var fileRel = Path.GetRelativePath(stemDir, file);
-                var dest = Path.Combine(destDir, fileRel);
-                CopyFileIfNewer(file, dest, progress, fileRel);
-                count++;
+                jobs.Add(new CopyJob(file, Path.Combine(destDir, fileRel), fileRel));
             }
         }
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
-            CopyFolderPreviews(child, directoryRoot, siteRoot, ref count, progress);
+            CollectFolderPreviewCopyJobs(child, directoryRoot, siteRoot, jobs);
     }
 
     // Copies every "_"-prefixed folder (e.g. _media) verbatim into _site at its relative path, so
     // markdown articles can reference static includes. _site itself and "."-prefixed folders
     // (.git, .dir2site, …) are skipped. Underscore folders are not scanned as artifacts.
-    private static int CopyVerbatimUnderscoreFolders(string directoryRoot, string siteRoot, IProgress<string>? progress)
-    {
-        int count = 0;
-        WalkForUnderscoreFolders(directoryRoot, directoryRoot, siteRoot, ref count, progress);
-        return count;
-    }
-
-    private static void WalkForUnderscoreFolders(string current, string directoryRoot, string siteRoot, ref int count, IProgress<string>? progress)
+    private static void CollectUnderscoreFolderCopyJobs(string current, string directoryRoot, string siteRoot, List<CopyJob> jobs)
     {
         IEnumerable<string> dirs;
         try { dirs = Directory.EnumerateDirectories(current); }
@@ -379,26 +409,25 @@ public static class SiteGenerator
                 foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
                 {
                     var fileRel = Path.GetRelativePath(dir, file);
-                    CopyFileIfNewer(file, Path.Combine(destRoot, fileRel), progress, Path.Combine(rel, fileRel));
-                    count++;
+                    jobs.Add(new CopyJob(file, Path.Combine(destRoot, fileRel), Path.Combine(rel, fileRel)));
                 }
                 continue; // don't descend further — the whole subtree was copied
             }
 
-            WalkForUnderscoreFolders(dir, directoryRoot, siteRoot, ref count, progress);
+            CollectUnderscoreFolderCopyJobs(dir, directoryRoot, siteRoot, jobs);
         }
     }
 
-    private static void CopyLogoAsset(string directoryRoot, string siteRoot, string logoFilename)
+    private static void CollectLogoCopyJob(string directoryRoot, string siteRoot, string logoFilename, List<CopyJob> jobs)
     {
         if (string.IsNullOrEmpty(logoFilename)) return;
         var src = Path.Combine(directoryRoot, logoFilename);
-        var dest = Path.Combine(siteRoot, logoFilename);
         if (File.Exists(src))
-            CopyFileIfNewer(src, dest, progress: null);
+            jobs.Add(new CopyJob(src, Path.Combine(siteRoot, logoFilename), logoFilename));
     }
 
-    private static void GenerateArtifactPage(
+    /// <summary>Reports whether this artifact's page was newly created, rewritten, or unchanged.</summary>
+    private static Change GenerateArtifactPage(
         DirectoryTreeItem item,
         string parentOutputDir,
         string directoryRoot,
@@ -499,7 +528,7 @@ public static class SiteGenerator
         context.PushGlobal(globals);
 
         var html = templates.Artifact(templateName).Render(context);
-        WriteIfChanged(indexHtmlPath, html, Encoding.UTF8);
+        return WriteIfChanged(indexHtmlPath, html, Encoding.UTF8);
     }
 
     private static string GetOgImageRootRelative(Artifact artifact, string directoryRoot, string stem)
@@ -648,12 +677,18 @@ public static class SiteGenerator
             CopyEmbeddedIfStale(uri, dest, progress);
     }
 
-    private static void CopyFileIfNewer(string src, string dest, IProgress<string>? progress, string? label = null)
+    /// <returns>
+    /// New when the site had no such file, Updated when it had a stale one, None when it was
+    /// already current and nothing was copied.
+    /// </returns>
+    private static Change CopyFileIfNewer(string src, string dest, IProgress<string>? progress, string? label = null)
     {
-        if (File.Exists(dest) && File.GetLastWriteTimeUtc(dest) >= File.GetLastWriteTimeUtc(src)) return;
+        var existed = File.Exists(dest);
+        if (existed && File.GetLastWriteTimeUtc(dest) >= File.GetLastWriteTimeUtc(src)) return Change.None;
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         progress?.Report($"Copying {label ?? Path.GetFileName(dest)}...");
         File.Copy(src, dest, overwrite: true);
+        return existed ? Change.Updated : Change.New;
     }
 
     private static readonly DateTime _assemblyTime = GetAssemblyTime();

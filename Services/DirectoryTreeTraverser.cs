@@ -25,11 +25,27 @@ public static class DirectoryTraverser
     /// using the provided site config (for PDF resize/quality settings).
     /// Call this during the Generate step so settings affect output.
     /// </summary>
-    public static void GeneratePreviews(DirectoryTreeItem root, dir2site.Models.Dir2SiteModel config, IProgress<string>? progress)
+    public static void GeneratePreviews(DirectoryTreeItem root, dir2site.Models.Dir2SiteModel config, GenerateProgressTracker? progressTracker)
     {
-        var jobs = new List<PreviewJob>();
-        CollectPreviewJobs(root, jobs);
-        ExecutePreviewJobs(jobs, config, progress);
+        // A no-op tracker rather than null, so no call site has to reach for `?.` — see the same
+        // note in SiteGenerator.Generate for what that costs when the argument does real work.
+        var tracker = progressTracker ?? new GenerateProgressTracker();
+
+        var survey = new PreviewSurvey([], [], []);
+        CollectPreviewJobs(root, survey);
+
+        // Every artifact is accounted for the moment the scan finishes. Whether any of them is new
+        // or updated isn't decided here: that is what the site's own output says, so it is settled
+        // later, as each artifact's page is written (see SiteGenerator.GeneratePage).
+        tracker.SetArtifactTotal(survey.All.Count);
+        tracker.AddArtifactsDone(survey.All.Count, Change.None);
+
+        // Previews carry the progress: the collect pass has just decided, artifact by artifact,
+        // which assets are missing or stale, and the rest are current before the stage starts.
+        tracker.SetPreviewTotal(survey.Jobs.Count + survey.PreviewsCurrent.Count);
+        tracker.AddPreviewsDone(survey.PreviewsCurrent.Count, Change.None);
+
+        ExecutePreviewJobs(survey.Jobs, config, tracker);
     }
 
     // Walks the directory tree and parses YAML. Preview generation is deferred to GeneratePreviews().
@@ -128,12 +144,32 @@ public static class DirectoryTraverser
         return true;
     }
 
-    private sealed record PreviewJob(string FilePath, string TraversalRoot, Artifact Artifact, ArtifactType Type);
+    /// <summary>
+    /// Whether this preview job is making thumbnails that never existed, or replacing ones that
+    /// have gone stale — an edited article, a re-pointed video, or assets deleted from .dir2site.
+    /// </summary>
+    private static Change PreviewChange(string rootPath, Artifact artifact) =>
+        !string.IsNullOrEmpty(artifact.Preview) && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
+            ? Change.Updated
+            : Change.New;
 
-    private static void CollectPreviewJobs(DirectoryTreeItem node, List<PreviewJob> jobs)
+    private sealed record PreviewJob(string FilePath, string TraversalRoot, Artifact Artifact, ArtifactType Type, Change Change);
+
+    /// <summary>
+    /// What the collect pass learned about the catalogue: every artifact in the tree, and — among
+    /// those that can have previews at all — which still need generating and which are current.
+    /// </summary>
+    private sealed record PreviewSurvey(List<Artifact> All, List<PreviewJob> Jobs, List<Artifact> PreviewsCurrent);
+
+    private static void CollectPreviewJobs(DirectoryTreeItem node, PreviewSurvey survey)
     {
+        var jobs = survey.Jobs;
+
         if (!node.IsDirectory && node.Artifact is { } artifact)
         {
+            survey.All.Add(artifact);
+
+            var before   = jobs.Count;
             var file     = node.FullPath;
             var rootPath = artifact.RootFolder ?? Path.GetDirectoryName(file) ?? string.Empty;
 
@@ -149,7 +185,8 @@ public static class DirectoryTraverser
                         && PreviewGenerator.PreviewFileExists(rootPath, photo.Image)));
 
                 if (!alreadyHasAll)
-                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact, artifact.Type));
+                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
+                        artifact.Type, PreviewChange(rootPath, artifact)));
             }
 
             if (PreviewGenerator.IsPdfFile(file))
@@ -160,7 +197,8 @@ public static class DirectoryTraverser
                     && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge);
 
                 if (!alreadyHasBoth)
-                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact, ArtifactType.Pdf));
+                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
+                        ArtifactType.Pdf, PreviewChange(rootPath, artifact)));
             }
 
             if (PreviewGenerator.IsMarkdownFile(file))
@@ -176,7 +214,8 @@ public static class DirectoryTraverser
                     && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.PreviewLarge, file);
 
                 if (!alreadyHasBoth)
-                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact, ArtifactType.Markdown));
+                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
+                        ArtifactType.Markdown, PreviewChange(rootPath, artifact)));
             }
 
             if (PreviewGenerator.IsUrlFile(file) && artifact.Type == ArtifactType.Video)
@@ -192,16 +231,29 @@ public static class DirectoryTraverser
                     && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.PreviewLarge, file);
 
                 if (!alreadyHasBoth)
-                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact, ArtifactType.Video));
+                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
+                        ArtifactType.Video, PreviewChange(rootPath, artifact)));
             }
+
+            // Only the four types above can have previews at all; anything else is outside the
+            // previews stage rather than complete within it.
+            var canHavePreviews = PreviewGenerator.IsImageFile(file)
+                || PreviewGenerator.IsPdfFile(file)
+                || PreviewGenerator.IsMarkdownFile(file)
+                || (PreviewGenerator.IsUrlFile(file) && artifact.Type == ArtifactType.Video);
+
+            if (canHavePreviews && jobs.Count == before)
+                survey.PreviewsCurrent.Add(artifact);
         }
 
         foreach (var child in node.Children)
-            CollectPreviewJobs(child, jobs);
+            CollectPreviewJobs(child, survey);
     }
 
-    private static void ExecutePreviewJobs(List<PreviewJob> jobs, dir2site.Models.Dir2SiteModel config, IProgress<string>? progress)
+    private static void ExecutePreviewJobs(List<PreviewJob> jobs, dir2site.Models.Dir2SiteModel config, GenerateProgressTracker tracker)
     {
+        IProgress<string> progress = tracker;
+
         Parallel.ForEach(jobs, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, job =>
         {
             try
@@ -292,6 +344,12 @@ public static class DirectoryTraverser
             catch (Exception ex)
             {
                 progress?.Report($"Preview failed: {Path.GetFileName(job.FilePath)} — {ex.Message}");
+            }
+            finally
+            {
+                // A preview that failed is still one we're done with — leaving it uncounted would
+                // strand the stage short of its total forever.
+                tracker.PreviewDone(job.Change);
             }
         });
     }
