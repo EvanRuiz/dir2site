@@ -26,14 +26,31 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    env:
+      # Off the Windows runner's C: system disk and onto D:, the fast ephemeral one. Outside the
+      # workspace so checkout's git clean can never delete it, and uniform across runners so a
+      # single cache path covers the matrix.
+      NUGET_PACKAGES: ${{ runner.temp }}/nuget-packages
+
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
 
-      - uses: actions/setup-dotnet@v5
+      # No setup-dotnet: both runner images already ship the 10.0.x SDK this builds with, and the
+      # action was downloading a second identical copy — 297MB and ~32s on Windows, where it failed
+      # to notice the preinstalled one that macOS found in a second. `dotnet` is on PATH, and with
+      # no global.json it selects the newest installed SDK, which builds net10.0 whatever the patch.
+
+      # Restore is the single biggest cost on Windows — 57s of a 73s build step, re-fetching
+      # Avalonia and Magick.NET every run. Keyed on the project files, since there are no lock
+      # files; restore-keys let an unchanged-dependency run reuse the previous cache.
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
         with:
-          dotnet-version: '10.0.x'
+          path: ${{ runner.temp }}/nuget-packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
 
       # The SFTP integration tests drive a real server on a loopback port. RcloneTool fetches
       # rclone on first use and verifies it against hashes pinned in the repo, so there is
