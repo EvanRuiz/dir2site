@@ -38,6 +38,21 @@ editor; metadata (caption, credit, date) lives in the YAML sidecar like every ot
 Markdown is rendered to HTML for the site, previewed live in the app, and a thumbnail of the
 rendered page is generated for collection cards.
 
+### Menu-only sections (`-`-folders)
+
+A folder whose name starts with a hyphen (e.g. `-About`) appears in the menu but not as a card on
+its parent page, and it sits after the ordinary folders in the menu. Use it for the sections a site
+needs but isn't presenting — About, Contact, Colophon.
+
+```
+Photographs/          shown in the menu and as a card
+Documents/            shown in the menu and as a card
+-About/               shown in the menu only, last
+```
+
+The hyphen is an instruction to the generator, not part of the name: `-About` is published at
+`/About/` and shows as "About" everywhere a visitor can see.
+
 ### Static media (`_media` and other `_`-folders)
 
 To include images or other assets that should **not** become artifacts of their own, put them in a
