@@ -319,10 +319,12 @@ public static class SiteGenerator
     private static (Artifact, string)? FindFirstArtifactWithPreview(DirectoryTreeItem node)
     {
         // Prefer direct file children over anything in subdirectories.
-        // Among direct children: photos/deepzooms first, then alphabetical by caption.
+        // Among direct children: an explicit cover wins, then photos/deepzooms, then alphabetical
+        // by caption. The automatic order is a fallback for folders nobody has chosen a cover for.
         var direct = node.Children
             .Where(c => !c.IsDirectory && c.Artifact?.Preview != null)
-            .OrderBy(c => c.Artifact!.Type is ArtifactType.Photo or ArtifactType.Deepzoom ? 0 : 1)
+            .OrderBy(c => c.Artifact!.Cover ? 0 : 1)
+            .ThenBy(c => c.Artifact!.Type is ArtifactType.Photo or ArtifactType.Deepzoom ? 0 : 1)
             .ThenBy(c => c.Artifact!.Caption ?? c.Name, StringComparer.OrdinalIgnoreCase)
             .Select(c => (c.Artifact!, Path.GetFileNameWithoutExtension(c.Name)))
             .FirstOrDefault();

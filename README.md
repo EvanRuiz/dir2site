@@ -38,6 +38,21 @@ editor; metadata (caption, credit, date) lives in the YAML sidecar like every ot
 Markdown is rendered to HTML for the site, previewed live in the app, and a thumbnail of the
 rendered page is generated for collection cards.
 
+### Choosing a folder's picture (`cover: true`)
+
+A folder's card is illustrated by whichever artifact inside it sorts first, which is rarely the one
+that says what the collection is. Add `cover: true` to an artifact's YAML to choose it instead:
+
+```yaml
+type: photo
+caption: The one that says what this is
+cover: true
+```
+
+It also becomes the folder page's `og:image`, so a shared link shows the same picture. Only the
+folder the artifact sits in is affected — marking something nested doesn't make it the cover of
+everything above it.
+
 ### Menu-only sections (`-`-folders)
 
 A folder whose name starts with a hyphen (e.g. `-About`) appears in the menu but not as a card on
