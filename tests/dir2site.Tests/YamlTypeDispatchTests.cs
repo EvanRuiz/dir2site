@@ -17,7 +17,8 @@ namespace dir2site.Tests;
 /// <see cref="Deepzoom"/> that merely carried the right value in <see cref="Artifact.Type"/>. That
 /// went unnoticed for a long time because the generator switches on <c>Type</c> rather than on the
 /// CLR type — but it silently dropped every subtype-specific field, and made the
-/// <c>is MarkdownPage</c> test in DirectoryTreeItem permanently false.
+/// <c>is MarkdownPage</c> test in DirectoryTreeItem permanently false. Video was the type that
+/// forced the fix, since its id lives in exactly such a field.
 /// </summary>
 public class YamlTypeDispatchTests : IDisposable
 {
@@ -38,6 +39,19 @@ public class YamlTypeDispatchTests : IDisposable
         File.WriteAllText(path, "stand-in");
         File.WriteAllText(path + ".yaml", yaml);
         return YamlParser.TryParseYamlMeta(path, errors ?? new List<string>());
+    }
+
+    [Fact]
+    public void AVideoYamlKeepsItsVideoId()
+    {
+        var artifact = Parse("Talk.url",
+            "type: video\ncaption: A Talk\nprovider: youtube\nvideoId: AbCdEfGhIjK\nstart: 40\n");
+
+        var video = Assert.IsType<Video>(artifact);
+        Assert.Equal(ArtifactType.Video, video.Type);
+        Assert.Equal("AbCdEfGhIjK", video.VideoId);
+        Assert.Equal("youtube", video.Provider);
+        Assert.Equal(40, video.Start);
     }
 
     [Fact]

@@ -1,0 +1,129 @@
+// Inline YouTube players for video artifacts on a collection page.
+//
+// Every video gets a real YT.Player as soon as the IFrame API is ready, and once a player exists it
+// is what the visitor sees and clicks. Two earlier arrangements were worse:
+//
+//   - Building the player on click meant the click paid for the iframe load and the embed
+//     handshake — around five seconds of nothing happening, long enough to read as a dead button.
+//   - Keeping our poster on top of a ready player and calling playVideo() from its click was still
+//     slow, and worse, it hands YouTube a programmatic play it does not always honour, so the
+//     visitor ends up looking at YouTube's idle play button having to click a second time.
+//
+// Clicking YouTube's own play button avoids both: it is the fastest path there is, and the feedback
+// during buffering is YouTube's own. Our generated poster still covers the player until it is ready
+// (so the card never flashes empty) and again when the video ENDS, which is the point of running a
+// real player rather than a bare <iframe> — it covers the related-video/autoplay-next end screen.
+// Clicking the poster then seeks back to the artifact's start offset and replays.
+(function () {
+  'use strict';
+
+  var players = new WeakMap();
+  var live = [];
+
+  function loadApi() {
+    if (document.querySelector('script[data-yt-iframe-api]')) return;
+    var tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    tag.async = true;
+    tag.setAttribute('data-yt-iframe-api', '');
+    document.head.appendChild(tag);
+  }
+
+  function startTime(container) {
+    var value = parseInt(container.getAttribute('data-start'), 10);
+    return isNaN(value) || value < 0 ? 0 : value;
+  }
+
+  // A collection page puts several players in one grid, so without this a second video leaves two
+  // of them talking over each other.
+  function pauseOthers(container) {
+    live.forEach(function (other) {
+      if (other.container === container || !other.ready) return;
+      if (typeof other.player.pauseVideo === 'function') other.player.pauseVideo();
+    });
+  }
+
+  function build(container, index) {
+    var videoId = container.getAttribute('data-video-id');
+    if (!videoId || players.has(container)) return;
+
+    var mount = document.createElement('div');
+    mount.className = 'player';
+    mount.id = 'yt-player-' + index;
+    container.appendChild(mount);
+
+    var state = { container: container, player: null, ready: false };
+
+    state.player = new YT.Player(mount, {
+      videoId: videoId,
+      playerVars: {
+        rel: 0,
+        modestbranding: 1,
+        playsinline: 1,
+        start: startTime(container)
+      },
+      events: {
+        onReady: function () {
+          state.ready = true;
+          // Hand the card over to YouTube's player, play button and all.
+          container.classList.remove('loading');
+          container.classList.add('uncovered');
+        },
+        onStateChange: function (event) {
+          if (event.data === YT.PlayerState.PLAYING) {
+            pauseOthers(container);
+          } else if (event.data === YT.PlayerState.ENDED) {
+            // Poster back on top, hiding the end screen. PAUSED deliberately does not do this —
+            // covering the player mid-video would fight the visitor's own pause.
+            container.classList.remove('uncovered');
+            // Only now does the poster gain a play button, because only now can clicking it work.
+            container.classList.add('replayable');
+          }
+        }
+      }
+    });
+
+    players.set(container, state);
+    live.push(state);
+  }
+
+  // Only reachable once the poster is marked replayable, which happens at ENDED and so only ever
+  // with a ready player behind it.
+  function replay(container) {
+    var state = players.get(container);
+    if (!state || !state.ready) return;
+
+    container.classList.add('uncovered');
+    container.classList.remove('replayable');
+    pauseOthers(container);
+    state.player.seekTo(startTime(container), true);
+    state.player.playVideo();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var containers = document.querySelectorAll('.video-container');
+    if (!containers.length) return;
+
+    containers.forEach(function (container) {
+      // Only now, with a script running that will actually clear it. A spinner baked into the
+      // markup would turn into a permanently spinning card for anyone without JavaScript.
+      container.classList.add('loading');
+
+      // If YouTube never answers — blocked, offline, an ad blocker — stop pretending something is
+      // still on its way and leave the card as a plain poster.
+      setTimeout(function () { container.classList.remove('loading'); }, 15000);
+
+      container.addEventListener('click', function (event) {
+        if (!event.target.closest('.video-poster, .video-play-btn')) return;
+        event.preventDefault();
+        replay(container);
+      });
+    });
+
+    window.onYouTubeIframeAPIReady = function () {
+      containers.forEach(build);
+    };
+
+    loadApi();
+  });
+})();

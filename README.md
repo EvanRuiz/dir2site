@@ -17,6 +17,7 @@ Dir2Site is a open-source cross-platform desktop application that walks your loc
 - **Photo galleries** — full-screen browsing with deep-zoom viewer (OpenSeadragon), optional overlay annotations
 - **PDF viewer** — embedded document reader (BookReader)
 - **Markdown articles** — render `.md` files as clean web pages
+- **Videos** — drop in a YouTube `.url` shortcut; plays inline on the collection page
 - **Collection pages** — browsable index pages for every subdirectory
 - **Customizable branding** — site title, footer, primary/secondary colors, custom logo, dark or light navbar
 - **YAML configuration** — You can edit directly in the app, or choose to edit the YAML files per artifact directly for fine-grained control.
@@ -70,6 +71,24 @@ text after the closing `^^^` is the caption. A `:::figure-right … :::` contain
 work — the `^^^` / `:::` forms are preferred as they need no inline styles and render consistently.
 
 See **[Writing Markdown articles](docs/writing-articles.md)** for the full reference.
+
+## Videos
+
+Drop a Windows internet shortcut (`.url`) pointing at a YouTube video into your project folder and
+it becomes a Video artifact:
+
+```ini
+[InternetShortcut]
+URL=https://www.youtube.com/watch?v=AbCdEfGhIjK&t=1m30s
+```
+
+The video id and start offset are read from the link, the poster frame is downloaded for the card
+and folder thumbnails, and — unlike every other artifact type — the video gets no page of its own:
+it plays **inline on the collection page**. When it ends, the poster returns over the player instead
+of YouTube's related-video end screen. A `.url` pointing anywhere other than a supported video is
+ignored rather than turned into a broken card.
+
+See **[Adding videos](docs/adding-videos.md)** for the full reference.
 
 > **Tip:** when checking your project into git, ignore the generated output with `/_site/` — do
 > **not** use a blanket `_*` rule, or you'll exclude `_media` and other static-asset folders.

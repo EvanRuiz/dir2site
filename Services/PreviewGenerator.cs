@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
 using ImageMagick;
 using PDFtoImage;
@@ -27,6 +28,9 @@ public static class PreviewGenerator
 
     public static bool IsMarkdownFile(string filePath) =>
         Path.GetExtension(filePath).Equals(".md", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsUrlFile(string filePath) =>
+        Path.GetExtension(filePath).Equals(".url", StringComparison.OrdinalIgnoreCase);
 
     // previewRelativePath already includes the .dir2site/ segment (e.g. ".dir2site/preview-foo.webp")
     public static bool PreviewFileExists(string sourceFileDir, string previewRelativePath) =>
@@ -105,6 +109,83 @@ public static class PreviewGenerator
         }
 
         return (previewFileName, previewLargeFileName, imageFileName);
+    }
+
+    // One shared client for the whole process — a per-call HttpClient exhausts sockets under the
+    // parallel preview pass, which is exactly where this gets called from.
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
+
+    // Highest quality first. Not every video has a maxres frame, and YouTube answers a missing one
+    // with 404, so hqdefault is the guaranteed fallback rather than a preference.
+    private static readonly string[] YouTubePosterNames = ["maxresdefault.jpg", "hqdefault.jpg"];
+
+    /// <summary>
+    /// Downloads a video's poster frame and writes the same pair of WebP thumbnails every other
+    /// artifact type produces, into <c>.dir2site/{stem}/</c>. Returns
+    /// (previewFileName, previewLargeFileName), or null if the poster could not be fetched.
+    /// </summary>
+    /// <remarks>
+    /// Keeping the poster local rather than hotlinking img.youtube.com is what lets a video act as a
+    /// folder tile and an OpenGraph image through the ordinary preview path, and means a published
+    /// page makes no third-party request until the visitor actually presses play.
+    /// </remarks>
+    public static (string Preview, string PreviewLarge)? GenerateVideoPreviews(
+        string sourceFile,
+        string videoId,
+        IProgress<string>? progress = null)
+    {
+        var fileDir = Path.GetDirectoryName(sourceFile) ?? string.Empty;
+        var stem = Path.GetFileNameWithoutExtension(sourceFile);
+
+        var dir2site = Path.GetFullPath(Path.Combine(fileDir, ".dir2site", stem));
+        Directory.CreateDirectory(dir2site);
+
+        var previewPath      = Path.Combine(dir2site, $"preview-{stem}.webp");
+        var previewLargePath = Path.Combine(dir2site, $"preview-lg-{stem}.webp");
+
+        var previewFileName      = $".dir2site/{stem}/preview-{stem}.webp";
+        var previewLargeFileName = $".dir2site/{stem}/preview-lg-{stem}.webp";
+
+        var fileName = Path.GetFileName(sourceFile);
+        progress?.Report($"Fetching video poster: {fileName}");
+
+        var poster = DownloadYouTubePoster(videoId);
+        if (poster is null)
+        {
+            progress?.Report($"No poster available for {fileName} ({videoId})");
+            return null;
+        }
+
+        // 16:9 rather than the 4:3 the other types use — a video frame cropped to 4:3 loses the
+        // sides of the shot, and the player that replaces this poster is 16:9 anyway. maxresdefault
+        // is exactly 1280x720, so the large size is a straight copy with no crop at all.
+        GenerateThumbnail(poster, previewPath, 800, 450);
+        GenerateThumbnail(poster, previewLargePath, 1200, 675);
+
+        return (previewFileName, previewLargeFileName);
+    }
+
+    private static byte[]? DownloadYouTubePoster(string videoId)
+    {
+        foreach (var name in YouTubePosterNames)
+        {
+            try
+            {
+                using var response = Http.GetAsync($"https://i.ytimg.com/vi/{videoId}/{name}")
+                    .GetAwaiter().GetResult();
+                if (!response.IsSuccessStatusCode) continue;
+
+                var bytes = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                if (bytes.Length > 0) return bytes;
+            }
+            catch (Exception)
+            {
+                // Offline, DNS failure, timeout — try the next name, then give up and let the
+                // caller fall back to the placeholder card.
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -342,9 +423,20 @@ public static class PreviewGenerator
         image.Write(dest, MagickFormat.WebP);
     }
 
+    private static void GenerateThumbnail(byte[] source, string dest, uint width, uint height)
+    {
+        using var image = new MagickImage(source);
+        Thumbnail(image, dest, width, height);
+    }
+
     private static void GenerateThumbnail(string source, string dest, uint width, uint height)
     {
         using var image = new MagickImage(source);
+        Thumbnail(image, dest, width, height);
+    }
+
+    private static void Thumbnail(MagickImage image, string dest, uint width, uint height)
+    {
         var scale = Math.Min((double)image.Width / width, (double)image.Height / height);
         if (scale < 1.0)
         {

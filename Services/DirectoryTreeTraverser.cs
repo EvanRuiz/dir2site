@@ -67,6 +67,9 @@ public static class DirectoryTraverser
                 {
                     artifact.RootFolder    = rootPath;
                     artifact.TraversalRoot = traversalRoot;
+
+                    if (!ResolveVideoTarget(file, artifact, child.YamlErrors))
+                        artifact = null;
                 }
 
                 allFiles.Add(file);
@@ -84,6 +87,45 @@ public static class DirectoryTraverser
         catch (IOException) { }
 
         return node;
+    }
+
+    /// <summary>
+    /// Re-reads a video's .url file and overlays its target onto the artifact. Returns false when
+    /// the result isn't a usable video, in which case the caller drops it from the tree.
+    /// </summary>
+    /// <remarks>
+    /// The shortcut is the source of truth for <em>which</em> video this is, so re-pointing the
+    /// .url and re-generating moves the card to the new video instead of leaving a stale id in the
+    /// yaml. The start offset is the exception: it is read from the URL only when the yaml
+    /// doesn't already have one, so an offset the user tuned by hand isn't overwritten on every run.
+    /// </remarks>
+    private static bool ResolveVideoTarget(string file, Artifact artifact, List<string> errors)
+    {
+        if (artifact.Type != ArtifactType.Video) return true;
+
+        if (artifact is not Video video)
+        {
+            errors.Add($"'{Path.GetFileName(file)}' is typed video but did not parse as one.");
+            return false;
+        }
+
+        if (InternetShortcutParser.TryReadVideo(file) is { } shortcut)
+        {
+            video.SourceUrl = shortcut.Url;
+            video.Provider  = shortcut.Video.Provider;
+            video.VideoId   = shortcut.Video.VideoId;
+            video.Start   ??= shortcut.Video.Start;
+        }
+
+        // Without an id there is nothing to embed, and a card with an empty player is worse than
+        // no card — this is the hand-written-yaml path, since an auto-created one can't get here.
+        if (string.IsNullOrWhiteSpace(video.VideoId))
+        {
+            errors.Add($"'{Path.GetFileName(file)}' has no video id and does not point at a supported video.");
+            return false;
+        }
+
+        return true;
     }
 
     private sealed record PreviewJob(string FilePath, string TraversalRoot, Artifact Artifact, ArtifactType Type);
@@ -135,6 +177,22 @@ public static class DirectoryTraverser
 
                 if (!alreadyHasBoth)
                     jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact, ArtifactType.Markdown));
+            }
+
+            if (PreviewGenerator.IsUrlFile(file) && artifact.Type == ArtifactType.Video)
+            {
+                // Same reasoning as markdown: the .url is edited in place, so re-pointing it at a
+                // different video has to re-fetch the poster. "The file exists" would leave the old
+                // video's thumbnail on the new video's card.
+                var alreadyHasBoth = !string.IsNullOrEmpty(artifact.Preview)
+                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
+                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
+                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge)
+                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.Preview, file)
+                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.PreviewLarge, file);
+
+                if (!alreadyHasBoth)
+                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact, ArtifactType.Video));
             }
         }
 
@@ -194,6 +252,39 @@ public static class DirectoryTraverser
                         var yaml = YamlParser.FindYamlMetaPath(job.FilePath);
                         if (yaml != null)
                             YamlParser.UpdatePreviewFields(yaml, job.Artifact.Preview!, job.Artifact.PreviewLarge!);
+                        break;
+                    }
+                    case ArtifactType.Video:
+                    {
+                        // The only case that does network I/O in here. That's fine — it is
+                        // I/O-bound and the degree of parallelism is already capped — but it is a
+                        // departure from the pure-CPU assumption the markdown case notes above.
+                        if (job.Artifact is not Video video || string.IsNullOrEmpty(video.VideoId)) return;
+
+                        var result = PreviewGenerator.GenerateVideoPreviews(job.FilePath, video.VideoId, progress);
+                        if (!result.HasValue) return;
+
+                        // Unlike the other types these are assigned unconditionally: the whole
+                        // reason we got here is that the existing poster is missing or stale.
+                        job.Artifact.Preview      = result.Value.Preview;
+                        job.Artifact.PreviewLarge = result.Value.PreviewLarge;
+
+                        var yaml = YamlParser.FindYamlMetaPath(job.FilePath);
+                        if (yaml != null)
+                        {
+                            // The id comes back down with the poster so the yaml keeps agreeing
+                            // with the page after the shortcut has been re-pointed.
+                            var fields = new List<KeyValuePair<string, string>>
+                            {
+                                new("videoId", video.VideoId),
+                                new("provider", video.Provider ?? InternetShortcutParser.YouTube),
+                            };
+                            if (video.Start is { } start)
+                                fields.Add(new("start", start.ToString()));
+
+                            YamlParser.UpdatePreviewFields(
+                                yaml, job.Artifact.Preview!, job.Artifact.PreviewLarge!, extra: fields);
+                        }
                         break;
                     }
                 }

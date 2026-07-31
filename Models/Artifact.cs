@@ -12,6 +12,7 @@ public enum ArtifactType
     Pdf,
     // Serialized as "markdown" — the camelCase of the enum name must match the YAML type token.
     Markdown,
+    Video,
 }
 
 public class Artifact
