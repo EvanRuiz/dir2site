@@ -617,6 +617,16 @@ public partial class MainWindowViewModel : ViewModelBase
         var toDelete = await dialog.ShowDialog<IReadOnlyList<string>?>(owner);
         if (toDelete == null || toDelete.Count == 0) return;
 
+        // Nothing in the app can undo this, and Select All puts it one click away.
+        var confirm = new ConfirmView(
+            "Delete Remote Files",
+            $"Permanently delete {toDelete.Count} file(s) on the server?",
+            $"They will be removed from {profile.Host} immediately. This cannot be undone from " +
+            "dir2site — restoring them would mean re-uploading, and anything the server holds that " +
+            "isn't in your local site would be gone for good.",
+            $"Delete {toDelete.Count} File(s)");
+        if (!await confirm.ShowDialog<bool>(owner)) return;
+
         var verifier = CreateHostKeyVerifier(SelectedTarget, profile);
 
         IsLoading = true;
