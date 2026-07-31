@@ -76,6 +76,13 @@ public static class YamlParser
             return null;
         }
 
+        // The type token names the model, so use it when there is one.
+        if (PeekTypeToken(yaml) is { } token && TypeTokenToParser.TryGetValue(token, out var parse))
+        {
+            try { return parse(yaml); }
+            catch (Exception ex) { errors.Add($"[{token}] {ex.Message}"); }
+        }
+
         // Try each concrete type from most-specific to least-specific.
         foreach (var attempt in ParseAttempts)
         {
@@ -91,6 +98,50 @@ public static class YamlParser
         }
 
         errors.Add($"Could not parse '{yamlPath}' into any known model type.");
+        return null;
+    }
+
+    /// <summary>
+    /// Maps the yaml's <c>type:</c> token to the model that actually holds that type's fields.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ParseAttempts"/> cannot do this on its own. The deserializer ignores unmatched
+    /// properties (see its construction above), so the first attempt always succeeds and every
+    /// artifact came back as a <see cref="Deepzoom"/> that happened to carry the right value in
+    /// <see cref="Artifact.Type"/>. That went unnoticed because the generator switches on
+    /// <c>Type</c> rather than on the CLR type, but it silently discarded every subtype-specific
+    /// field — a photo's <c>photographer</c>, a PDF's <c>author</c> — and made the
+    /// <c>is MarkdownPage</c> test in DirectoryTreeItem permanently false. Dispatching on the token
+    /// first fixes all of those; <see cref="ParseAttempts"/> remains the fallback for a yaml with
+    /// no <c>type:</c> or an unrecognized one, so nothing that parses today stops parsing.
+    /// </remarks>
+    private static readonly IReadOnlyDictionary<string, Func<string, Artifact>> TypeTokenToParser =
+        new Dictionary<string, Func<string, Artifact>>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "photo",     yaml => Deserializer.Deserialize<Photo>(yaml)               },
+            { "deepzoom",  yaml => Deserializer.Deserialize<Deepzoom>(yaml)            },
+            { "pdf",       yaml => Deserializer.Deserialize<Pdf>(yaml)                 },
+            { "markdown",  yaml => Deserializer.Deserialize<MarkdownPage>(yaml)        },
+            { "directory", yaml => Deserializer.Deserialize<DirectoryCollection>(yaml) },
+        };
+
+    // Reads just the type token, tolerating anything else in the document being unparseable.
+    private static string? PeekTypeToken(string yaml)
+    {
+        try
+        {
+            var doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml);
+            if (doc != null && doc.TryGetValue("type", out var value) && value is string token)
+            {
+                token = token.Trim();
+                return token.Length > 0 ? token : null;
+            }
+        }
+        catch
+        {
+            // Fall through to ParseAttempts, which reports its own errors.
+        }
+
         return null;
     }
 

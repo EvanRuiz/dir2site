@@ -21,7 +21,10 @@ public class Artifact
     public string? Caption {get; set;}
     public string? Credit {get; set;}
 
-    [YamlMember(Alias = "url-text")]
+    // ApplyNamingConventions is off because the deserializer's camelCase convention is otherwise
+    // applied to the alias as well, turning "url-text" back into "urlText" — so the hyphenated key
+    // this alias exists to support never actually matched anything.
+    [YamlMember(Alias = "url-text", ApplyNamingConventions = false)]
     public string? UrlText {get; set;}
 
     public string? Date {get; set;}
