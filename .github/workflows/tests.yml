@@ -33,6 +33,17 @@ jobs:
       NUGET_PACKAGES: ${{ runner.temp }}/nuget-packages
 
     steps:
+      # This job is nothing but small-file I/O — extracting a package cache, writing build output,
+      # and driving a loopback SFTP server a file at a time — which is the workload real-time
+      # scanning is worst at. Safe here because the runner is ephemeral and discarded after the
+      # job. Non-fatal: Tamper Protection can refuse it, and that is a reason to be slower rather
+      # than to fail the build.
+      - name: Disable Defender real-time scanning
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: powershell
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
