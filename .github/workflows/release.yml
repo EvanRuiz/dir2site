@@ -84,10 +84,14 @@ jobs:
             profile: macOS-x64
             publish-dir: bin/x64/Release/net10.0/osx-x64/publish
             app-bundle: bin/x64/Release/net10.0/osx-x64/Dir2Site.app
-          - os: ubuntu-latest
-            rid: linux-x64
-            profile: linux-x64
-            publish-dir: bin/x64/Release/net10.0/linux-x64/publish
+          # Paused while #88 is open. The test matrix no longer covers Linux, so building this
+          # would publish a linux-x64 release that nothing has run against — worse than not
+          # shipping one. Left in place rather than deleted so restoring it is an uncomment;
+          # that is part of closing #88.
+          # - os: ubuntu-latest
+          #   rid: linux-x64
+          #   profile: linux-x64
+          #   publish-dir: bin/x64/Release/net10.0/linux-x64/publish
 
     runs-on: ${{ matrix.os }}
     permissions:
