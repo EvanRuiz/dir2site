@@ -3,6 +3,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using dir2site.Services;
 
 namespace dir2site.SftpSync.Core;
 
@@ -24,6 +26,12 @@ public static class SyncManifestBuilder
         foreach (var full in Directory.EnumerateFiles(siteRoot, "*", SearchOption.AllDirectories))
         {
             var rel = Path.GetRelativePath(siteRoot, full).Replace(Path.DirectorySeparatorChar, '/');
+
+            // _site is generated, but it is never cleaned, so anything that landed in it once —
+            // .DS_Store, a stray .claude/ — stays until someone deletes it by hand. Refusing to
+            // publish known clutter is cheaper than noticing it on a live server.
+            if (PublishIgnore.ShouldExclude(rel)) continue;
+
             var info = new FileInfo(full);
             manifest.Files[rel] = new SyncEntry
             {
@@ -54,11 +62,23 @@ public static class SyncManifestBuilder
 
         var stale = new List<string>();
         foreach (var path in reference.Files.Keys)
-            if (!local.Files.ContainsKey(path))
+            if (!local.Files.ContainsKey(path) && MayBeDeleted(path))
                 stale.Add(path);
 
         toUpload.Sort(StringComparer.Ordinal);
         stale.Sort(StringComparer.Ordinal);
         return new Diff(toUpload, stale);
     }
+
+    /// <summary>
+    /// Whether a remote-only file may be offered for deletion.
+    ///
+    /// Server-side dot-entries are excluded: <c>.htaccess</c> and <c>.well-known/</c> are managed on
+    /// the server (the latter is how certificate renewal proves domain control), and dir2site has no
+    /// business proposing to delete something it never created. Known clutter is still offered, so a
+    /// <c>.claude/</c> that reached the server before this filter existed can be cleaned up.
+    /// </summary>
+    private static bool MayBeDeleted(string relativePath) =>
+        PublishIgnore.IsKnownClutter(relativePath) ||
+        !relativePath.Split('/').Any(segment => segment.StartsWith('.'));
 }

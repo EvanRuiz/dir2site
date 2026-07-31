@@ -1,3 +1,10 @@
+/* Always reserve the scrollbar gutter, so the fixed header's right-aligned nav
+   doesn't shift when a page is short enough to lose its scrollbar. */
+
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   background-color: {{ site.background_color }};
   padding-top: 106px;

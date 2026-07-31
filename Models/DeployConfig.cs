@@ -50,6 +50,12 @@ public class DeployTarget
     /// </summary>
     public string HostKeyFingerprint { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Connections used to upload in parallel. Per-target because it depends on the server, not on
+    /// the machine deploying: shared hosting often caps concurrent sessions per account.
+    /// </summary>
+    public int UploadConcurrency { get; set; } = SftpProfile.DefaultUploadConcurrency;
+
     public SftpProfile ToProfile(string privateKeyPath) => new()
     {
         Host = Host,
@@ -60,6 +66,7 @@ public class DeployTarget
         AuthMethod = IsKeyAuth ? SftpAuthMethod.Key : SftpAuthMethod.Password,
         PrivateKeyPath = privateKeyPath,
         HostKeyFingerprint = HostKeyFingerprint,
+        UploadConcurrency = UploadConcurrency,
     };
 
     // Derived from Auth — without this it would serialize as a redundant isKeyAuth key.
@@ -77,5 +84,6 @@ public class DeployTarget
         ManifestPath = p.ManifestPath,
         Auth = p.AuthMethod == SftpAuthMethod.Key ? "key" : "password",
         HostKeyFingerprint = p.HostKeyFingerprint,
+        UploadConcurrency = p.UploadConcurrency,
     };
 }

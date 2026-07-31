@@ -18,6 +18,7 @@ using dir2site.Services;
 using dir2site.SftpSync.Core;
 using dir2site.SftpSync.Core.Credentials;
 using dir2site.SftpSync.Ui;
+using dir2site.Views;
 using Velopack;
 using Velopack.Sources;
 
@@ -616,6 +617,16 @@ public partial class MainWindowViewModel : ViewModelBase
         var toDelete = await dialog.ShowDialog<IReadOnlyList<string>?>(owner);
         if (toDelete == null || toDelete.Count == 0) return;
 
+        // Nothing in the app can undo this, and Select All puts it one click away.
+        var confirm = new ConfirmView(
+            "Delete Remote Files",
+            $"Permanently delete {toDelete.Count} file(s) on the server?",
+            $"They will be removed from {profile.Host} immediately. This cannot be undone from " +
+            "dir2site — restoring them would mean re-uploading, and anything the server holds that " +
+            "isn't in your local site would be gone for good.",
+            $"Delete {toDelete.Count} File(s)");
+        if (!await confirm.ShowDialog<bool>(owner)) return;
+
         var verifier = CreateHostKeyVerifier(SelectedTarget, profile);
 
         IsLoading = true;
@@ -720,9 +731,25 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsDownloading = false;
         }
+
+        // Ask straight away rather than making the user hunt for a second button. Declining leaves
+        // UpdateReady set, so the "ready to install" banner is still there when they are ready.
+        await ConfirmRestartAsync();
     }
 
     private bool CanDownloadUpdate() => UpdateAvailable && !UpdateReady && !IsDownloading;
+
+    /// <summary>
+    /// Offers to restart into the downloaded update. With no owner window — a test host, or any
+    /// path where the view model outlives its window — the prompt is skipped rather than restarting
+    /// unasked.
+    /// </summary>
+    private async Task ConfirmRestartAsync()
+    {
+        if (TopLevel is not Window owner) return;
+        if (await new UpdateConfirmView(UpdateVersion).ShowDialog<bool>(owner))
+            RestartAndUpdate();
+    }
 
     [RelayCommand(CanExecute = nameof(CanRestartAndUpdate))]
     private void RestartAndUpdate()

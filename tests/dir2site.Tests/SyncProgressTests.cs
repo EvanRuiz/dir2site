@@ -22,6 +22,29 @@ public class SyncProgressTests(SftpServerFixture fx) : IClassFixture<SftpServerF
         File.WriteAllText(p, content);
     }
 
+    /// <summary>
+    /// Collects reports on whichever thread raised them.
+    ///
+    /// Progress&lt;T&gt; posts to the thread pool when there is no synchronization context, so a
+    /// report can still be in flight when the sync returns — which is a race these assertions lose
+    /// now that uploads and deletes run on several connections. The real app keeps Progress&lt;T&gt;:
+    /// it has a UI context to marshal to, which is the whole point of using it there.
+    /// </summary>
+    private sealed class Collector : IProgress<SyncProgress>
+    {
+        private readonly List<SyncProgress> _items = [];
+
+        public void Report(SyncProgress value)
+        {
+            lock (_items) _items.Add(value);
+        }
+
+        public IReadOnlyList<SyncProgress> Items
+        {
+            get { lock (_items) return _items.ToList(); }
+        }
+    }
+
     [Fact]
     public void PercentIsNullWhenThereIsNothingToCount()
     {
@@ -50,16 +73,17 @@ public class SyncProgressTests(SftpServerFixture fx) : IClassFixture<SftpServerF
         var d = fx.NewDeployment();
         for (var i = 0; i < 6; i++) Write(d.SiteDir, $"page{i}.html", "x");
 
-        var seen = new List<SyncProgress>();
-        SftpSyncService.QuickSync(d.SiteDir, d.Profile, null, false,
-            new Progress<SyncProgress>(seen.Add));
+        var seen = new Collector();
+        SftpSyncService.QuickSync(d.SiteDir, d.Profile, null, false, seen);
 
-        var uploads = seen.Where(p => p.Phase == SyncPhase.Uploading).ToList();
+        var uploads = seen.Items.Where(p => p.Phase == SyncPhase.Uploading).ToList();
         Assert.Equal(6, uploads.Count);
-        Assert.Equal(Enumerable.Range(1, 6), uploads.Select(u => u.Index));
+        // Every position is reported exactly once, but uploads run on several connections now, so
+        // which one finishes third is not fixed — assert the set, not the arrival order.
+        Assert.Equal(Enumerable.Range(1, 6), uploads.Select(u => u.Index).OrderBy(i => i));
         Assert.All(uploads, u => Assert.Equal(6, u.Total));
         Assert.All(uploads, u => Assert.False(string.IsNullOrEmpty(u.CurrentFile)));
-        Assert.Equal(100.0, uploads.Last().Percent!.Value, 6);
+        Assert.Equal(100.0, uploads.Max(u => u.Percent!.Value), 6);
     }
 
     [SkippableFact]
@@ -70,11 +94,10 @@ public class SyncProgressTests(SftpServerFixture fx) : IClassFixture<SftpServerF
         Write(d.SiteDir, "index.html", "home");
         SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);   // seed a manifest
 
-        var seen = new List<SyncProgress>();
-        SftpSyncService.VerifyAndRepair(d.SiteDir, d.Profile, null,
-            new Progress<SyncProgress>(seen.Add));
+        var seen = new Collector();
+        SftpSyncService.VerifyAndRepair(d.SiteDir, d.Profile, null, seen);
 
-        var listing = Assert.Single(seen, p => p.Phase == SyncPhase.Listing);
+        var listing = Assert.Single(seen.Items, p => p.Phase == SyncPhase.Listing);
         Assert.False(listing.HasCount);   // nothing countable yet, so the bar stays a marquee
     }
 
@@ -88,12 +111,14 @@ public class SyncProgressTests(SftpServerFixture fx) : IClassFixture<SftpServerF
         File.WriteAllText(Path.Combine(d.RemoteDir, "stray1.html"), "junk");
         File.WriteAllText(Path.Combine(d.RemoteDir, "stray2.html"), "junk");
 
-        var seen = new List<SyncProgress>();
+        var seen = new Collector();
         SftpSyncService.DeleteRemote(d.SiteDir, d.Profile, null,
-            ["stray1.html", "stray2.html"], new Progress<SyncProgress>(seen.Add));
+            ["stray1.html", "stray2.html"], seen);
 
-        var deletes = seen.Where(p => p.Phase == SyncPhase.Deleting).ToList();
+        var deletes = seen.Items.Where(p => p.Phase == SyncPhase.Deleting).ToList();
         Assert.Equal(2, deletes.Count);
         Assert.All(deletes, x => Assert.Equal(2, x.Total));
+        // Same as uploading: several connections, so the order they finish in isn't fixed.
+        Assert.Equal([1, 2], deletes.Select(x => x.Index).OrderBy(i => i));
     }
 }

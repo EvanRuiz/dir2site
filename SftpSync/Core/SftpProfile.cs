@@ -42,4 +42,27 @@ public sealed class SftpProfile
     /// safe to send, since without it any machine on the path could impersonate the server.
     /// </summary>
     public string HostKeyFingerprint { get; set; } = string.Empty;
+
+    /// <summary>
+    /// How many connections upload at once. A site is mostly small files, and each one costs a
+    /// couple of serialized round trips, so the wall-clock time is latency times file count rather
+    /// than anything to do with bandwidth — running several in parallel is most of the win.
+    ///
+    /// Raise it for a distant server, lower it for one that caps concurrent sessions per account
+    /// (a failure to open the extra connections is reported and the deploy continues at whatever
+    /// it managed, so a too-high value costs a warning rather than a failed deploy).
+    /// </summary>
+    public int UploadConcurrency { get; set; } = DefaultUploadConcurrency;
+
+    public const int DefaultUploadConcurrency = 8;
+    public const int MaxUploadConcurrency = 32;
+
+    /// <summary>
+    /// <see cref="UploadConcurrency"/> brought into range. Profiles arrive from YAML that anyone
+    /// can hand-edit, so this is clamped at the point of use rather than trusted.
+    /// </summary>
+    public int EffectiveUploadConcurrency =>
+        UploadConcurrency <= 0 ? DefaultUploadConcurrency
+        : UploadConcurrency > MaxUploadConcurrency ? MaxUploadConcurrency
+        : UploadConcurrency;
 }
