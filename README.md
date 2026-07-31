@@ -30,6 +30,50 @@ Dir2Site is a open-source cross-platform desktop application that walks your loc
 3. Click **Generate Site** — the static site is written to a `_site/` subfolder inside your project folder
 4. Click **▶ Start** to launch the preview server, then open it in your browser
 
+## Markdown articles
+
+Drop a `.md` file into your project folder and it becomes an article page. Edit the body in any
+editor; metadata (caption, credit, date) lives in the YAML sidecar like every other artifact. The
+Markdown is rendered to HTML for the site, previewed live in the app, and a thumbnail of the
+rendered page is generated for collection cards.
+
+### Static media (`_media` and other `_`-folders)
+
+To include images or other assets that should **not** become artifacts of their own, put them in a
+folder whose name starts with an underscore (e.g. `_media`). Any `_`-prefixed folder is copied
+verbatim into the generated site and is never scanned for artifacts. Reference it from your Markdown
+with a path relative to the `.md` file:
+
+```
+MyArticle.md
+_media/myfigure.webp
+```
+
+```markdown
+![My figure](_media/myfigure.webp)
+```
+
+### Figures (floated images with captions)
+
+To place an image to the side with a caption — the way a portrait sits beside an article — use a
+fenced **figure container** rather than raw HTML. It styles cleanly in the generated site and is
+approximated in the card thumbnail:
+
+```markdown
+^^^
+![](_media/portrait.jpg){.figure-right width=220}
+^^^ Albert Einstein, c. 1947
+```
+
+Use `.figure-right`, `.figure-left`, or `.figure-center`; `{width=…}` sets the image width, and the
+text after the closing `^^^` is the caption. A `:::figure-right … :::` container and raw HTML also
+work — the `^^^` / `:::` forms are preferred as they need no inline styles and render consistently.
+
+See **[Writing Markdown articles](docs/writing-articles.md)** for the full reference.
+
+> **Tip:** when checking your project into git, ignore the generated output with `/_site/` — do
+> **not** use a blanket `_*` rule, or you'll exclude `_media` and other static-asset folders.
+
 ## Platform support
 
 | Platform | Architecture |

@@ -25,6 +25,9 @@ public static class PreviewGenerator
     public static bool IsPdfFile(string filePath) =>
         Path.GetExtension(filePath).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsMarkdownFile(string filePath) =>
+        Path.GetExtension(filePath).Equals(".md", StringComparison.OrdinalIgnoreCase);
+
     // previewRelativePath already includes the .dir2site/ segment (e.g. ".dir2site/preview-foo.webp")
     public static bool PreviewFileExists(string sourceFileDir, string previewRelativePath) =>
         File.Exists(Path.Combine(sourceFileDir, previewRelativePath.Replace('/', Path.DirectorySeparatorChar)));

@@ -40,6 +40,9 @@ public partial class DirectoryTreeItem : ObservableObject
             {
                 vm.TraversalRoot = art.TraversalRoot;
                 vm.RootFolder = art.RootFolder;
+
+                if (art is MarkdownPage)
+                    vm.BeginMarkdownRender(FullPath);
             }
         }
     }
