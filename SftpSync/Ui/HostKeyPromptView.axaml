@@ -1,0 +1,49 @@
+<!-- SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:dir2site.SftpSync.Ui"
+        mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="420"
+        x:Class="dir2site.SftpSync.Ui.HostKeyPromptView"
+        x:DataType="vm:HostKeyPromptViewModel"
+        Width="560" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        Title="Verify SSH Host Key">
+
+    <StackPanel Margin="16" Spacing="10">
+
+        <TextBlock Text="{Binding Title}" FontWeight="Bold" TextWrapping="Wrap"/>
+
+        <Border Background="#5A1F1A" CornerRadius="4" Padding="10"
+                IsVisible="{Binding IsChanged}">
+            <TextBlock Text="The key that identifies this server has changed since you last connected."
+                       Foreground="White" TextWrapping="Wrap"/>
+        </Border>
+
+        <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap"/>
+
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" Margin="0,4,0,0">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Server" Margin="0,0,12,4" Opacity="0.7"/>
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Endpoint}" Margin="0,0,0,4"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Key type" Margin="0,0,12,0" Opacity="0.7"/>
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding KeyType}"/>
+        </Grid>
+
+        <StackPanel Spacing="3">
+            <TextBlock Text="Fingerprint offered now" Opacity="0.7"/>
+            <SelectableTextBlock Text="{Binding Fingerprint}" FontFamily="Courier New" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Spacing="3" IsVisible="{Binding IsChanged}">
+            <TextBlock Text="Fingerprint you previously trusted" Opacity="0.7"/>
+            <SelectableTextBlock Text="{Binding KnownFingerprint}" FontFamily="Courier New" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
+            <Button Content="{Binding TrustButtonText}" Command="{Binding TrustCommand}"/>
+            <Button Content="Cancel" Command="{Binding CancelCommand}" IsDefault="True"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

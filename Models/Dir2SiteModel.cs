@@ -15,4 +15,10 @@ public class Dir2SiteModel
     public bool   PdfResizeEnabled { get; set; } = true;
     public int    PdfMaxWidth      { get; set; } = 1600;
     public int    PdfQuality       { get; set; } = 80;
+
+    /// <summary>
+    /// Deploy targets. Null when the project has never configured one, so an untouched
+    /// dir2site.yaml doesn't grow an empty <c>deploy:</c> block it never asked for.
+    /// </summary>
+    public DeployConfig? Deploy { get; set; }
 }

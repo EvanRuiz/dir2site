@@ -40,3 +40,14 @@ To regenerate this file after dependency changes, run: `scripts/generate-notices
 | Bootstrap Icons | 1.13.1 | MIT | `Assets/icons/bootstrap-icons-1.13.1` | [https://github.com/twbs/icons](https://github.com/twbs/icons) |
 | Bootstrap Icons | 1.13.1 | MIT | `Assets/icons/bootstrap-icons-1.13.1 2` | [https://github.com/twbs/icons](https://github.com/twbs/icons) |
 | OpenSeadragon | 6.0.2 | BSD-3-Clause | `Assets/js/openseadragon-bin-6.0.2` | [https://github.com/openseadragon/openseadragon](https://github.com/openseadragon/openseadragon) |
+
+---
+
+## Test-Only Tools
+
+Not shipped with dir2site and not distributed in this repository. Fetched on demand by the test
+suite and verified against hashes pinned in `tests/dir2site.Tests/RcloneTool.cs`.
+
+| Tool | Version | License | Source |
+|------|---------|---------|--------|
+| rclone | 1.74.4 | MIT | [https://github.com/rclone/rclone](https://github.com/rclone/rclone) |

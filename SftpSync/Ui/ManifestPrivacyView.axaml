@@ -1,0 +1,93 @@
+<!-- SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:dir2site.SftpSync.Ui"
+        mc:Ignorable="d" d:DesignWidth="620" d:DesignHeight="560"
+        x:Class="dir2site.SftpSync.Ui.ManifestPrivacyView"
+        x:DataType="vm:ManifestPrivacyViewModel"
+        Width="620" Height="560" MinWidth="460" MinHeight="380" CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        Title="Keeping the manifest private">
+
+    <Window.Styles>
+        <Style Selector="SelectableTextBlock.snippet">
+            <Setter Property="FontFamily" Value="Courier New"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+        </Style>
+        <Style Selector="Border.snippet">
+            <Setter Property="BorderBrush" Value="#444"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="Margin" Value="0,4,0,12"/>
+        </Style>
+        <Style Selector="TextBlock.head">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,8,0,0"/>
+        </Style>
+    </Window.Styles>
+
+    <DockPanel Margin="16">
+
+        <Button DockPanel.Dock="Bottom" Content="Close" HorizontalAlignment="Right"
+                Margin="0,12,0,0" Command="{Binding CloseCommand}"/>
+
+        <ScrollViewer>
+            <StackPanel Spacing="4">
+
+                <TextBlock TextWrapping="Wrap">
+                    <Run>dir2site keeps a small file on the server —</Run>
+                    <Run FontFamily="Courier New" Text="{Binding ManifestName}"/>
+                    <Run>— recording what it last uploaded, so the next deploy only sends what changed.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" Margin="0,8,0,0">
+                    It lists every deployed file with its size and timestamp. The files themselves are
+                    already public; the list is not. It would reveal anything you uploaded but never
+                    linked to.
+                </TextBlock>
+
+                <TextBlock Classes="head">Apache — nothing to do</TextBlock>
+                <TextBlock TextWrapping="Wrap">
+                    Apache's default configuration refuses to serve anything beginning with
+                    <Run FontFamily="Courier New">.ht</Run>, which is why the file is named this way.
+                    If your host has changed that default, use the rule below.
+                </TextBlock>
+                <Border Classes="snippet">
+                    <SelectableTextBlock Classes="snippet" Text="{Binding ApacheSnippet}"/>
+                </Border>
+
+                <TextBlock Classes="head">nginx — needs a rule</TextBlock>
+                <TextBlock TextWrapping="Wrap">
+                    nginx serves dotfiles unless told otherwise. Add this inside your
+                    <Run FontFamily="Courier New">server</Run> block and reload.
+                </TextBlock>
+                <Border Classes="snippet">
+                    <SelectableTextBlock Classes="snippet" Text="{Binding NginxSnippet}"/>
+                </Border>
+
+                <TextBlock Classes="head">Caddy</TextBlock>
+                <Border Classes="snippet">
+                    <SelectableTextBlock Classes="snippet" Text="{Binding CaddySnippet}"/>
+                </Border>
+
+                <TextBlock Classes="head">IIS</TextBlock>
+                <Border Classes="snippet">
+                    <SelectableTextBlock Classes="snippet" Text="{Binding IisSnippet}"/>
+                </Border>
+
+                <TextBlock Classes="head">Or move it out of the web root entirely</TextBlock>
+                <TextBlock TextWrapping="Wrap" Margin="0,0,0,8">
+                    Set Manifest path to somewhere your server doesn't publish — a directory above
+                    the web root, if your hosting gives you one. Then no rule is needed at all.
+                </TextBlock>
+
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

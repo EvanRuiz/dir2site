@@ -1,0 +1,54 @@
+<!-- SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:dir2site.SftpSync.Ui"
+        mc:Ignorable="d" d:DesignWidth="520" d:DesignHeight="460"
+        x:Class="dir2site.SftpSync.Ui.RemoteBrowseView"
+        x:DataType="vm:RemoteBrowseViewModel"
+        Width="520" Height="460" MinWidth="380" MinHeight="320" CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        Title="Choose Remote Folder">
+
+    <DockPanel Margin="16">
+
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+            <Button Content="↑ Up" Command="{Binding GoUpCommand}"
+                    IsEnabled="{Binding CanGoUp}"/>
+            <Button Content="Refresh" Command="{Binding RefreshCommand}"/>
+            <SelectableTextBlock Text="{Binding CurrentPath}"
+                                 FontFamily="Courier New" VerticalAlignment="Center"
+                                 TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+            <Button Content="Use This Folder" Command="{Binding ChooseCommand}"
+                    IsEnabled="{Binding !IsBusy}"/>
+            <Button Content="Cancel" Command="{Binding CancelCommand}"/>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+            <TextBox Text="{Binding NewFolderName}" Width="200" Watermark="new folder name"/>
+            <Button Content="Create" Command="{Binding NewFolderCommand}"
+                    IsEnabled="{Binding !IsBusy}"/>
+        </StackPanel>
+
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding Status}"
+                   TextWrapping="Wrap" Foreground="#4A9EFF" Margin="0,8,0,0"/>
+
+        <Border BorderBrush="#444" BorderThickness="1" CornerRadius="4">
+            <ListBox ItemsSource="{Binding Directories}"
+                     SelectedItem="{Binding SelectedDirectory}"
+                     DoubleTapped="OnDirectoryDoubleTapped">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                        <TextBlock Text="{Binding}" FontFamily="Courier New"/>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+    </DockPanel>
+</Window>

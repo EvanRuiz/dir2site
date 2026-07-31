@@ -6,13 +6,18 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using dir2site.Models;
 using dir2site.Services;
+using dir2site.SftpSync.Core;
+using dir2site.SftpSync.Core.Credentials;
+using dir2site.SftpSync.Ui;
 using Velopack;
 using Velopack.Sources;
 
@@ -24,10 +29,25 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private readonly PreviewServerService _previewServer = new();
 
-    private readonly UpdateManager _updateManager = new(
-        new GithubSource("https://github.com/EvanRuiz/dir2site", null, false),
-        new UpdateOptions { ExplicitChannel = RuntimeInformation.RuntimeIdentifier });
+    // Null when Velopack isn't initialised — a test host, or anything that didn't run
+    // VelopackApp.Build(). Auto-update is then simply unavailable, rather than the whole view
+    // model being impossible to construct.
+    private readonly UpdateManager? _updateManager = TryCreateUpdateManager();
     private UpdateInfo? _pendingUpdate;
+
+    private static UpdateManager? TryCreateUpdateManager()
+    {
+        try
+        {
+            return new UpdateManager(
+                new GithubSource("https://github.com/EvanRuiz/dir2site", null, false),
+                new UpdateOptions { ExplicitChannel = RuntimeInformation.RuntimeIdentifier });
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
@@ -50,14 +70,20 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public MainWindowViewModel()
     {
-        _statusText = _updateManager.IsInstalled
+        _statusText = _updateManager is { IsInstalled: true }
             ? $"v{_updateManager.CurrentVersion}"
             : "Development Build";
+        // The property-changed handlers only fire on change, so without this the very first state
+        // — no project open — would show disabled buttons and no explanation.
+        RefreshSyncBlockedReason();
         _ = CheckForUpdatesAsync();
     }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartServerCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConfigureSftpCommand))]
+    [NotifyCanExecuteChangedFor(nameof(QuickSyncCommand))]
+    [NotifyCanExecuteChangedFor(nameof(VerifyAndRepairCommand))]
     private string? _directoryRoot;
     
     [ObservableProperty] public partial ObservableCollection<DirectoryTreeItem> DirItems { get; set; } = [];
@@ -67,6 +93,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GenerateSiteCommand))]
+    [NotifyCanExecuteChangedFor(nameof(QuickSyncCommand))]
+    [NotifyCanExecuteChangedFor(nameof(VerifyAndRepairCommand))]
     private bool _isLoading;
 
     [ObservableProperty]
@@ -101,6 +129,108 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _serverUrl = string.Empty;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(QuickSyncCommand))]
+    [NotifyCanExecuteChangedFor(nameof(VerifyAndRepairCommand))]
+    private bool _hasSftpProfile;
+
+    [ObservableProperty]
+    private bool _forceFullReupload;
+
+    /// <summary>Show what a Quick Sync would do, and confirm, before anything is uploaded.</summary>
+    [ObservableProperty]
+    private bool _previewBeforeDeploy;
+
+    /// <summary>Every configured deploy target, for the picker in the deploy row.</summary>
+    public ObservableCollection<DeployTarget> DeployTargetList { get; } = [];
+
+    /// <summary>The target Quick Sync and Verify act on.</summary>
+    [ObservableProperty]
+    private DeployTarget? _selectedTarget;
+
+    /// <summary>Only worth showing the picker when there is a choice to make.</summary>
+    public bool HasMultipleTargets => DeployTargetList.Count > 1;
+
+    // Set while loading a project, so populating the picker isn't mistaken for the user choosing.
+    private bool _loadingTargets;
+
+    partial void OnSelectedTargetChanged(DeployTarget? value)
+    {
+        if (_loadingTargets) return;
+        if (value == null || DirectoryRoot == null || Dir2SiteConfig?.Deploy == null) return;
+        if (string.Equals(Dir2SiteConfig.Deploy.Active, value.Name, StringComparison.Ordinal)) return;
+
+        // Remember the choice, so the next session deploys where the user left off.
+        Dir2SiteConfig.Deploy.Active = value.Name;
+        DeployTargets.Save(ConfigPath()!, Dir2SiteConfig.Deploy);
+        StatusText = $"Deploy target: {value.Name}";
+    }
+
+    private string? ConfigPath() =>
+        DirectoryRoot == null ? null : Path.Combine(DirectoryRoot, "dir2site.yaml");
+
+    private void ReloadDeployTargets()
+    {
+        DeployTargetList.Clear();
+        if (DirectoryRoot == null || Dir2SiteConfig == null)
+        {
+            HasSftpProfile = false;
+            OnPropertyChanged(nameof(HasMultipleTargets));
+            return;
+        }
+
+        var deploy = DeployTargets.Resolve(DirectoryRoot, Dir2SiteConfig);
+        foreach (var t in deploy.Targets) DeployTargetList.Add(t);
+
+        _loadingTargets = true;
+        try { SelectedTarget = DeployTargets.Active(deploy); }
+        finally { _loadingTargets = false; }
+
+        OnPropertyChanged(nameof(HasMultipleTargets));
+        HasSftpProfile = DeployTargetList.Count > 0 && !string.IsNullOrWhiteSpace(SelectedTarget?.Host);
+    }
+
+    /// <summary>Why the deploy buttons are disabled, or empty when they aren't.</summary>
+    [ObservableProperty]
+    private string _syncBlockedReason = string.Empty;
+
+    /// <summary>0–100 within the current sync phase, for a determinate bar.</summary>
+    [ObservableProperty] private double _syncProgressPercent;
+
+    /// <summary>True while the running phase can report a real position, not just a heartbeat.</summary>
+    [ObservableProperty] private bool _syncProgressIsDeterminate;
+
+    /// <summary>The file currently being transferred, for a second line under the bar.</summary>
+    [ObservableProperty] private string _syncCurrentFile = string.Empty;
+
+    // Reports arrive per file, which on a large site is thousands of UI updates a second — far more
+    // than anyone can read and enough to starve the render thread. One update per file is fine for
+    // the text; the bar only needs to move when the whole number of percent changes.
+    private void OnSyncProgress(SyncProgress p)
+    {
+        StatusText = p.ToString();
+        SyncCurrentFile = p.CurrentFile ?? string.Empty;
+        SyncProgressIsDeterminate = p.HasCount;
+        if (p.Percent is { } pct) SyncProgressPercent = pct;
+    }
+
+    private void ResetSyncProgress()
+    {
+        SyncProgressPercent = 0;
+        SyncProgressIsDeterminate = false;
+        SyncCurrentFile = string.Empty;
+    }
+
+    /// <summary>True while a sync is running, so the UI can offer Cancel.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelSyncCommand))]
+    private bool _isSyncing;
+
+    // Non-null only for the duration of a sync. Cancel is a user action on an operation that can
+    // run for minutes over a slow link, so the token has to reach the engine — which has always
+    // honoured it; the UI simply never supplied one.
+    private CancellationTokenSource? _syncCancellation;
+
+    [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GenerateSiteCommand))]
     [NotifyCanExecuteChangedFor(nameof(ChooseLogoCommand))]
     private Dir2SiteModel? _dir2SiteConfig;
@@ -109,7 +239,12 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (_previewServer.IsRunning)
             _ = StopServer();
+        RefreshSyncBlockedReason();
     }
+
+    // The targets belong to the project config, so they follow it — including when it is reloaded
+    // from disk after a hand edit.
+    partial void OnDir2SiteConfigChanged(Dir2SiteModel? value) => ReloadDeployTargets();
 
     [RelayCommand(CanExecute = nameof(CanStartServer))]
     private async Task StartServer()
@@ -207,6 +342,7 @@ public partial class MainWindowViewModel : ViewModelBase
             DirItems.Add(root);
 
             await LoadOrCreateDir2SiteConfig();
+            ReloadDeployTargets();
 
             IsLoading = false;
             StatusText = $"{files.Count:N0} files · {artifacts.Count:N0} artifacts";
@@ -240,7 +376,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 Title = Path.GetFileName(DirectoryRoot) is { Length: > 0 } n ? n : "My Site",
                 Footer = $"© {DateTime.Now.Year}",
             };
-            await File.WriteAllTextAsync(configPath, YamlParser.SerializeToYaml(Dir2SiteConfig));
+            var created = Dir2SiteConfig;
+            await Task.Run(() => YamlParser.SaveDir2SiteConfig(configPath, created));
         }
     }
 
@@ -249,9 +386,10 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (DirectoryRoot == null || DirItems.Count == 0 || Dir2SiteConfig == null) return;
 
-        await File.WriteAllTextAsync(
-            Path.Combine(DirectoryRoot, "dir2site.yaml"),
-            YamlParser.SerializeToYaml(Dir2SiteConfig));
+        // Surgical: only changed values are rewritten, so a hand-edited config keeps its comments.
+        var config = Dir2SiteConfig;
+        var configPath = Path.Combine(DirectoryRoot, "dir2site.yaml");
+        await Task.Run(() => YamlParser.SaveDir2SiteConfig(configPath, config));
 
         IsLoading = true;
         var progress = new Progress<string>(msg => StatusText = msg);
@@ -267,8 +405,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Generate previews first so site settings (PDF resize/quality) affect output
         StatusText = "Generating previews...";
-        var config = Dir2SiteConfig;
-        var root   = freshRoot;
+        var root = freshRoot;
         await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, progress));
 
         StatusText = "Generating site...";
@@ -280,15 +417,281 @@ public partial class MainWindowViewModel : ViewModelBase
         if (result.Errors.Count > 0)
             AppendError(string.Join("\n", result.Errors));
         StartServerCommand.NotifyCanExecuteChanged();
+        QuickSyncCommand.NotifyCanExecuteChanged();
+        VerifyAndRepairCommand.NotifyCanExecuteChanged();
     }
 
     private bool CanGenerateSite() =>
         DirectoryRoot != null && DirItems.Count > 0 && Dir2SiteConfig != null && !IsLoading;
 
+    // ---- SFTP deploy --------------------------------------------------------
+
+    [RelayCommand(CanExecute = nameof(CanConfigureSftp))]
+    private async Task ConfigureSftp()
+    {
+        if (DirectoryRoot == null || Dir2SiteConfig == null || TopLevel is not Window owner) return;
+        var dialog = new SftpSettingsView(DirectoryRoot, Dir2SiteConfig, ConfigPath()!);
+        var saved = await dialog.ShowDialog<bool>(owner);
+        if (saved)
+        {
+            ReloadDeployTargets();
+            StatusText = "SFTP settings saved";
+        }
+    }
+
+    private bool CanConfigureSftp() => DirectoryRoot != null;
+
+    [RelayCommand(CanExecute = nameof(CanSync))]
+    private Task QuickSync() => RunSync(verify: false, force: ForceFullReupload);
+
+    [RelayCommand(CanExecute = nameof(CanSync))]
+    private Task VerifyAndRepair() => RunSync(verify: true, force: false);
+
+    [RelayCommand(CanExecute = nameof(CanCancelSync))]
+    private void CancelSync()
+    {
+        StatusText = "Cancelling…";
+        _syncCancellation?.Cancel();
+    }
+
+    private bool CanCancelSync() => IsSyncing;
+
+    private bool CanSync() => BlockedReason() == null;
+
+    /// <summary>
+    /// The single source of truth for both whether a sync can start and what to tell the user when
+    /// it can't — a disabled button with no explanation is its own small bug.
+    /// </summary>
+    private string? BlockedReason()
+    {
+        if (DirectoryRoot == null) return "Choose a project folder first.";
+        if (!Directory.Exists(Path.Combine(DirectoryRoot, "_site")))
+            return "Generate the site first — there is no _site folder to deploy.";
+        if (!HasSftpProfile) return "No SFTP profile configured. Use Configure… first.";
+        if (IsLoading) return "Busy.";
+        return null;
+    }
+
+    // CanExecute is re-evaluated by the toolkit on the properties above; keep the message in step.
+    private void RefreshSyncBlockedReason()
+    {
+        var reason = BlockedReason();
+        SyncBlockedReason = reason is null or "Busy." ? string.Empty : reason;
+    }
+
+    partial void OnHasSftpProfileChanged(bool value) => RefreshSyncBlockedReason();
+    partial void OnIsLoadingChanged(bool value) => RefreshSyncBlockedReason();
+
+    private async Task RunSync(bool verify, bool force)
+    {
+        if (DirectoryRoot == null) return;
+
+        var target = SelectedTarget;
+        if (target == null)
+        {
+            AppendError("No deploy target configured. Use Configure… first.");
+            return;
+        }
+
+        var profile = DeployTargets.ToProfile(DirectoryRoot, target);
+
+        var siteRoot = Path.Combine(DirectoryRoot, "_site");
+        var secret = CredentialStoreFactory.Create()
+            .Get(DeployTargets.CredentialKey(DirectoryRoot, target));
+        var verifier = CreateHostKeyVerifier(target, profile);
+
+        // Verify & Repair reconciles against the live server rather than uploading a computed
+        // plan, so there is nothing meaningful to preview for it.
+        SyncPlan? approved = null;
+        if (PreviewBeforeDeploy && !verify)
+        {
+            approved = await ConfirmPlan(siteRoot, profile, secret, force, verifier);
+            if (approved == null) return;
+        }
+
+        IsLoading = true;
+        IsSyncing = true;
+        _syncCancellation = new CancellationTokenSource();
+        var token = _syncCancellation.Token;
+        ResetSyncProgress();
+        var progress = new Progress<SyncProgress>(OnSyncProgress);
+
+        try
+        {
+            // Apply re-diffs and reports when the deploy no longer matches what was approved; with
+            // no preview there is nothing to compare against, so QuickSync directly.
+            var result = await Task.Run(() => verify
+                ? SftpSyncService.VerifyAndRepair(siteRoot, profile, secret, progress, token, verifier)
+                : approved != null
+                    ? SftpSyncService.Apply(approved, siteRoot, profile, secret, force, progress, token, verifier)
+                    : SftpSyncService.QuickSync(siteRoot, profile, secret, force, progress, token, verifier));
+
+            StatusText = result.Summary;
+            if (result.Errors.Count > 0)
+                AppendError(string.Join("\n", result.Errors));
+
+            if (result.StaleRemote.Count > 0)
+                await HandleStaleFiles(profile, secret, siteRoot, result.StaleRemote);
+        }
+        catch (OperationCanceledException)
+        {
+            // The user asked for this, so it isn't an error. Files already uploaded stay put; the
+            // next Quick Sync picks up where this left off.
+            StatusText = "Sync cancelled";
+        }
+        catch (Exception ex)
+        {
+            StatusText = "Sync failed";
+            AppendError(ex.Message);
+        }
+        finally
+        {
+            _syncCancellation?.Dispose();
+            _syncCancellation = null;
+            IsSyncing = false;
+            IsLoading = false;
+            ResetSyncProgress();
+        }
+    }
+
+    /// <summary>
+    /// Shows the plan and waits for a yes, returning the approved plan so the deploy can be checked
+    /// against it. Null means don't proceed — the user backed out, or there was nothing to do, in
+    /// which case saying so beats running a deploy that uploads nothing.
+    /// </summary>
+    private async Task<SyncPlan?> ConfirmPlan(
+        string siteRoot, SftpProfile profile, string? secret, bool force, IHostKeyVerifier? verifier)
+    {
+        if (TopLevel is not Window owner) return null;
+
+        // Previewing connects, so it can hang on an unreachable host just as a deploy can. Same
+        // cancellation source, same Cancel button.
+        IsLoading = true;
+        IsSyncing = true;
+        _syncCancellation?.Dispose();
+        _syncCancellation = new CancellationTokenSource();
+        var token = _syncCancellation.Token;
+
+        StatusText = "Working out what would change…";
+        SyncPlan plan;
+        try
+        {
+            plan = await Task.Run(() =>
+                SftpSyncService.Preview(siteRoot, profile, secret, force, null, token, verifier));
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = "Preview cancelled";
+            return null;
+        }
+        catch (Exception ex)
+        {
+            StatusText = "Preview failed";
+            AppendError(ex.Message);
+            return null;
+        }
+        finally
+        {
+            _syncCancellation?.Dispose();
+            _syncCancellation = null;
+            IsSyncing = false;
+            IsLoading = false;
+        }
+
+        if (plan.IsEmpty)
+        {
+            StatusText = plan.Summary;
+            return null;
+        }
+
+        return await new SyncPreviewView(plan).ShowDialog<bool>(owner) ? plan : null;
+    }
+
+    private async Task HandleStaleFiles(
+        SftpProfile profile, string? secret, string siteRoot, IReadOnlyList<string> stale)
+    {
+        if (TopLevel is not Window owner) return;
+
+        var dialog = new StaleFilesView(stale);
+        var toDelete = await dialog.ShowDialog<IReadOnlyList<string>?>(owner);
+        if (toDelete == null || toDelete.Count == 0) return;
+
+        var verifier = CreateHostKeyVerifier(SelectedTarget, profile);
+
+        IsLoading = true;
+        IsSyncing = true;
+        _syncCancellation?.Dispose();   // RunSync's has already finished with; don't leak it
+        _syncCancellation = new CancellationTokenSource();
+        var token = _syncCancellation.Token;
+        ResetSyncProgress();
+        var progress = new Progress<SyncProgress>(OnSyncProgress);
+        try
+        {
+            var result = await Task.Run(() =>
+                SftpSyncService.DeleteRemote(siteRoot, profile, secret, toDelete, progress, token, verifier));
+            StatusText = result.Summary;
+            if (result.Errors.Count > 0)
+                AppendError(string.Join("\n", result.Errors));
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = "Delete cancelled";
+        }
+        catch (Exception ex)
+        {
+            StatusText = "Delete failed";
+            AppendError(ex.Message);
+        }
+        finally
+        {
+            _syncCancellation?.Dispose();
+            _syncCancellation = null;
+            IsSyncing = false;
+            IsLoading = false;
+            ResetSyncProgress();
+        }
+    }
+
+    // Prompts on the main window for an unknown/changed host key. SftpSyncService pins the
+    // accepted fingerprint onto the in-memory profile; persisting it here is what stops the
+    // prompt reappearing on every sync.
+    private IHostKeyVerifier? CreateHostKeyVerifier(DeployTarget? target, SftpProfile profile)
+    {
+        if (TopLevel is not Window owner) return null;
+        return HostKeyPromptView.CreateVerifier(owner, info =>
+        {
+            if (target == null) return;
+
+            // Use info.Fingerprint, not profile.HostKeyFingerprint. PromptVerifier invokes this
+            // callback *before* it returns, and Connect only writes the pin onto the profile after
+            // Verify returns — so the profile still holds the previous value here: empty on first
+            // contact, the stale one after a key change. Persisting that meant the target was never
+            // pinned and the trust prompt reappeared on every single deploy, which trains people to
+            // click through the one dialog that must not become routine.
+            var accepted = info.Fingerprint;
+
+            // Hop to the UI thread: this runs on SSH.NET's connection thread, and the config is
+            // owned by the view model.
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (ConfigPath() is { } path) PersistAcceptedHostKey(target, accepted, path);
+            });
+        });
+    }
+
+    /// <summary>Pins an accepted host key onto a target and writes it to the project config.</summary>
+    internal void PersistAcceptedHostKey(DeployTarget target, string fingerprint, string configPath)
+    {
+        if (Dir2SiteConfig?.Deploy == null) return;
+        target.HostKeyFingerprint = fingerprint;
+        DeployTargets.Save(configPath, Dir2SiteConfig.Deploy);
+    }
+
     public async Task CheckForUpdatesAsync()
     {
         try
         {
+            if (_updateManager == null) return;
             _pendingUpdate = await _updateManager.CheckForUpdatesAsync();
             if (_pendingUpdate != null)
             {
@@ -305,7 +708,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanDownloadUpdate))]
     private async Task DownloadUpdate()
     {
-        if (_pendingUpdate == null) return;
+        if (_pendingUpdate == null || _updateManager == null) return;
         IsDownloading = true;
         try
         {
@@ -324,7 +727,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanRestartAndUpdate))]
     private void RestartAndUpdate()
     {
-        if (_pendingUpdate == null) return;
+        if (_pendingUpdate == null || _updateManager == null) return;
         _updateManager.ApplyUpdatesAndRestart(_pendingUpdate);
     }
 

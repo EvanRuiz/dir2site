@@ -8,6 +8,8 @@ Select a folder to get started. Dir2Site scans your files, lets you configure th
 
 Configuration is stored as a `dir2site.yaml` file alongside your content. Metadata for each artifact lives in a small YAML file — human-readable, diff-friendly, and easy to track in your source code repository.
 
+These files are yours to edit. When dir2site updates one it changes only the values it needs to, so your comments, key order and formatting are left exactly as you wrote them.
+
 ## Getting Started
 
 1. Click **Choose…** to select your site project folder

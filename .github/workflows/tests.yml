@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Reusable build + test matrix. Called by ci.yml on pull requests and by release.yml as the
+# gate in front of create-release, so one definition covers both and a release can never be
+# published from a commit whose tests failed.
+name: Tests
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref to check out. Defaults to the triggering ref.'
+        required: false
+        type: string
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # The SFTP integration tests drive a real server on a loopback port. RcloneTool fetches
+      # rclone on first use and verifies it against hashes pinned in the repo, so there is
+      # nothing to install and it behaves the same on all three runners — the deploy engine is
+      # covered everywhere rather than skipping on Windows. Caching it keeps the download to
+      # roughly once per rclone version rather than once per job.
+      - name: Cache rclone
+        uses: actions/cache@v5
+        with:
+          path: tests/tools/rclone/.cache
+          key: rclone-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/dir2site.Tests/RcloneTool.cs') }}
+
+      # Without this an unreachable download would skip the integration tests, and a run covering
+      # nothing would report green. Locally it stays unset so being offline is not a hard stop.
+      - name: Require the SFTP integration tests to run
+        run: echo "DIR2SITE_REQUIRE_SFTP_TESTS=1" >> $GITHUB_ENV
+        shell: bash
+
+      # Opts in to the tests that read and write the real login keychain. Safe on an ephemeral
+      # runner; left off locally so `dotnet test` never touches a developer's own keychain.
+      - name: Allow keychain-backed tests
+        if: runner.os == 'macOS'
+        run: echo "DIR2SITE_TEST_KEYCHAIN=1" >> $GITHUB_ENV
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Test
+        run: dotnet test -c Release --no-build --logger "console;verbosity=normal"
