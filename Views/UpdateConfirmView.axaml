@@ -1,0 +1,27 @@
+<!-- SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:dir2site.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="460" d:DesignHeight="200"
+        x:Class="dir2site.Views.UpdateConfirmView"
+        x:DataType="vm:UpdateConfirmViewModel"
+        Width="460" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Title="Update Ready">
+
+    <StackPanel Margin="16" Spacing="10">
+
+        <TextBlock Text="{Binding Title}" FontWeight="Bold" TextWrapping="Wrap"/>
+
+        <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
+            <Button Content="Restart Now" Command="{Binding RestartCommand}"/>
+            <Button Content="Later" Command="{Binding LaterCommand}" IsDefault="True"/>
+        </StackPanel>
+    </StackPanel>
+</Window>
