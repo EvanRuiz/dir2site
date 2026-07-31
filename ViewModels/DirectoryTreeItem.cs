@@ -42,10 +42,7 @@ public partial class DirectoryTreeItem : ObservableObject
                 vm.RootFolder = art.RootFolder;
 
                 if (art is MarkdownPage)
-                {
-                    vm.IsMarkdown = true;
-                    vm.MarkdownFilePath = FullPath;
-                }
+                    vm.BeginMarkdownRender(FullPath);
             }
         }
     }
