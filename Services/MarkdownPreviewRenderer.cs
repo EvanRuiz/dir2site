@@ -361,17 +361,53 @@ public static partial class MarkdownPreviewRenderer
     private static readonly SKColor CodeBg = new(0xf2, 0xf3, 0xf5);
 
     // height > 0 renders a fixed canvas (the catalog thumbnail, top-cropped); height <= 0 renders
-    // the full article into an auto-sized canvas (the in-app preview pane).
+    // the full article into an auto-sized canvas (the in-app preview pane). The cap is only a
+    // backstop against a pathologically long article, not the size normally allocated.
     private const int AutoHeightCap = 8000;
 
     private static byte[] RenderToPng(List<Block> blocks, LeadFigure? figure, int height)
     {
-        bool auto = height <= 0;
-        int surfaceH = auto ? AutoHeightCap : height;
-        using var surface = SKSurface.Create(new SKImageInfo(LargeWidth, surfaceH));
-        var canvas = surface.Canvas;
-        canvas.Clear(SKColors.White);
+        // The figure is decoded once and shared by both passes below — decoding is the expensive
+        // part of a render, and laying out twice must not mean paying for it twice.
+        SKBitmap? figureBmp = null;
+        try
+        {
+            if (figure != null)
+                figureBmp = DecodeImage(figure.ImagePath, (int)((LargeWidth - 2 * Pad) * 0.5));
 
+            int surfaceH;
+            if (height > 0)
+            {
+                surfaceH = height;
+            }
+            else
+            {
+                // Auto height means "as tall as the article turns out to be". Laying out onto a
+                // canvas that draws nothing yields that number for the price of the layout alone,
+                // so the real surface is allocated at the size actually needed instead of always
+                // reserving AutoHeightCap — 1200×8000, ~38 MB, however short the article is.
+                using var probe = new SKNoDrawCanvas(LargeWidth, AutoHeightCap);
+                var used = Paint(probe, blocks, figure, figureBmp, AutoHeightCap);
+                surfaceH = Math.Clamp((int)Math.Ceiling(used + Pad), 1, AutoHeightCap);
+            }
+
+            using var surface = SKSurface.Create(new SKImageInfo(LargeWidth, surfaceH));
+            var canvas = surface.Canvas;
+            canvas.Clear(SKColors.White);
+            Paint(canvas, blocks, figure, figureBmp, surfaceH);
+
+            using var image = surface.Snapshot();
+            using var data = image.Encode(SKEncodedImageFormat.Png, 95);
+            return data.ToArray();
+        }
+        finally { figureBmp?.Dispose(); }
+    }
+
+    // Lays the article out onto <paramref name="canvas"/>, stopping at <paramref name="surfaceH"/>,
+    // and returns the y the content actually reached. Called twice in auto-height mode: once on a
+    // no-draw canvas to measure, once for real.
+    private static float Paint(SKCanvas canvas, List<Block> blocks, LeadFigure? figure, SKBitmap? figureBmp, int surfaceH)
+    {
         float x0 = Pad, x1 = LargeWidth - Pad, y = Pad;
         var contentWidth = x1 - x0;
 
@@ -384,7 +420,7 @@ public static partial class MarkdownPreviewRenderer
 
         if (figure != null)
         {
-            var bmp = DecodeImage(figure.ImagePath, (int)(contentWidth * 0.5));
+            var bmp = figureBmp;
             if (bmp != null)
             {
                 float wf = Math.Clamp((figure.Width ?? 230) * 1.45f, 240f, contentWidth * 0.42f);
@@ -412,19 +448,13 @@ public static partial class MarkdownPreviewRenderer
                         figure.Align == FigureAlign.Right ? fx - 26 : fx + wf + 26,
                         figure.Align == FigureAlign.Right);
                 }
-                bmp.Dispose();
             }
         }
 
         for (; idx < blocks.Count && y < surfaceH; idx++)
             y = DrawBlock(canvas, blocks[idx], x0, x1, y, floatRect);
 
-        var used = Math.Max(y, floatRect?.bottom ?? 0);
-        int cropH = auto ? Math.Clamp((int)Math.Ceiling(used + Pad), 1, surfaceH) : height;
-
-        using var image = surface.Snapshot(new SKRectI(0, 0, LargeWidth, cropH));
-        using var data = image.Encode(SKEncodedImageFormat.Png, 95);
-        return data.ToArray();
+        return Math.Max(y, floatRect?.bottom ?? 0);
     }
 
     private static float DrawBlock(SKCanvas c, Block b, float x0, float x1, float y, (float top, float bottom, float edge, bool right)? fl)
