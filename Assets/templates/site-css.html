@@ -195,6 +195,20 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 .markdown-body img.figure-right { float: right; margin: 0.3em 0 1.2em 1.6em; }
 .markdown-body img.figure-left  { float: left;  margin: 0.3em 1.6em 1.2em 0; }
 .markdown-body img.figure-center { display: block; margin: 1.4em auto; }
+
+/* The ^^^ form puts the class on the <img>, because that is where the author writes
+   {.figure-right} — but floating the image leaves the <figcaption> as a full-width block
+   starting level with it, so the caption rendered beside the picture instead of under it.
+   Floating the whole <figure> is the shape the :::figure-* container already uses and gets
+   right: the image and its caption then stack inside a box that is itself pulled aside. */
+.markdown-body figure { margin: 1.4em 0; text-align: center; }
+.markdown-body figure:has(img.figure-right) { float: right; max-width: 45%; margin: 0.3em 0 1.2em 1.6em; }
+.markdown-body figure:has(img.figure-left)  { float: left;  max-width: 45%; margin: 0.3em 1.6em 1.2em 0; }
+.markdown-body figure:has(img.figure-center) { margin: 1.4em auto; }
+.markdown-body figure img.figure-right,
+.markdown-body figure img.figure-left,
+.markdown-body figure img.figure-center { float: none; margin: 0; }
+.markdown-body figure p { margin: 0; }
 .markdown-body .figure-right img, .markdown-body .figure-left img, .markdown-body .figure-center img,
 .markdown-body figure img {
   max-width: 100%; height: auto; border-radius: 6px; box-shadow: 2px 4px 10px rgba(0,0,0,0.3);
