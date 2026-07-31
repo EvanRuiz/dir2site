@@ -13,14 +13,16 @@ namespace dir2site.Services;
 /// <summary>
 /// Renders a Markdown file to catalog thumbnails (the same WebP sizes/paths the image and PDF
 /// previews use) by laying the article out with a small custom text-flow engine drawn on SkiaSharp.
+/// The same layout also backs the in-app preview pane via <see cref="RenderArticlePng"/>.
 /// </summary>
 /// <remarks>
-/// Avalonia/Markdown.Avalonia is a box-layout system with no inline-exclusion flow, so it cannot
-/// wrap text around a floated figure the way CSS does. Rather than approximate with columns, this
-/// implements the classic "line box with exclusion rectangle" algorithm: the leading heading is
-/// full width, body text wraps beside the floated figure while its <c>y</c> overlaps the figure,
-/// then reflows to full width once it clears it. It is an impression of the published page, not an
-/// exact reproduction — the in-app live view still uses Markdown.Avalonia for editing fidelity.
+/// Avalonia is a box-layout system with no inline-exclusion flow, so it cannot wrap text around a
+/// floated figure the way CSS does — which is why Markdown.Avalonia was dropped rather than kept
+/// for the in-app view. Rather than approximate with columns, this implements the classic "line box
+/// with exclusion rectangle" algorithm: the leading heading is full width, body text wraps beside
+/// the floated figure while its <c>y</c> overlaps the figure, then reflows to full width once it
+/// clears it. It is an impression of the published page, not an exact reproduction; the published
+/// HTML is rendered separately and properly by <see cref="MarkdownRenderer"/>.
 /// </remarks>
 public static partial class MarkdownPreviewRenderer
 {
