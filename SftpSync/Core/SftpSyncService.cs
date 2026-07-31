@@ -4,8 +4,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using Renci.SshNet;
 using Renci.SshNet.Sftp;
 
@@ -147,7 +149,7 @@ public static class SftpSyncService
         try
         {
             var full = CombineRemote(NormalizeDir(parent), name.Trim());
-            EnsureDir(client, full, new HashSet<string>(StringComparer.Ordinal));
+            EnsureDir(client, full, new ConcurrentDictionary<string, byte>(StringComparer.Ordinal));
             return full;
         }
         finally
@@ -163,7 +165,7 @@ public static class SftpSyncService
         using var client = Connect(profile, secret, hostKeyVerifier);
         try
         {
-            EnsureDir(client, profile.RemotePath, new HashSet<string>(StringComparer.Ordinal));
+            EnsureDir(client, profile.RemotePath, new ConcurrentDictionary<string, byte>(StringComparer.Ordinal));
         }
         finally
         {
@@ -265,7 +267,9 @@ public static class SftpSyncService
 
         var manifestPath = ManifestRemotePath(profile);
         var (diff, note) = Diff(client, profile, local, forceFull, progress, ct);
-        var errors = UploadFiles(client, siteRoot, profile, local, diff.ToUpload, progress, ct);
+        var errors = UploadFiles(
+            client, () => Connect(profile, secret, hostKeyVerifier),
+            siteRoot, profile, local, diff.ToUpload, progress, ct);
 
         WriteManifest(client, manifestPath, local, errors);
 
@@ -304,7 +308,9 @@ public static class SftpSyncService
         // Treat the listed remote tree as the reference: anything local that's missing or
         // mismatched needs (re)uploading; anything remote-only is stale.
         var diff = SyncManifestBuilder.Compare(local, remote);
-        var errors = UploadFiles(client, siteRoot, profile, local, diff.ToUpload, progress, ct);
+        var errors = UploadFiles(
+            client, () => Connect(profile, secret, hostKeyVerifier),
+            siteRoot, profile, local, diff.ToUpload, progress, ct);
         errors.InsertRange(0, listErrors);
 
         WriteManifest(client, manifestPath, local, errors);
@@ -333,32 +339,39 @@ public static class SftpSyncService
 
         var remoteRoot = NormalizeDir(profile.RemotePath);
         var errors = new List<string>();
-        int deleted = 0;
-        var touchedDirs = new HashSet<string>(StringComparer.Ordinal);
+        var deleted = 0;
+        var done = 0;
+        var touchedDirs = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
 
-        for (int i = 0; i < relPaths.Count; i++)
+        // Deleting costs two round trips a file, same as uploading, so it gets the same treatment
+        // and the same per-target connection count.
+        ForEachInParallel(client, () => Connect(profile, secret, hostKeyVerifier),
+            profile, relPaths.Count, errors, ct, (worker, i) =>
         {
-            ct.ThrowIfCancellationRequested();
             var rel = relPaths[i];
             var full = CombineRemote(remoteRoot, rel);
-            progress?.Report(new SyncProgress(
-                SyncPhase.Deleting, "Deleting", i + 1, relPaths.Count, rel));
             try
             {
-                if (TryExists(client, full))
+                if (TryExists(worker, full))
                 {
-                    client.DeleteFile(full);
-                    deleted++;
+                    worker.DeleteFile(full);
+                    Interlocked.Increment(ref deleted);
                 }
-                touchedDirs.Add(ParentOf(full));
+                touchedDirs[ParentOf(full)] = 0;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                errors.Add($"Delete '{rel}': {ex.Message}");
+                lock (errors) errors.Add($"Delete '{rel}': {ex.Message}");
             }
-        }
 
-        PruneEmptyDirs(client, touchedDirs, remoteRoot, errors);
+            progress?.Report(new SyncProgress(
+                SyncPhase.Deleting, "Deleting",
+                Interlocked.Increment(ref done), relPaths.Count, rel));
+        });
+
+        // Sequential, on the one connection still open: pruning walks up the tree deleting parents
+        // as they empty, and two workers doing that on overlapping paths would race.
+        PruneEmptyDirs(client, touchedDirs.Keys, remoteRoot, errors);
 
         // Rewrite the manifest to match what remains locally.
         var local = SyncManifestBuilder.BuildLocal(siteRoot);
@@ -454,8 +467,23 @@ public static class SftpSyncService
 
     // ---- upload / manifest -------------------------------------------------
 
+    /// <summary>
+    /// Uploads <paramref name="toUpload"/>, spreading the work over
+    /// <see cref="SftpProfile.UploadConcurrency"/> connections.
+    ///
+    /// Small files are latency-bound rather than bandwidth-bound — each costs several serialized
+    /// round trips to upload and stamp — so a site of many small assets goes a long way faster with
+    /// several in flight. It has to be several *connections*: SSH.NET's
+    /// <see cref="SftpClient"/> is not thread-safe, and one SSH channel would serialize the
+    /// requests anyway.
+    /// </summary>
+    /// <param name="primary">
+    /// The already-connected client, reused as the first worker. Extras come from
+    /// <paramref name="connect"/> and are disposed here; the caller keeps owning the primary.
+    /// </param>
     private static List<string> UploadFiles(
-        SftpClient client,
+        SftpClient primary,
+        Func<SftpClient> connect,
         string siteRoot,
         SftpProfile profile,
         SyncManifest local,
@@ -465,16 +493,17 @@ public static class SftpSyncService
     {
         var errors = new List<string>();
         var remoteRoot = NormalizeDir(profile.RemotePath);
-        var knownDirs = new HashSet<string>(StringComparer.Ordinal);
 
-        for (int i = 0; i < toUpload.Count; i++)
+        // Shared, because a directory another worker already made is one this worker needn't check
+        // for. EnsureDir's check-then-create was always racy and already tolerates losing.
+        var knownDirs = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
+
+        var done = 0;
+        ForEachInParallel(primary, connect, profile, toUpload.Count, errors, ct, (client, i) =>
         {
-            ct.ThrowIfCancellationRequested();
             var rel = toUpload[i];
             var localFull = Path.Combine(siteRoot, rel.Replace('/', Path.DirectorySeparatorChar));
             var remoteFull = CombineRemote(remoteRoot, rel);
-            progress?.Report(new SyncProgress(
-                SyncPhase.Uploading, "Uploading", i + 1, toUpload.Count, rel));
 
             try
             {
@@ -482,20 +511,129 @@ public static class SftpSyncService
                 using (var fs = File.OpenRead(localFull))
                     client.UploadFile(fs, remoteFull, canOverride: true);
 
-                // Preserve mtime so Verify's size+mtime comparison is meaningful.
-                var attrs = client.GetAttributes(remoteFull);
-                attrs.LastWriteTimeUtc = File.GetLastWriteTimeUtc(localFull);
-                client.SetAttributes(remoteFull, attrs);
+                // Preserve mtime so Verify's size+mtime comparison is meaningful. Costs a stat as
+                // well as the setstat — SSH.NET reads the current attributes before writing them
+                // back, and there is no supported way to skip that.
+                client.SetLastWriteTimeUtc(remoteFull, File.GetLastWriteTimeUtc(localFull));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lock (errors)
+                {
+                    errors.Add($"Upload '{rel}': {ex.Message}");
+                    // Drop from the manifest snapshot so the next sync retries it.
+                    local.Files.Remove(rel);
+                }
+            }
+
+            // Counted on completion, not on start: with several in flight, the index a worker
+            // happens to be holding is not "how far through are we".
+            progress?.Report(new SyncProgress(
+                SyncPhase.Uploading, "Uploading",
+                Interlocked.Increment(ref done), toUpload.Count, rel));
+        });
+
+        return errors;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="body"/> for every index below <paramref name="itemCount"/>, spread over
+    /// a pool of connections. Workers pull from a shared counter rather than taking a fixed slice,
+    /// so one slow file doesn't leave a worker idle while another still has a queue.
+    /// </summary>
+    private static void ForEachInParallel(
+        SftpClient primary,
+        Func<SftpClient> connect,
+        SftpProfile profile,
+        int itemCount,
+        List<string> errors,
+        CancellationToken ct,
+        Action<SftpClient, int> body)
+    {
+        var workers = OpenWorkers(primary, connect, profile, itemCount, errors);
+        try
+        {
+            var next = -1;
+
+            void Run(SftpClient client)
+            {
+                int i;
+                while ((i = Interlocked.Increment(ref next)) < itemCount)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    body(client, i);
+                }
+            }
+
+            if (workers.Count == 1)
+            {
+                Run(workers[0]);
+                return;
+            }
+
+            var running = workers.Select(c => Task.Run(() => Run(c), CancellationToken.None))
+                                 .ToArray();
+            try
+            {
+                Task.WaitAll(running, CancellationToken.None);
+            }
+            catch (AggregateException ex)
+            {
+                var first = ex.Flatten().InnerExceptions[0];
+                if (first is OperationCanceledException) throw new OperationCanceledException(ct);
+                throw first;
+            }
+        }
+        finally
+        {
+            // Everything past the first is ours to clean up; the caller owns the primary.
+            foreach (var extra in workers.Skip(1))
+            {
+                try { extra.Disconnect(); } catch { /* going away regardless */ }
+                extra.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The clients to upload on, always including <paramref name="primary"/> first.
+    ///
+    /// Extras are opened one at a time rather than concurrently: <see cref="Connect"/> writes the
+    /// accepted fingerprint back onto the profile and may prompt, neither of which wants several
+    /// threads in it at once. The primary has already settled the host key by now, so no extra
+    /// connection ever prompts.
+    /// </summary>
+    private static List<SftpClient> OpenWorkers(
+        SftpClient primary,
+        Func<SftpClient> connect,
+        SftpProfile profile,
+        int fileCount,
+        List<string> errors)
+    {
+        var workers = new List<SftpClient> { primary };
+
+        // No point opening a connection that would sit idle — a two-file change isn't worth the
+        // handshakes.
+        var wanted = Math.Min(profile.EffectiveUploadConcurrency, fileCount);
+
+        for (var i = 1; i < wanted; i++)
+        {
+            try
+            {
+                workers.Add(connect());
             }
             catch (Exception ex)
             {
-                errors.Add($"Upload '{rel}': {ex.Message}");
-                // Drop from the manifest snapshot so the next sync retries it.
-                local.Files.Remove(rel);
+                // Servers cap concurrent sessions per user. Hitting that cap is a reason to go
+                // slower, not to fail the deploy.
+                errors.Add(
+                    $"Only {workers.Count} of {wanted} upload connections opened ({ex.Message}); " +
+                    "continuing at reduced concurrency.");
+                break;
             }
         }
 
-        return errors;
+        return workers;
     }
 
     private static SyncManifest DownloadManifest(SftpClient client, string manifestPath)
@@ -516,7 +654,7 @@ public static class SftpSyncService
     {
         try
         {
-            EnsureDir(client, ParentOf(manifestPath), new HashSet<string>(StringComparer.Ordinal));
+            EnsureDir(client, ParentOf(manifestPath), new ConcurrentDictionary<string, byte>(StringComparer.Ordinal));
             var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest);
             var tmp = manifestPath + ".tmp";
             using (var up = new MemoryStream(bytes))
@@ -596,7 +734,7 @@ public static class SftpSyncService
         return idx < 0 ? manifestPath : manifestPath[(idx + 1)..];
     }
 
-    private static void PruneEmptyDirs(SftpClient client, HashSet<string> dirs, string remoteRoot, List<string> errors)
+    private static void PruneEmptyDirs(SftpClient client, IEnumerable<string> dirs, string remoteRoot, List<string> errors)
     {
         // Walk deepest-first so a parent can empty after its child is removed.
         foreach (var dir in dirs.OrderByDescending(d => d.Length))
@@ -622,19 +760,19 @@ public static class SftpSyncService
         }
     }
 
-    private static void EnsureDir(SftpClient client, string dir, HashSet<string> known)
+    private static void EnsureDir(SftpClient client, string dir, ConcurrentDictionary<string, byte> known)
     {
-        if (string.IsNullOrEmpty(dir) || dir is "/" or "." || known.Contains(dir)) return;
+        if (string.IsNullOrEmpty(dir) || dir is "/" or "." || known.ContainsKey(dir)) return;
         try
         {
-            if (TryExists(client, dir)) { known.Add(dir); return; }
+            if (TryExists(client, dir)) { known[dir] = 0; return; }
         }
         catch { /* fall through to create */ }
 
         EnsureDir(client, ParentOf(dir), known);
         try { client.CreateDirectory(dir); }
         catch { /* created concurrently or already present */ }
-        known.Add(dir);
+        known[dir] = 0;
     }
 
     private static bool TryExists(SftpClient client, string path)

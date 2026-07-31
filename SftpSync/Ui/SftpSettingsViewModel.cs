@@ -78,6 +78,7 @@ public partial class SftpSettingsViewModel : ViewModelBase
         ManifestPath = t.ManifestPath;
         PrivateKeyPath = DeployLocalStore.GetPrivateKeyPath(_projectRoot, t.Name);
         IsKeyAuth = t.IsKeyAuth;
+        UploadConcurrency = t.UploadConcurrency;
 
         // Assign the backing field: the setter clears the pin whenever host or port changes, which
         // is right for a user edit but would wipe a stored fingerprint just for loading it.
@@ -132,6 +133,7 @@ public partial class SftpSettingsViewModel : ViewModelBase
         t.Name = string.IsNullOrWhiteSpace(TargetName) ? t.Name : TargetName.Trim();
         t.Host = Host.Trim();
         t.Port = Port <= 0 ? 22 : Port;
+        t.UploadConcurrency = ClampConcurrency(UploadConcurrency);
         t.Username = Username.Trim();
         t.RemotePath = RemotePath.Trim();
         t.ManifestPath = ManifestPath.Trim();
@@ -142,6 +144,7 @@ public partial class SftpSettingsViewModel : ViewModelBase
     [ObservableProperty] private string _targetName = "default";
     [ObservableProperty] private string _host = string.Empty;
     [ObservableProperty] private int _port = 22;
+    [ObservableProperty] private int _uploadConcurrency = SftpProfile.DefaultUploadConcurrency;
     [ObservableProperty] private string _username = string.Empty;
     [ObservableProperty] private string _remotePath = string.Empty;
     [ObservableProperty] private string _manifestPath = string.Empty;
@@ -186,6 +189,7 @@ public partial class SftpSettingsViewModel : ViewModelBase
     {
         Host = Host.Trim(),
         Port = Port <= 0 ? 22 : Port,
+        UploadConcurrency = ClampConcurrency(UploadConcurrency),
         Username = Username.Trim(),
         RemotePath = RemotePath.Trim(),
         ManifestPath = ManifestPath.Trim(),
@@ -193,6 +197,15 @@ public partial class SftpSettingsViewModel : ViewModelBase
         PrivateKeyPath = PrivateKeyPath.Trim(),
         HostKeyFingerprint = _hostKeyFingerprint,
     };
+
+    /// <summary>
+    /// Keeps a hand-edited or half-typed value in range. The spinner already bounds it, but the
+    /// same value arrives from YAML, which nothing bounds.
+    /// </summary>
+    private static int ClampConcurrency(int value) =>
+        value <= 0 ? SftpProfile.DefaultUploadConcurrency
+        : value > SftpProfile.MaxUploadConcurrency ? SftpProfile.MaxUploadConcurrency
+        : value;
 
     private string CurrentSecret => IsKeyAuth ? Passphrase : Password;
 
