@@ -181,10 +181,15 @@ public static class DirectoryTraverser
 
             if (PreviewGenerator.IsMarkdownFile(file))
             {
+                // An article's thumbnail is a rendering of its body, so editing the .md makes the
+                // existing thumbnail wrong — "it exists" isn't enough here the way it is for a
+                // photo or a PDF, which get replaced rather than revised.
                 var alreadyHasBoth = !string.IsNullOrEmpty(artifact.Preview)
                     && !string.IsNullOrEmpty(artifact.PreviewLarge)
                     && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge);
+                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge)
+                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.Preview, file)
+                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.PreviewLarge, file);
 
                 if (!alreadyHasBoth)
                     jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact, ArtifactType.Markdown));

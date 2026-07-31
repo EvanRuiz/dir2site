@@ -39,12 +39,12 @@ public static class SiteGenerator
 
         var loader = new AvaloniaTemplateLoader();
         CopySiteAssets(siteRoot, config, loader, progress);
-        var pageTemplate = Template.Parse(loader.LoadByName("collection"), "collection.html");
+        var templates = new TemplateSet(loader);
 
         var errors = new ConcurrentBag<string>();
         int pageCount = 0;
         GeneratePage(rootItem, siteRoot, directoryRoot, config, topLevelFolders, 0,
-            [], ref pageCount, pageTemplate, loader, progress, errors);
+            [], ref pageCount, templates, progress, errors);
 
         int assetCount = CopyPreviewAssets(rootItem, directoryRoot, siteRoot, progress);
         assetCount += CopyVerbatimUnderscoreFolders(directoryRoot, siteRoot, progress);
@@ -62,8 +62,7 @@ public static class SiteGenerator
         int depth,
         IList<string> ancestorNames,
         ref int pageCount,
-        Template pageTemplate,
-        AvaloniaTemplateLoader loader,
+        TemplateSet templates,
         IProgress<string>? progress,
         ConcurrentBag<string> errors)
     {
@@ -77,36 +76,6 @@ public static class SiteGenerator
             : [.. ancestorNames, node.Name];
 
         var indexHtmlPath = Path.Combine(outputDir, "index.html");
-        if (File.Exists(indexHtmlPath))
-        {
-            var indexMtime  = File.GetLastWriteTimeUtc(indexHtmlPath);
-            var sourceMtime = GetCollectionSourceMtime(node);
-            if (indexMtime >= sourceMtime)
-            {
-                progress?.Report($"Skipping {label} (up to date)");
-                foreach (var child in node.Children.Where(c => c.IsDirectory))
-                {
-                    var childOutputDir = Path.Combine(outputDir, child.Name);
-                    GeneratePage(child, childOutputDir, directoryRoot, config, topLevelFolders,
-                        depth + 1, childAncestors, ref pageCount, pageTemplate, loader, progress, errors);
-                }
-                var artifactChildrenSkip = node.Children.Where(c => !c.IsDirectory && c.Artifact != null).ToList();
-                foreach (var child in artifactChildrenSkip)
-                {
-                    try
-                    {
-                        GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
-                            depth + 1, childAncestors, loader, progress);
-                        pageCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        errors.Add($"{child.Name}: {ex.Message}");
-                    }
-                }
-                return;
-            }
-        }
 
         progress?.Report($"Generating {label}...");
 
@@ -159,18 +128,18 @@ public static class SiteGenerator
         globals.SetValue("og_description", ogTitle, readOnly: true);
         globals.SetValue("og_image", ogImage, readOnly: true);
 
-        var context = new TemplateContext { TemplateLoader = loader };
+        var context = new TemplateContext { TemplateLoader = templates.Loader };
         context.PushGlobal(globals);
 
-        var html = pageTemplate.Render(context);
-        File.WriteAllText(indexHtmlPath, html, Encoding.UTF8);
+        var html = templates.Collection.Render(context);
+        WriteIfChanged(indexHtmlPath, html, Encoding.UTF8);
         pageCount++;
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
         {
             var childOutputDir = Path.Combine(outputDir, child.Name);
             GeneratePage(child, childOutputDir, directoryRoot, config, topLevelFolders,
-                depth + 1, childAncestors, ref pageCount, pageTemplate, loader, progress, errors);
+                depth + 1, childAncestors, ref pageCount, templates, progress, errors);
         }
 
         var artifactChildren = node.Children.Where(c => !c.IsDirectory && c.Artifact != null).ToList();
@@ -179,7 +148,7 @@ public static class SiteGenerator
             try
             {
                 GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
-                    depth + 1, childAncestors, loader, progress);
+                    depth + 1, childAncestors, templates, progress);
                 pageCount++;
             }
             catch (Exception ex)
@@ -189,15 +158,35 @@ public static class SiteGenerator
         }
     }
 
-    private static DateTime GetCollectionSourceMtime(DirectoryTreeItem node)
+    /// <summary>
+    /// Writes <paramref name="content"/> only when it differs from what is already on disk.
+    /// Every page is re-rendered on every generate — the menu, the site config and a collection's
+    /// item set are all global, so no local mtime can tell us whether a page is stale — but leaving
+    /// byte-identical files untouched keeps their mtime stable, which is what SftpSync uses to
+    /// decide what needs re-uploading.
+    /// </summary>
+    private static bool WriteIfChanged(string path, string content, Encoding? encoding = null)
     {
-        var dirMtime = Directory.GetLastWriteTimeUtc(node.FullPath);
-        var yamlMtimes = node.Children
-            .Where(c => !c.IsDirectory && c.Artifact != null)
-            .Select(c => YamlParser.FindYamlMetaPath(c.FullPath))
-            .Where(p => p != null)
-            .Select(p => File.GetLastWriteTimeUtc(p!));
-        return yamlMtimes.Prepend(dirMtime).Max();
+        if (File.Exists(path))
+        {
+            try
+            {
+                // ReadAllText strips any byte-order mark, so this compares text to text
+                // regardless of which encoding overload originally wrote the file.
+                if (File.ReadAllText(path) == content) return false;
+            }
+            catch
+            {
+                // Unreadable for any reason — fall through and overwrite it.
+            }
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        if (encoding != null)
+            File.WriteAllText(path, content, encoding);
+        else
+            File.WriteAllText(path, content);
+        return true;
     }
 
     private static ScriptObject MakeCrumb(string name, string href, bool isActive)
@@ -401,7 +390,7 @@ public static class SiteGenerator
         IList<DirectoryTreeItem> topLevelFolders,
         int depth,
         IList<string> ancestorNames,
-        AvaloniaTemplateLoader loader,
+        TemplateSet templates,
         IProgress<string>? progress)
     {
         var artifact = item.Artifact!;
@@ -409,24 +398,7 @@ public static class SiteGenerator
         var outputDir = Path.Combine(parentOutputDir, stem);
         Directory.CreateDirectory(outputDir);
 
-        var yamlPath     = YamlParser.FindYamlMetaPath(item.FullPath);
         var indexHtmlPath = Path.Combine(outputDir, "index.html");
-        if (yamlPath != null && File.Exists(indexHtmlPath))
-        {
-            var sourceMtime = File.GetLastWriteTimeUtc(yamlPath);
-            // Markdown pages render from the .md body, so its mtime must also invalidate the page.
-            if (artifact.Type == ArtifactType.Markdown && File.Exists(item.FullPath))
-            {
-                var mdMtime = File.GetLastWriteTimeUtc(item.FullPath);
-                if (mdMtime > sourceMtime) sourceMtime = mdMtime;
-            }
-            var indexMtime = File.GetLastWriteTimeUtc(indexHtmlPath);
-            if (indexMtime >= sourceMtime)
-            {
-                progress?.Report($"Skipping {stem}/index.html (up to date)");
-                return;
-            }
-        }
 
         progress?.Report($"Generating {stem}/index.html...");
 
@@ -507,12 +479,11 @@ public static class SiteGenerator
         globals.SetValue("og_description", caption, readOnly: true);
         globals.SetValue("og_image", ogImage, readOnly: true);
 
-        var template = Template.Parse(loader.LoadByName(templateName), $"{templateName}.html");
-        var context = new TemplateContext { TemplateLoader = loader };
+        var context = new TemplateContext { TemplateLoader = templates.Loader };
         context.PushGlobal(globals);
 
-        var html = template.Render(context);
-        File.WriteAllText(Path.Combine(outputDir, "index.html"), html, Encoding.UTF8);
+        var html = templates.Artifact(templateName).Render(context);
+        WriteIfChanged(indexHtmlPath, html, Encoding.UTF8);
     }
 
     private static string GetOgImageRootRelative(Artifact artifact, string directoryRoot, string stem)
@@ -635,16 +606,11 @@ public static class SiteGenerator
 
         var template = Template.Parse(loader.LoadByName("site-css"), "site-css.html");
         var css = template.Render(context);
-
-        var dest = Path.Combine(siteRoot, "css", "site.css");
-        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-        File.WriteAllText(dest, css);
+        WriteIfChanged(Path.Combine(siteRoot, "css", "site.css"), css);
 
         var jsTemplate = Template.Parse(loader.LoadByName("site-js"), "site-js.html");
         var js = jsTemplate.Render(context);
-        var jsDest = Path.Combine(siteRoot, "js", "site.js");
-        Directory.CreateDirectory(Path.GetDirectoryName(jsDest)!);
-        File.WriteAllText(jsDest, js);
+        WriteIfChanged(Path.Combine(siteRoot, "js", "site.js"), js);
     }
 
     private static void CopyBootstrapAssets(string siteRoot, IProgress<string>? progress)
@@ -687,6 +653,27 @@ public static class SiteGenerator
         using var stream = AssetLoader.Open(new Uri(avaloniaUri));
         using var outFile = File.Create(dest);
         stream.CopyTo(outFile);
+    }
+
+    // Every page is rendered on every generate, so each template is parsed once per run
+    // rather than once per page.
+    private sealed class TemplateSet(AvaloniaTemplateLoader loader)
+    {
+        private readonly Dictionary<string, Template> _parsed = [];
+
+        public AvaloniaTemplateLoader Loader { get; } = loader;
+
+        public Template Collection => Get("collection");
+
+        public Template Artifact(string templateName) => Get(templateName);
+
+        private Template Get(string name)
+        {
+            if (_parsed.TryGetValue(name, out var template)) return template;
+            template = Template.Parse(Loader.LoadByName(name), $"{name}.html");
+            _parsed[name] = template;
+            return template;
+        }
     }
 
     // Loads Scriban templates from Avalonia embedded resources under Assets/templates/

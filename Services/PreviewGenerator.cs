@@ -33,6 +33,28 @@ public static class PreviewGenerator
         File.Exists(Path.Combine(sourceFileDir, previewRelativePath.Replace('/', Path.DirectorySeparatorChar)));
 
     /// <summary>
+    /// True when <paramref name="previewRelativePath"/> is older than <paramref name="sourceFile"/> —
+    /// i.e. the source has been edited since the preview was rendered.
+    /// </summary>
+    /// <remarks>
+    /// Only worth asking for sources people edit in place. A photo or a PDF is replaced, not
+    /// revised, so its thumbnail can't drift; a markdown article's thumbnail is a picture of the
+    /// body, and revising the body is the whole workflow.
+    /// </remarks>
+    public static bool PreviewIsOlderThanSource(string sourceFileDir, string previewRelativePath, string sourceFile)
+    {
+        var previewPath = Path.Combine(sourceFileDir, previewRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        try
+        {
+            return File.GetLastWriteTimeUtc(previewPath) < File.GetLastWriteTimeUtc(sourceFile);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Generates preview, preview-large, and full-resolution web WebP images into the .dir2site mirror tree.
     /// Returns (previewFileName, previewLargeFileName, imageFileName), or null if generation was skipped/failed.
     /// </summary>
