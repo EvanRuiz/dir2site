@@ -257,6 +257,75 @@ public class GenerateProgressTests : IDisposable
         Assert.Equal(0, Generate().Artifacts.Updated);
     }
 
+    /// <summary>
+    /// A yaml naming a preview that isn't on disk — an older naming scheme, a hand-edited path, a
+    /// deleted file — used to send the same artifact through preview generation on every single
+    /// generate: the missing file made it a job, and the stale name was written straight back
+    /// because a non-empty field was left alone. The pages pointed at the missing image too.
+    /// </summary>
+    [AvaloniaFact]
+    public void AYamlNamingAPreviewThatIsntThere_IsRepointedAtWhatWasGenerated()
+    {
+        var folder = MakeFolder("Photographs");
+        File.WriteAllText(Path.Combine(folder, "Portrait.md"), "# Portrait\n\nAn article.\n");
+        File.WriteAllText(Path.Combine(folder, "Portrait.md.yaml"),
+            """
+            type: markdown
+            caption: A Portrait
+            preview: .dir2site/Portrait/gone-preview.webp
+            previewLarge: .dir2site/Portrait/gone-preview-large.webp
+            """);
+
+        Assert.Equal(1, Generate().Previews.New);
+
+        // Second run: the yaml names what is actually there, so there is nothing left to render.
+        var second = Generate().Previews;
+        Assert.Equal(1, second.Done);
+        Assert.Equal(0, second.New);
+        Assert.Equal(0, second.Updated);
+
+        var yaml = File.ReadAllText(Path.Combine(folder, "Portrait.md.yaml"));
+        Assert.DoesNotContain("gone-preview", yaml);
+    }
+
+    /// <summary>
+    /// A video plays inline on its collection page and gets no page of its own, so it counts as an
+    /// artifact but not as a page. The page total is a pre-walk, so it has to make the same call
+    /// the renderer does or the stage would sit one short of its total for the whole run.
+    /// </summary>
+    [AvaloniaFact]
+    public void AVideo_CountsAsAnArtifactButNotAsAPage()
+    {
+        var folder = MakeFolder("Videos");
+        MakeArtifactWithPreviews(folder, "Portrait.jpg", "A Portrait");
+
+        // The yaml names previews that are already on disk, so nothing reaches the network.
+        var talk = Path.Combine(folder, "Talk.url");
+        File.WriteAllText(talk, "[InternetShortcut]\r\nURL=https://youtu.be/AbCdEfGhIjK\r\n");
+        File.WriteAllText(talk + ".yaml",
+            """
+            type: video
+            caption: A Talk
+            preview: .dir2site/Talk/preview-Talk.webp
+            previewLarge: .dir2site/Talk/preview-lg-Talk.webp
+            """);
+        var previewDir = Path.Combine(folder, ".dir2site", "Talk");
+        Directory.CreateDirectory(previewDir);
+        foreach (var name in new[] { "preview-Talk.webp", "preview-lg-Talk.webp" })
+            File.WriteAllText(Path.Combine(previewDir, name), "poster bytes");
+
+        var tracker = Generate();
+
+        Assert.Equal(2, tracker.Artifacts.Total);     // photo + video
+        Assert.Equal(2, tracker.Previews.Total);      // both can have a thumbnail
+        Assert.Equal(0, tracker.Previews.New);        // both already have one
+
+        // root + Videos + the photo's page — and no page for the video.
+        Assert.Equal(3, tracker.Pages.Total);
+        Assert.Equal(tracker.Pages.Total, tracker.Pages.Done);
+        Assert.Equal(tracker.Pages.Total, PagesOnDisk());
+    }
+
     [AvaloniaFact]
     public void ArtifactsThatCannotHavePreviews_StayOutOfThePreviewsTotal()
     {

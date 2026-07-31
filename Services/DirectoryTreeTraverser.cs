@@ -250,6 +250,19 @@ public static class DirectoryTraverser
             CollectPreviewJobs(child, survey);
     }
 
+    /// <summary>
+    /// True when a preview field has to be (re)pointed at what was just generated: it was blank, or
+    /// it names a file that isn't there.
+    /// </summary>
+    /// <remarks>
+    /// Keeping a hand-written value is right until the file it names goes missing — and a missing
+    /// file is the only reason this job ran. Left alone, the stale name was written straight back
+    /// to the yaml, so the same thumbnails were rebuilt on every single generate and the pages went
+    /// on pointing at an image that was never there.
+    /// </remarks>
+    private static bool NeedsPath(string rootPath, string? current) =>
+        string.IsNullOrEmpty(current) || !PreviewGenerator.PreviewFileExists(rootPath, current);
+
     private static void ExecutePreviewJobs(List<PreviewJob> jobs, dir2site.Models.Dir2SiteModel config, GenerateProgressTracker tracker)
     {
         IProgress<string> progress = tracker;
@@ -266,9 +279,10 @@ public static class DirectoryTraverser
                         var result = PreviewGenerator.GeneratePreviews(job.FilePath, job.TraversalRoot, progress);
                         if (!result.HasValue) return;
 
-                        if (string.IsNullOrEmpty(job.Artifact.Preview))      job.Artifact.Preview      = result.Value.Preview;
-                        if (string.IsNullOrEmpty(job.Artifact.PreviewLarge)) job.Artifact.PreviewLarge = result.Value.PreviewLarge;
-                        if (job.Artifact is Photo photo && string.IsNullOrEmpty(photo.Image))
+                        var rootPath = job.Artifact.RootFolder ?? Path.GetDirectoryName(job.FilePath) ?? string.Empty;
+                        if (NeedsPath(rootPath, job.Artifact.Preview))      job.Artifact.Preview      = result.Value.Preview;
+                        if (NeedsPath(rootPath, job.Artifact.PreviewLarge)) job.Artifact.PreviewLarge = result.Value.PreviewLarge;
+                        if (job.Artifact is Photo photo && NeedsPath(rootPath, photo.Image))
                             photo.Image = result.Value.Image;
 
                         var yaml = YamlParser.FindYamlMetaPath(job.FilePath);
@@ -284,8 +298,9 @@ public static class DirectoryTraverser
                             progress);
                         if (!result.HasValue) return;
 
-                        if (string.IsNullOrEmpty(job.Artifact.Preview))      job.Artifact.Preview      = result.Value.Preview;
-                        if (string.IsNullOrEmpty(job.Artifact.PreviewLarge)) job.Artifact.PreviewLarge = result.Value.PreviewLarge;
+                        var pdfRoot = job.Artifact.RootFolder ?? Path.GetDirectoryName(job.FilePath) ?? string.Empty;
+                        if (NeedsPath(pdfRoot, job.Artifact.Preview))      job.Artifact.Preview      = result.Value.Preview;
+                        if (NeedsPath(pdfRoot, job.Artifact.PreviewLarge)) job.Artifact.PreviewLarge = result.Value.PreviewLarge;
 
                         var yaml = YamlParser.FindYamlMetaPath(job.FilePath);
                         if (yaml != null)
@@ -298,8 +313,9 @@ public static class DirectoryTraverser
                         var result = MarkdownPreviewRenderer.RenderToWebpPreviews(job.FilePath, job.TraversalRoot, progress);
                         if (!result.HasValue) return;
 
-                        if (string.IsNullOrEmpty(job.Artifact.Preview))      job.Artifact.Preview      = result.Value.Preview;
-                        if (string.IsNullOrEmpty(job.Artifact.PreviewLarge)) job.Artifact.PreviewLarge = result.Value.PreviewLarge;
+                        var mdRoot = job.Artifact.RootFolder ?? Path.GetDirectoryName(job.FilePath) ?? string.Empty;
+                        if (NeedsPath(mdRoot, job.Artifact.Preview))      job.Artifact.Preview      = result.Value.Preview;
+                        if (NeedsPath(mdRoot, job.Artifact.PreviewLarge)) job.Artifact.PreviewLarge = result.Value.PreviewLarge;
 
                         var yaml = YamlParser.FindYamlMetaPath(job.FilePath);
                         if (yaml != null)
