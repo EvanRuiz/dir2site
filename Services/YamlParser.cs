@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using dir2site.Models;
 using YamlDotNet.Serialization;
@@ -325,7 +326,8 @@ public static class YamlParser
                 return null;
         }
 
-        var caption  = PrettifyFilename(filePath);
+        var caption  = PrettifyFilename(
+            artifactType == "video" ? StripVideoProviderSuffix(filePath) : filePath);
         var template = BuildTemplate(artifactType, caption, video);
 
         var yamlMetaPath = filePath + ".yaml";
@@ -362,12 +364,34 @@ public static class YamlParser
     };
 
     /// <summary>
+    /// Drops the provider suffix a browser appends when it saves a video shortcut, so
+    /// "Never Gonna Give You Up - YouTube.url" is captioned "Never Gonna Give You Up".
+    /// </summary>
+    /// <remarks>
+    /// Returns a path rather than a stem so it can be handed straight to
+    /// <see cref="PrettifyFilename"/>, which is what turns the trimmed name into a caption. Only
+    /// the suffix goes: a video legitimately titled "YouTube at 20" keeps its name, because the
+    /// match is anchored to the end and requires the separator.
+    /// </remarks>
+    private static string StripVideoProviderSuffix(string filePath)
+    {
+        const string suffix = " - YouTube";
+        var stem = Path.GetFileNameWithoutExtension(filePath);
+        if (!stem.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return filePath;
+
+        var trimmed = stem[..^suffix.Length].TrimEnd();
+        // A shortcut named nothing but the suffix still needs something to be called.
+        return trimmed.Length == 0 ? filePath : trimmed;
+    }
+
+    /// <summary>
     /// Converts a filename stem into a human-readable caption using simple deterministic rules:
     /// underscores and hyphens become spaces, camelCase boundaries are split,
     /// and each word is title-cased.
     /// </summary>
     /// <example>
     /// "annual-report"        → "Annual-Report"
+    /// "Artist - Song"        → "Artist - Song"
     /// "my_beautiful_photo"   → "My Beautiful Photo"
     /// "myBeautifulPhoto"     → "My Beautiful Photo"
     /// "TheQuickBrownFox"     → "The Quick Brown Fox"
@@ -379,6 +403,18 @@ public static class YamlParser
         var stem = Path.GetFileNameWithoutExtension(filePath);
         if (string.IsNullOrWhiteSpace(stem))
             return stem;
+
+        // Whether each hyphen was written with space around it, which is the difference between a
+        // compound word and a real separator: "annual-report" is one name, "Artist - Song" is two
+        // parts — and the latter is the shape most video titles arrive in.
+        var spacedSeparators = new List<bool>();
+        for (var i = 0; i < stem.Length; i++)
+        {
+            if (stem[i] != '-') continue;
+            spacedSeparators.Add(
+                (i > 0 && char.IsWhiteSpace(stem[i - 1])) ||
+                (i + 1 < stem.Length && char.IsWhiteSpace(stem[i + 1])));
+        }
 
         // Process each dash-separated segment independently, preserving the dash as a separator
         var segments = stem.Split('-').Select(segment =>
@@ -398,6 +434,13 @@ public static class YamlParser
                 }));
         });
 
-        return string.Join('-', segments);
+        // Rejoin with the spacing each hyphen was written with.
+        var parts = segments.ToList();
+        var result = new StringBuilder(parts[0]);
+        for (var i = 1; i < parts.Count; i++)
+        {
+            result.Append(spacedSeparators[i - 1] ? " - " : "-").Append(parts[i]);
+        }
+        return result.ToString();
     }
 }
