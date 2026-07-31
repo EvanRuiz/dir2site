@@ -139,8 +139,8 @@ public static class YamlParser
         var editor = YamlDocumentEditor.TryLoad(yaml);
         if (editor != null && editor.SetAll(updates))
         {
-            // Nothing to do when the values already match — rewriting would only churn mtimes,
-            // which SiteGenerator uses to decide what needs regenerating.
+            // Nothing to do when the values already match — rewriting would only churn mtimes
+            // and dirty the file for no reason.
             if (editor.IsModified)
                 File.WriteAllText(yamlPath, editor.Text);
             return;
