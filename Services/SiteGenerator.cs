@@ -108,6 +108,9 @@ public static class SiteGenerator
             .Select(child => (object)BuildCardModel(child, prefix, directoryRoot))
             .ToList();
 
+        // Only pages that actually embed a player pull in the YouTube glue.
+        var hasVideo = node.Children.Any(c => !c.IsDirectory && c.Artifact?.Type == ArtifactType.Video);
+
         var ogTitle = depth == 0
             ? config.Title
             : string.Join(" > ", ancestorNames.Concat([node.Name]));
@@ -124,6 +127,7 @@ public static class SiteGenerator
         globals.SetValue("nav_folders", navFolders, readOnly: true);
         globals.SetValue("breadcrumbs", breadcrumbs, readOnly: true);
         globals.SetValue("items", items, readOnly: true);
+        globals.SetValue("has_video", hasVideo, readOnly: true);
         globals.SetValue("og_title", ogTitle, readOnly: true);
         globals.SetValue("og_description", ogTitle, readOnly: true);
         globals.SetValue("og_image", ogImage, readOnly: true);
@@ -142,7 +146,11 @@ public static class SiteGenerator
                 depth + 1, childAncestors, ref pageCount, templates, progress, errors);
         }
 
-        var artifactChildren = node.Children.Where(c => !c.IsDirectory && c.Artifact != null).ToList();
+        // Videos play inline on this page, so they get no page of their own — generating one would
+        // produce an orphan that nothing links to.
+        var artifactChildren = node.Children
+            .Where(c => !c.IsDirectory && c.Artifact != null && c.Artifact.Type != ArtifactType.Video)
+            .ToList();
         foreach (var child in artifactChildren)
         {
             try
@@ -219,6 +227,7 @@ public static class SiteGenerator
         string directoryRoot)
     {
         string caption, badge, href, imgSrc;
+        var video = item.Artifact as Video;
 
         if (item.IsDirectory)
         {
@@ -235,7 +244,8 @@ public static class SiteGenerator
             caption = item.Artifact?.Caption ?? item.Name;
             badge = item.Artifact != null ? TypeBadge(item.Artifact.Type) : "File";
             var stem = Path.GetFileNameWithoutExtension(item.Name);
-            href = $"{stem}/";
+            // A video has no page of its own, so linking to one would be a dead link.
+            href = video != null ? "" : $"{stem}/";
             imgSrc = item.Artifact != null ? GetPreviewSrc(item.Artifact, directoryRoot, prefix, stem) : "";
         }
 
@@ -245,6 +255,12 @@ public static class SiteGenerator
         obj.SetValue("href", href, readOnly: true);
         obj.SetValue("img_src", imgSrc, readOnly: true);
         obj.SetValue("is_folder", item.IsDirectory, readOnly: true);
+        obj.SetValue("is_video", video != null, readOnly: true);
+        obj.SetValue("video_id", video?.VideoId ?? "", readOnly: true);
+        obj.SetValue("video_start", video?.Start?.ToString() ?? "", readOnly: true);
+        obj.SetValue("video_url", video?.SourceUrl ?? "", readOnly: true);
+        obj.SetValue("url_text", video != null ? item.Artifact?.UrlText ?? "" : "", readOnly: true);
+        obj.SetValue("credit", item.Artifact?.Credit ?? "", readOnly: true);
         return obj;
     }
 
@@ -611,6 +627,11 @@ public static class SiteGenerator
         var jsTemplate = Template.Parse(loader.LoadByName("site-js"), "site-js.html");
         var js = jsTemplate.Render(context);
         WriteIfChanged(Path.Combine(siteRoot, "js", "site.js"), js);
+
+        // Written unconditionally, like every other asset; only pages with a video reference it.
+        var videoTemplate = Template.Parse(loader.LoadByName("video-js"), "video-js.html");
+        var videoJs = videoTemplate.Render(context);
+        WriteIfChanged(Path.Combine(siteRoot, "js", "video.js"), videoJs);
     }
 
     private static void CopyBootstrapAssets(string siteRoot, IProgress<string>? progress)

@@ -87,6 +87,90 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 
 .artifact-preview img { max-width: 100%; max-height: 600px; object-fit: contain; }
 
+/* Video artifact — plays inline on the collection page, so all of this is card-scoped.
+   The poster sits on top of the player rather than being replaced by it: that is what lets it come
+   back when the video ends, covering YouTube's related-video end screen. */
+
+.video-container { position: relative; aspect-ratio: 16/9; width: 100%; background: #000; overflow: hidden; }
+.video-container .player,
+.video-container iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+.video-poster {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  z-index: 2;
+}
+
+/* Hidden until the poster is actually a replay control — i.e. after the video has ended. While the
+   player is still loading the poster is just a picture, and a play button on it would invite a
+   click that cannot do anything yet. */
+.video-play-btn {
+  display: none;
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 68px; height: 48px;
+  padding: 0; border: 0; border-radius: 12px;
+  background: rgba(18, 18, 18, 0.72);
+  cursor: pointer;
+  z-index: 3;
+  transition: background-color 0.15s ease-in-out;
+}
+
+/* The triangle, drawn with borders so there is no icon font or SVG asset to ship. */
+.video-play-btn::before {
+  content: "";
+  position: absolute; top: 50%; left: 52%;
+  transform: translate(-50%, -50%);
+  border-style: solid;
+  border-width: 10px 0 10px 17px;
+  border-color: transparent transparent transparent #fff;
+}
+
+/* Sits where the play button would be, so the card's centre stays busy the whole way through:
+   spinner while the player loads, then YouTube's own button, then ours again once it has ended.
+   Offset with margin rather than translate so the rotation has the transform to itself. */
+.video-spinner {
+  display: none;
+  position: absolute; top: 50%; left: 50%;
+  width: 40px; height: 40px;
+  /* Half the box, which under Bootstrap's border-box already includes the border — so this stays
+     -20px however thick the ring gets. Offsetting by margin rather than translate leaves the
+     transform free for the rotation. */
+  margin: -20px 0 0 -20px;
+  border: 4.5px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  z-index: 3;
+  /* The ring is open, so it needs its contrast from a shadow rather than a filled disc — a plain
+     white ring disappears against a pale poster, and a video's first frame is whatever it is.
+     drop-shadow follows the ring itself, and being symmetric it survives the rotation. */
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.85));
+  animation: video-spin 0.8s linear infinite;
+}
+
+@keyframes video-spin { to { transform: rotate(360deg); } }
+
+/* Set by the script, so it never spins for a visitor who has no JavaScript to finish the job. */
+.video-container.loading .video-spinner { display: block; }
+
+@media (prefers-reduced-motion: reduce) {
+  .video-spinner { animation: none; }
+}
+
+.video-container.replayable .video-play-btn { display: block; }
+.video-container.replayable .video-poster { cursor: pointer; }
+
+.video-container.replayable:hover .video-play-btn,
+.video-play-btn:focus-visible { background: #ff0033; }
+
+/* The poster shows by default — which is also what a visitor with no JavaScript keeps — and is
+   pulled aside once the player is ready, then put back when the video ends. */
+.video-container.uncovered .video-poster,
+.video-container.uncovered .video-play-btn { display: none; }
+
+.video-source-link { white-space: nowrap; }
+
 /* Markdown artifact */
 
 .markdown-body { max-width: 820px; margin: 0 auto; line-height: 1.7; }

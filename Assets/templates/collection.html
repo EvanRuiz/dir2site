@@ -23,5 +23,6 @@
 
   {{ include 'footer' }}
   <script src="{{ prefix }}js/bootstrap/bootstrap.bundle.min.js"></script>
+  {{ if has_video }}<script src="{{ prefix }}js/video.js"></script>{{ end }}
 </body>
 </html>

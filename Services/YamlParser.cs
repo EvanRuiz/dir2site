@@ -48,6 +48,10 @@ public static class YamlParser
             // Documents
             { ".pdf",  "pdf"      },
             { ".md",   "markdown" },
+
+            // Windows internet shortcuts → video, but only when they point at a provider we can
+            // embed; see CreateDefaultYamlMeta.
+            { ".url",  "video"    },
         };
 
     /// <summary>
@@ -76,6 +80,13 @@ public static class YamlParser
             return null;
         }
 
+        // The type token names the model, so use it when there is one.
+        if (PeekTypeToken(yaml) is { } token && TypeTokenToParser.TryGetValue(token, out var parse))
+        {
+            try { return parse(yaml); }
+            catch (Exception ex) { errors.Add($"[{token}] {ex.Message}"); }
+        }
+
         // Try each concrete type from most-specific to least-specific.
         foreach (var attempt in ParseAttempts)
         {
@@ -91,6 +102,51 @@ public static class YamlParser
         }
 
         errors.Add($"Could not parse '{yamlPath}' into any known model type.");
+        return null;
+    }
+
+    /// <summary>
+    /// Maps the yaml's <c>type:</c> token to the model that actually holds that type's fields.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ParseAttempts"/> cannot do this on its own. The deserializer ignores unmatched
+    /// properties (see its construction above), so the first attempt always succeeds and every
+    /// artifact came back as a <see cref="Deepzoom"/> that happened to carry the right value in
+    /// <see cref="Artifact.Type"/>. That went unnoticed because the generator switches on
+    /// <c>Type</c> rather than on the CLR type, but it silently discarded every subtype-specific
+    /// field — a photo's <c>photographer</c>, a PDF's <c>author</c> — and made the
+    /// <c>is MarkdownPage</c> test in DirectoryTreeItem permanently false. Dispatching on the token
+    /// first fixes all of those; <see cref="ParseAttempts"/> remains the fallback for a yaml with
+    /// no <c>type:</c> or an unrecognized one, so nothing that parses today stops parsing.
+    /// </remarks>
+    private static readonly IReadOnlyDictionary<string, Func<string, Artifact>> TypeTokenToParser =
+        new Dictionary<string, Func<string, Artifact>>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "photo",     yaml => Deserializer.Deserialize<Photo>(yaml)               },
+            { "deepzoom",  yaml => Deserializer.Deserialize<Deepzoom>(yaml)            },
+            { "pdf",       yaml => Deserializer.Deserialize<Pdf>(yaml)                 },
+            { "markdown",  yaml => Deserializer.Deserialize<MarkdownPage>(yaml)        },
+            { "video",     yaml => Deserializer.Deserialize<Video>(yaml)               },
+            { "directory", yaml => Deserializer.Deserialize<DirectoryCollection>(yaml) },
+        };
+
+    // Reads just the type token, tolerating anything else in the document being unparseable.
+    private static string? PeekTypeToken(string yaml)
+    {
+        try
+        {
+            var doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml);
+            if (doc != null && doc.TryGetValue("type", out var value) && value is string token)
+            {
+                token = token.Trim();
+                return token.Length > 0 ? token : null;
+            }
+        }
+        catch
+        {
+            // Fall through to ParseAttempts, which reports its own errors.
+        }
+
         return null;
     }
 
@@ -118,11 +174,17 @@ public static class YamlParser
     /// (<see cref="YamlDocumentEditor"/>), with the old whole-file rewrite kept only as a fallback
     /// for documents that cannot be edited in place.
     /// </remarks>
+    /// <param name="extra">
+    /// Further keys to bring into line while we are already rewriting the file — used by videos,
+    /// whose id and provider are re-derived from the .url on every run and would otherwise leave
+    /// the yaml quietly disagreeing with the page after the shortcut is re-pointed.
+    /// </param>
     public static void UpdatePreviewFields(
         string yamlPath,
         string previewFileName,
         string previewLargeFileName,
-        string? imageFileName = null)
+        string? imageFileName = null,
+        IEnumerable<KeyValuePair<string, string>>? extra = null)
     {
         string yaml;
         try { yaml = File.ReadAllText(yamlPath); }
@@ -135,6 +197,8 @@ public static class YamlParser
         };
         if (imageFileName != null)
             updates.Add(new("image", imageFileName));
+        if (extra != null)
+            updates.AddRange(extra);
 
         var editor = YamlDocumentEditor.TryLoad(yaml);
         if (editor != null && editor.SetAll(updates))
@@ -250,8 +314,19 @@ public static class YamlParser
         if (!ExtensionToType.TryGetValue(ext, out var artifactType))
             return null;
 
+        InternetShortcutParser.VideoRef? video = null;
+        if (artifactType == "video")
+        {
+            // A .url earns a yaml only when it points at a provider we can embed. An ordinary
+            // web bookmark filed alongside some photos is not an error — it just isn't catalogued,
+            // the same as any other unrecognized file.
+            video = InternetShortcutParser.TryReadVideo(filePath)?.Video;
+            if (video is null)
+                return null;
+        }
+
         var caption  = PrettifyFilename(filePath);
-        var template = BuildTemplate(artifactType, caption);
+        var template = BuildTemplate(artifactType, caption, video);
 
         var yamlMetaPath = filePath + ".yaml";
         try
@@ -266,12 +341,23 @@ public static class YamlParser
         }
     }
 
-    private static string BuildTemplate(string artifactType, string caption) => artifactType switch
+    // The video arm needs the shortcut's target, which the caller has already parsed — re-reading
+    // the .url here would just be a second chance to disagree with it.
+    private static string BuildTemplate(
+        string artifactType,
+        string caption,
+        InternetShortcutParser.VideoRef? video = null) => artifactType switch
     {
         "photo"    => $"type: photo\ncaption: {caption}\ncredit:\nphotographer:\n",
         "deepzoom" => $"type: deepzoom\ncaption: {caption}\ncredit:\nphotographer:\n",
         "pdf"      => $"type: pdf\ncaption: {caption}\ncredit:\nauthor:\npublishOriginal: false\n",
         "markdown" => $"type: markdown\ncaption: {caption}\ncredit:\n",
+        // url-text is left blank on purpose: the player carries YouTube's own affordance, so a card
+        // only gets an outbound link when the site owner asks for one by filling this in.
+        "video"    => $"type: video\ncaption: {caption}\ncredit:\nurl-text:\n"
+                      + $"provider: {video?.Provider ?? InternetShortcutParser.YouTube}\n"
+                      + $"videoId: {video?.VideoId}\n"
+                      + $"start:{(video?.Start is { } s ? $" {s}" : "")}\n",
         _          => $"type: {artifactType}\ncaption: {caption}\ncredit:\n",
     };
 
