@@ -11,7 +11,9 @@
         x:Class="dir2site.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/app/dir2site-icon.png"
-        Title="dir2site">
+        Title="dir2site"
+        Width="1280" Height="820"
+        MinWidth="900" MinHeight="600">
 
     <Design.DataContext>
         <!-- This only sets the DataContext for the previewer in an IDE,

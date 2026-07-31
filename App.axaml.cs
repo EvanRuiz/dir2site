@@ -31,7 +31,12 @@ public partial class App : Application
             
             desktop.ShutdownRequested += (s, e) =>
             {
-                // TODO: Save any GUI state (ex. Overlays) before exiting
+                // Covers the quit paths Window.Closing doesn't reach on its own — notably macOS
+                // Cmd-Q and Dock -> Quit. The save is idempotent, so overlapping with Closing on
+                // the ordinary close-the-window path is harmless.
+                (desktop.MainWindow as MainWindow)?.SaveGeometry();
+
+                // TODO: Save any other GUI state (ex. Overlays) before exiting
                 // SaveOverlaysCommand.Execute(null);
             };
             
