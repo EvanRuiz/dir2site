@@ -12,66 +12,8 @@ namespace dir2site.Services;
 
 public static class DirectoryTraverser
 {
-    // Explicit filenames to always skip, regardless of platform
-    private static readonly HashSet<string> IgnoredFileNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // macOS
-        ".DS_Store",
-        ".AppleDouble",
-        ".LSOverride",
-        "Icon\r",          // macOS custom folder icon (has a carriage return in the name)
-        ".Spotlight-V100",
-        ".Trashes",
-        ".fseventsd",
-        ".VolumeIcon.icns",
-        ".com.apple.timemachine.donotpresent",
-
-        // Windows
-        "Thumbs.db",
-        "Thumbs.db:encryptable",
-        "ehthumbs.db",
-        "ehthumbs_vista.db",
-        "Desktop.ini",
-        "desktop.ini",
-        "$RECYCLE.BIN",
-        "RECYCLER",
-        "RECYCLED",
-        "System Volume Information",
-
-        // Linux / general
-        ".directory",      // KDE folder settings
-        ".Trash-1000",
-        ".nfs",            // NFS lock files (prefix match handled below)
-    };
-
-    // Directory names to skip entirely (won't recurse into them)
-    private static readonly HashSet<string> IgnoredDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // macOS
-        ".Spotlight-V100",
-        ".Trashes",
-        ".fseventsd",
-        ".TemporaryItems",
-        ".AppleDB",
-        ".AppleDesktop",
-
-        // Windows
-        "$RECYCLE.BIN",
-        "RECYCLER",
-        "RECYCLED",
-        "System Volume Information",
-
-        // Version control / tooling (commonly wanted to skip)
-        ".git",
-        ".svn",
-        ".hg",
-        ".idea",
-        ".vscode",
-        "node_modules",
-        "__pycache__",
-        ".mypy_cache",
-        ".pytest_cache",
-    };
+    // The name lists live in PublishIgnore, shared with the SFTP upload so a folder this walk
+    // refuses to read can't reach a server by some other route.
 
     public static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles, IList<string> allArtifacts, IProgress<string>? progress = null)
     {
@@ -277,7 +219,7 @@ public static class DirectoryTraverser
         if (HasHiddenAttribute(path))
             return true;
 
-        return IgnoredDirectoryNames.Contains(name);
+        return PublishIgnore.IsJunkDirectory(name);
     }
 
     private static bool ShouldIgnoreFile(string path)
@@ -291,10 +233,6 @@ public static class DirectoryTraverser
         if (HasHiddenAttribute(path))
             return true;
 
-        // Skip NFS temporary lock files (.nfsXXXXXX)
-        if (name.StartsWith(".nfs", StringComparison.OrdinalIgnoreCase))
-            return true;
-
         // Skip metadata sidecar files — they are not content nodes
         var ext = Path.GetExtension(name);
         if (ext.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
@@ -302,7 +240,7 @@ public static class DirectoryTraverser
             ext.Equals(".json", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        return IgnoredFileNames.Contains(name);
+        return PublishIgnore.IsJunkFile(name);
     }
 
     private static bool HasHiddenAttribute(string path)

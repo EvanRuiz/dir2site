@@ -53,6 +53,31 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
     }
 
     [SkippableFact]
+    public void ADotFolderInTheSiteNeverReachesTheServer()
+    {
+        // _site is never cleaned, so a tool run with it as the working directory leaves its state
+        // behind for good — and every later deploy would have published it.
+        var d = Seeded(
+            ("index.html", "home"),
+            (".claude/settings.json", "{}"),
+            (".claude/agents/reviewer.md", "notes"),
+            (".DS_Store", "junk"),
+            (".htaccess", "Deny from all"));
+
+        var r = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+
+        Assert.Empty(r.Errors);
+        Assert.False(Directory.Exists(Path.Combine(d.RemoteDir, ".claude")),
+            ".claude should never be created on the server");
+        Assert.False(RemoteHas(d.RemoteDir, ".DS_Store"));
+
+        // Dot-files are still content: .htaccess has to arrive.
+        Assert.True(RemoteHas(d.RemoteDir, "index.html"));
+        Assert.True(RemoteHas(d.RemoteDir, ".htaccess"));
+        Assert.Equal(2, r.Uploaded);
+    }
+
+    [SkippableFact]
     public void ReSync_WithNoChanges_UploadsNothing()
     {
         var d = Seeded(("index.html", "home"), ("css/site.css", "body{}"));
