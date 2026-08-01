@@ -24,6 +24,13 @@ using Velopack.Sources;
 
 namespace dir2site.ViewModels;
 
+/// <summary>
+/// How an update check went. "Nothing to install" has three quite different causes — already
+/// current, uninstallable dev build, and couldn't reach GitHub — and a user who pressed a button
+/// deserves to be told which.
+/// </summary>
+public enum UpdateCheckResult { Available, UpToDate, NotSupported, Failed }
+
 public partial class MainWindowViewModel : ViewModelBase
 {
     public TopLevel? TopLevel { get; set; }
@@ -136,6 +143,46 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _forceFullReupload;
+
+    /// <summary>
+    /// Installs the bundled VS Code extension that previews dir2site's ^^^ figure syntax. Offered
+    /// here rather than hidden in a menu because the people writing articles are the ones who need
+    /// it, and nothing else in the app tells them it exists.
+    /// </summary>
+    [RelayCommand]
+    private async Task InstallVsCodeExtension()
+    {
+        StatusText = "Installing VS Code extension…";
+        var result = await VsCodeExtensionInstaller.InstallAsync();
+
+        StatusText = result.Message;
+        if (!result.Succeeded)
+        {
+            AppendError(result.Message);
+            if (result.RevealPath != null) Reveal(result.RevealPath);
+        }
+    }
+
+    /// <summary>Shows a file in Finder / Explorer / the desktop file manager.</summary>
+    private static void Reveal(string path)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+                // One argument, not two: ArgumentList quotes each element separately, and explorer
+                // reads "/select," with the path split off as a flag with nothing selected — it
+                // opens a window on the wrong folder rather than highlighting the file.
+                Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { "/select," + path } });
+            else if (OperatingSystem.IsMacOS())
+                Process.Start(new ProcessStartInfo("open") { ArgumentList = { "-R", path } });
+            else
+                Process.Start(new ProcessStartInfo("xdg-open") { ArgumentList = { Path.GetDirectoryName(path)! } });
+        }
+        catch
+        {
+            // Revealing is a courtesy; the path is already in the message.
+        }
+    }
 
     /// <summary>Show what a Quick Sync would do, and confirm, before anything is uploaded.</summary>
     [ObservableProperty]
@@ -720,22 +767,51 @@ public partial class MainWindowViewModel : ViewModelBase
         DeployTargets.Save(configPath, Dir2SiteConfig.Deploy);
     }
 
-    public async Task CheckForUpdatesAsync()
+    /// <summary>
+    /// Runs the update check and reports what it found. The startup call ignores the result, which
+    /// is the behaviour it always had; only a user who asked for a check needs an answer when the
+    /// answer is "nothing changed".
+    /// </summary>
+    public async Task<UpdateCheckResult> CheckForUpdatesAsync()
     {
         try
         {
-            if (_updateManager == null) return;
+            if (_updateManager == null) return UpdateCheckResult.NotSupported;
             _pendingUpdate = await _updateManager.CheckForUpdatesAsync();
             if (_pendingUpdate != null)
             {
                 UpdateVersion = _pendingUpdate.TargetFullRelease.Version.ToString();
                 UpdateAvailable = true;
+                return UpdateCheckResult.Available;
             }
+
+            return UpdateCheckResult.UpToDate;
         }
         catch
         {
-            // silently ignore — no network, no GitHub release, dev environment, etc.
+            // No network, no GitHub release, dev environment, etc. Still not worth a banner at
+            // startup; the caller decides whether it's worth saying out loud.
+            return UpdateCheckResult.Failed;
         }
+    }
+
+    /// <summary>
+    /// The startup check, on demand. A check that quietly finds nothing looks identical to a button
+    /// that does nothing, so this one always says how it went — the banner only ever appears when
+    /// there is something to install.
+    /// </summary>
+    [RelayCommand]
+    private async Task CheckForUpdates()
+    {
+        StatusText = "Checking for updates…";
+
+        StatusText = await CheckForUpdatesAsync() switch
+        {
+            UpdateCheckResult.Available => $"Update available: v{UpdateVersion}.",
+            UpdateCheckResult.UpToDate => $"Up to date (v{_updateManager?.CurrentVersion}).",
+            UpdateCheckResult.NotSupported => "This is a development build — it doesn't update itself.",
+            _ => "Couldn't check for updates — no connection, or no release to compare against.",
+        };
     }
 
     [RelayCommand(CanExecute = nameof(CanDownloadUpdate))]

@@ -1,0 +1,52 @@
+/* SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors */
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* Mirrors the figure rules in Assets/templates/site-css.html so the preview matches the generated
+   site. Kept in step by hand — if the site CSS changes, change this too.
+
+   Colours come from VS Code theme variables rather than the site's fixed values, so captions stay
+   readable in dark themes; everything else is copied as-is. */
+
+/* Bare images carrying the class, with no ^^^ wrapper. */
+img.figure-right  { float: right; margin: 0.3em 0 1.2em 1.6em; }
+img.figure-left   { float: left;  margin: 0.3em 1.6em 1.2em 0; }
+img.figure-center { display: block; margin: 1.4em auto; }
+
+/* The ^^^ form puts the class on the <img>, because that is where the author writes
+   {.figure-right} — but floating the image leaves the <figcaption> as a full-width block starting
+   level with it, so the caption renders beside the picture instead of under it. Floating the whole
+   <figure> is the shape the :::figure-* container already uses and gets right: the image and its
+   caption stack inside a box that is itself pulled aside. */
+figure { margin: 1.4em 0; text-align: center; }
+figure:has(img.figure-right)  { float: right; max-width: 45%; margin: 0.3em 0 1.2em 1.6em; }
+figure:has(img.figure-left)   { float: left;  max-width: 45%; margin: 0.3em 1.6em 1.2em 0; }
+figure:has(img.figure-center) { margin: 1.4em auto; }
+figure img.figure-right,
+figure img.figure-left,
+figure img.figure-center { float: none; margin: 0; }
+figure p { margin: 0; }
+
+/* Container form, for :::figure-right … ::: */
+.figure-right  { float: right; max-width: 45%; margin: 0.3em 0 1.2em 1.6em; text-align: center; }
+.figure-left   { float: left;  max-width: 45%; margin: 0.3em 1.6em 1.2em 0; text-align: center; }
+.figure-center { display: block; margin: 1.4em auto; text-align: center; }
+
+.figure-right img,
+.figure-left img,
+.figure-center img,
+figure img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  box-shadow: 2px 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.figure-right p:last-child,
+.figure-left p:last-child,
+.figure-center p:last-child,
+figure figcaption {
+  font-size: 0.85em;
+  font-style: italic;
+  color: var(--vscode-descriptionForeground, #555);
+  margin: 0.4em 0 0;
+}
