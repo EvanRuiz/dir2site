@@ -116,6 +116,11 @@ generated site automatically:
 See also the [Brownian motion paper](brownian-motion.md).
 ```
 
+Each article publishes as its own folder, so `brownian-motion.md` becomes `brownian-motion/` in the
+generated site. Point the link at either one — the `.md` form is remapped for you, which lets links
+keep working in an editor that resolves them against your source files. Any `#anchor` or `?query`
+you add is kept.
+
 Absolute URLs (`https://…`), rooted paths (`/…`), and anchors (`#section`) are left untouched.
 
 ---
