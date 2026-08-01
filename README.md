@@ -112,6 +112,26 @@ work — the `^^^` / `:::` forms are preferred as they need no inline styles and
 
 See **[Writing Markdown articles](docs/writing-articles.md)** for the full reference.
 
+## PDFs
+
+Drop a `.pdf` into your project folder and it gets a page of its own with an embedded reader
+(BookReader): each page is rendered to an image at generation time, and the reader pages through
+those. The source PDF itself is not published, so visitors read the document but don't get the file.
+
+### Offering the file (`publishOriginal: true`)
+
+To publish the PDF itself as well, set `publishOriginal` in its yaml:
+
+```yaml
+type: pdf
+caption: The Riverbend Type Specimen
+publishOriginal: true
+```
+
+The source file is copied into the site next to the artifact's page, and the page gains a
+**Download PDF** link. With `publishOriginal: false` — the default — no copy is made and no link
+appears.
+
 ## Videos
 
 Drop a Windows internet shortcut (`.url`) pointing at a YouTube video into your project folder and
