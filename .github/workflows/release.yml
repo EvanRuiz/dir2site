@@ -39,8 +39,8 @@ jobs:
           else
             TAG="${GITHUB_REF_NAME}"
           fi
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Validate version format
         run: |
@@ -98,13 +98,35 @@ jobs:
       contents: write
 
     steps:
+      # Same reasoning as the test matrix: this job is mostly small-file I/O, and the runner is
+      # ephemeral. Non-fatal, since Tamper Protection can refuse it.
+      - name: Disable Defender real-time scanning
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: powershell
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.create-release.outputs.tag }}
 
-      - uses: actions/setup-dotnet@v5
+      # No setup-dotnet: the runner images already ship the 10.0.x SDK, and the action was
+      # downloading a second identical copy — 297MB and ~32s on each Windows leg.
+
+      # Set from a step because the runner context does not exist in a job-level env block.
+      - name: Put the NuGet package cache on the fast disk
+        shell: bash
+        run: echo "NUGET_PACKAGES=$RUNNER_TEMP/nuget-packages" >> "$GITHUB_ENV"
+
+      # Keyed by RID as well as project files: each leg restores a different runtime pack, so one
+      # shared entry would have the four of them overwriting each other every release. The tool
+      # manifest is in the key because local tools (vpk) restore into this same folder.
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
         with:
-          dotnet-version: '10.0.x'
+          path: ${{ runner.temp }}/nuget-packages
+          key: nuget-release-${{ matrix.rid }}-${{ hashFiles('**/*.csproj', 'dotnet-tools.json') }}
+          restore-keys: nuget-release-${{ matrix.rid }}-
 
       - name: Publish
         env:
@@ -132,7 +154,10 @@ jobs:
           brew install create-dmg
           mkdir -p dmg-source
           unzip "releases/${{ matrix.rid }}/"*Portable.zip -d dmg-source/
-          # Velopack outputs the app using the lowercase packId
+          # Velopack outputs the app using the lowercase packId, so the match has to ignore
+          # case — which a plain glob cannot do. Kept as-is rather than rewritten: this is the
+          # release packaging path, and it cannot be exercised without cutting a release.
+          # shellcheck disable=SC2010
           APP_NAME=$(ls dmg-source/ | grep -i "\.app$" | head -1)
           # Sign after Velopack unpacks — signing before pack breaks the
           # signature because Velopack modifies the bundle contents.

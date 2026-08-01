@@ -11,3 +11,20 @@ jobs:
   # Shared with release.yml so pull requests and releases run the identical matrix.
   test:
     uses: ./.github/workflows/tests.yml
+
+  # A workflow whose expressions don't evaluate never creates a job, so it fails as an empty red
+  # run with no check attached to it — nothing for a branch protection rule to block on, and it
+  # reads as "no checks yet" rather than as a failure. That is how a bad workflow reached main in
+  # #94 and took CI out entirely.
+  #
+  # actionlint catches it statically, including which contexts are legal where, which was the
+  # specific mistake. Linux is fine here even while the test matrix is paused on it (#88): this
+  # never builds or runs the app.
+  lint-workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Pinned rather than :latest so a new release can't fail the build on a rule nobody added.
+      - uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
