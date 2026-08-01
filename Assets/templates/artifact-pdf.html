@@ -6,6 +6,7 @@
   <title>{{ site.title | html.escape }}{{ if artifact.caption != "" }} &mdash; {{ artifact.caption | html.escape }}{{ end }}</title>
   {{ include 'opengraph' }}
   <link rel="stylesheet" href="{{ prefix }}js/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="{{ prefix }}js/bootstrap-icons/bootstrap-icons.css">
   <link rel="stylesheet" href="{{ prefix }}css/site.css">
   <link rel="stylesheet" href="{{ prefix }}js/bookreader/BookReader.css">
 </head>
@@ -17,7 +18,7 @@
   <div class="container artifact-meta">
     <div class="d-flex align-items-center gap-2 mb-1">
       <h4 class="mb-0">{{ artifact.caption | html.escape }}</h4>
-      <span class="badge badge-type text-white">{{ artifact.badge | html.escape }}</span>
+      {{ include 'badge' artifact.badge artifact.badge_icon }}
     </div>
     {{ if artifact.author != "" }}<p class="text-muted small mb-1">{{ artifact.author | html.escape }}</p>{{ end }}
     {{ if artifact.credit != "" }}<p class="text-muted small mb-1">{{ artifact.credit | html.escape }}</p>{{ end }}

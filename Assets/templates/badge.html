@@ -1,0 +1,3 @@
+{{~ # $0 is this template's own name, so the caller's arguments start at $1: label, then class. ~}}
+{{~ # The class comes from TypeIcon, never a yaml, so it is the one part here that needn't escape. ~}}
+<span class="badge badge-type text-white"><i class="bi {{ $2 }}" aria-hidden="true"></i> {{ $1 | html.escape }}</span>

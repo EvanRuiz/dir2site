@@ -43,6 +43,7 @@ public static class SiteGenerator
         // one step rather than a counted stage.
         progress.Report("Copying framework assets...");
         CopyBootstrapAssets(siteRoot, progress);
+        CopyBootstrapIconsAssets(siteRoot, progress);
         CopyOpenSeaDragonAssets(siteRoot, progress);
         CopyBookReaderAssets(siteRoot, progress);
 
@@ -271,13 +272,14 @@ public static class SiteGenerator
         string prefix,
         string directoryRoot)
     {
-        string caption, badge, href, imgSrc;
+        string caption, badge, badgeIcon, href, imgSrc;
         var video = item.Artifact as Video;
 
         if (item.IsDirectory)
         {
             caption = PublicName(item.Name);
-            badge = "Folder";
+            badge = ItemCountBadge(item);
+            badgeIcon = "bi-folder-fill";
             href = $"{PublicName(item.Name)}/";
             var firstArtifactResult = FindFirstArtifactWithPreview(item);
             imgSrc = firstArtifactResult.HasValue
@@ -288,6 +290,7 @@ public static class SiteGenerator
         {
             caption = item.Artifact?.Caption ?? item.Name;
             badge = item.Artifact != null ? TypeBadge(item.Artifact.Type) : "File";
+            badgeIcon = item.Artifact != null ? TypeIcon(item.Artifact.Type) : "bi-file-earmark";
             var stem = Path.GetFileNameWithoutExtension(item.Name);
             // A video has no page of its own, so linking to one would be a dead link.
             href = video != null ? "" : $"{stem}/";
@@ -297,6 +300,7 @@ public static class SiteGenerator
         var obj = new ScriptObject();
         obj.SetValue("caption", caption, readOnly: true);
         obj.SetValue("badge", badge, readOnly: true);
+        obj.SetValue("badge_icon", badgeIcon, readOnly: true);
         obj.SetValue("href", href, readOnly: true);
         obj.SetValue("img_src", imgSrc, readOnly: true);
         obj.SetValue("is_folder", item.IsDirectory, readOnly: true);
@@ -313,7 +317,31 @@ public static class SiteGenerator
     private static string TypeBadge(ArtifactType type) => type switch
     {
         ArtifactType.Markdown => "Article",
+        ArtifactType.Pdf => "PDF",
         _ => type.ToString(),
+    };
+
+    /// <summary>
+    /// What a folder's card says in place of a type. The count is of the cards its own page will
+    /// show — the same filter GeneratePage uses — so clicking through never contradicts the badge.
+    /// </summary>
+    private static string ItemCountBadge(DirectoryTreeItem folder)
+    {
+        var count = folder.Children.Count(c => !IsMenuOnly(c));
+        return count == 1 ? "1 item" : $"{count} items";
+    }
+
+    // Bootstrap Icons class paired with the label above. Never user-supplied, so templates emit it
+    // unescaped.
+    private static string TypeIcon(ArtifactType type) => type switch
+    {
+        ArtifactType.Video     => "bi-play-btn-fill",
+        ArtifactType.Pdf       => "bi-file-earmark-pdf-fill",
+        ArtifactType.Photo     => "bi-image",
+        ArtifactType.Deepzoom  => "bi-zoom-in",
+        ArtifactType.Markdown  => "bi-file-text",
+        ArtifactType.Directory => "bi-folder-fill",
+        _ => "bi-file-earmark",
     };
 
     private static (Artifact, string)? FindFirstArtifactWithPreview(DirectoryTreeItem node)
@@ -514,6 +542,7 @@ public static class SiteGenerator
         artifactObj.SetValue("credit", artifact.Credit ?? "", readOnly: true);
         artifactObj.SetValue("date", artifact.Date ?? "", readOnly: true);
         artifactObj.SetValue("badge", TypeBadge(artifact.Type), readOnly: true);
+        artifactObj.SetValue("badge_icon", TypeIcon(artifact.Type), readOnly: true);
         artifactObj.SetValue("preview_src", previewSrc, readOnly: true);
 
         string templateName;
@@ -709,6 +738,20 @@ public static class SiteGenerator
 
         foreach (var (uri, dest) in files)
             CopyEmbeddedIfStale(uri, dest, progress);
+    }
+
+    private static void CopyBootstrapIconsAssets(string siteRoot, IProgress<string>? progress)
+    {
+        const string baseUri = "avares://dir2site/Assets/icons/bootstrap-icons-1.13.1/font/";
+        var destBase = Path.Combine(siteRoot, "js", "bootstrap-icons");
+
+        // The stylesheet reaches its fonts as ./fonts/..., so the two have to keep this layout.
+        CopyEmbeddedFile(
+            $"{baseUri}bootstrap-icons.css",
+            Path.Combine(destBase, "bootstrap-icons.css"),
+            progress);
+
+        CopyEmbeddedDirectory($"{baseUri}fonts/", Path.Combine(destBase, "fonts"), progress);
     }
 
     /// <returns>

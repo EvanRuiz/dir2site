@@ -52,11 +52,15 @@ body {
 .badge-type {
   background-color: {{ site.secondary_color }};
 }
+/* The word space after the glyph reads tight at badge size; this opens it up without a gap. */
+.badge-type .bi { margin-right: 2px; }
 
 /* Directory listing (page) */
 
 .card-img-top { object-fit: cover; aspect-ratio: 4/3; width: 100%; }
 .card-img-placeholder { aspect-ratio: 4/3; background-color: {{ site.secondary_color }}; }
+/* Sized in rem so the stand-in glyph keeps its proportions against the card, not the viewport. */
+.card-img-placeholder-icon { font-size: 3rem; opacity: 0.75; }
 
 /* Artifact shared */
 
