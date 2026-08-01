@@ -16,7 +16,8 @@
           <img src="{{ item.img_src }}" class="card-img-top" alt="{{ item.caption | html.escape }}">
           {{- else }}
           <div class="card-img-placeholder d-flex align-items-center justify-content-center text-white">
-            <span>{{ item.badge | html.escape }}</span>
+            {{- # A big type glyph stands in for the missing picture better than the word does. }}
+            <i class="bi {{ item.badge_icon }} card-img-placeholder-icon" role="img" aria-label="{{ item.badge | html.escape }}"></i>
           </div>
           {{- end }}
           <div class="card-body">
@@ -26,13 +27,13 @@
             {{- if item.credit != "" }}
             <p class="card-text text-body-secondary small mb-2">{{ item.credit | html.escape }}</p>
             {{- end }}
-            <span class="badge badge-type text-white">{{ item.badge | html.escape }}</span>
+            {{ include 'badge' item.badge item.badge_icon }}
             {{- if item.url_text != "" && item.video_url != "" }}
             <a class="video-source-link small ms-2" href="{{ item.video_url | html.escape }}" target="_blank" rel="noopener noreferrer">{{ item.url_text | html.escape }}</a>
             {{- end }}
             {{- else }}
             <h5 class="card-title"><a href="{{ item.href }}" class="stretched-link text-decoration-none text-body">{{ item.caption | html.escape }}</a></h5>
-            <span class="badge badge-type text-white">{{ item.badge | html.escape }}</span>
+            {{ include 'badge' item.badge item.badge_icon }}
             {{- end }}
           </div>
         </div>

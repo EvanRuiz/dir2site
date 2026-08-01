@@ -6,6 +6,7 @@
   <title>{{ site.title | html.escape }}{{ if artifact.caption != "" }} &mdash; {{ artifact.caption | html.escape }}{{ end }}</title>
   {{ include 'opengraph' }}
   <link rel="stylesheet" href="{{ prefix }}js/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="{{ prefix }}js/bootstrap-icons/bootstrap-icons.css">
   <link rel="stylesheet" href="{{ prefix }}css/site.css">
 </head>
 <body class="artifact-markdown">
@@ -17,7 +18,7 @@
     </article>
 
     <div class="artifact-meta border-top mt-4 pt-3">
-      <span class="badge badge-type text-white">{{ artifact.badge | html.escape }}</span>
+      {{ include 'badge' artifact.badge artifact.badge_icon }}
       {{ if artifact.credit != "" }}<span class="text-muted small ms-2">{{ artifact.credit | html.escape }}</span>{{ end }}
       {{ if artifact.date != "" }}<span class="text-muted small ms-2">{{ artifact.date | html.escape }}</span>{{ end }}
     </div>

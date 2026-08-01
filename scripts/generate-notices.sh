@@ -164,6 +164,10 @@ for search_dir, rel_prefix in [
         full_path = os.path.join(search_dir, folder)
         if not os.path.isdir(full_path):
             continue
+        # A Finder duplicate ("bootstrap-icons-1.13.1 2") is not a second dependency, and once it
+        # lands in this table it reads as one we actually ship.
+        if re.search(r' \d+$', folder):
+            continue
         meta = match_meta(folder)
         if not meta:
             continue
