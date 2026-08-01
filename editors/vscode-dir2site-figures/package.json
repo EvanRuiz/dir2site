@@ -1,0 +1,39 @@
+{
+  "name": "dir2site-figures",
+  "displayName": "dir2site figures",
+  "description": "Renders dir2site's ^^^ figure blocks and {.figure-right} image attributes in VS Code's Markdown preview.",
+  "version": "0.1.0",
+  "publisher": "dir2site",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EvanRuiz/dir2site.git",
+    "directory": "editors/vscode-dir2site-figures"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:markdown"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "markdown.markdownItPlugins": true,
+    "markdown.previewStyles": [
+      "./media/dir2site-figures.css"
+    ],
+    "configuration": {
+      "title": "dir2site figures",
+      "properties": {
+        "dir2siteFigures.hardLineBreaks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Treat a single newline as a line break, matching how dir2site renders Markdown. Applies to every Markdown preview in the window; takes effect when the preview is next opened."
+        }
+      }
+    }
+  }
+}

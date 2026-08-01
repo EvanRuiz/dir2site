@@ -320,44 +320,59 @@
 
                         <!-- Deploy over SFTP -->
                         <StackPanel Spacing="4" Margin="0,4,0,0">
-                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                <TextBlock Text="Deploy:" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
-                                <!-- Only worth the space when there's actually a choice to make. -->
-                                <ComboBox ItemsSource="{Binding DeployTargetList}"
-                                          SelectedItem="{Binding SelectedTarget}"
-                                          IsVisible="{Binding HasMultipleTargets}"
-                                          MinWidth="120" FontSize="11" Padding="6,2"
-                                          VerticalAlignment="Center">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate x:DataType="m:DeployTarget">
-                                            <TextBlock Text="{Binding Name}" FontSize="11"/>
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                </ComboBox>
-                                <Button Content="Configure…"
-                                        Command="{Binding ConfigureSftpCommand}"
+                            <DockPanel LastChildFill="False">
+                                <!-- Right-docked first so they keep their width when the row is
+                                     tight, and because in a DockPanel the first one docked lands
+                                     furthest right — which is where this one goes. -->
+                                <Button DockPanel.Dock="Right"
+                                        Content="Check for Updates"
+                                        Command="{Binding CheckForUpdatesCommand}"
+                                        ToolTip.Tip="Ask GitHub whether a newer dir2site has been released"
+                                        FontSize="11" Padding="6,3" Margin="6,0,0,0"/>
+                                <Button DockPanel.Dock="Right"
+                                        Content="Install VS Code Extension"
+                                        Command="{Binding InstallVsCodeExtensionCommand}"
+                                        ToolTip.Tip="Adds ^^^ figure preview to VS Code's Markdown preview"
                                         FontSize="11" Padding="6,3"/>
-                                <Button Content="Quick Sync"
-                                        Command="{Binding QuickSyncCommand}"
-                                        ToolTip.Tip="{Binding SyncBlockedReason}"
-                                        FontSize="11" Padding="6,3"/>
-                                <Button Content="Verify &amp; Repair"
-                                        Command="{Binding VerifyAndRepairCommand}"
-                                        ToolTip.Tip="{Binding SyncBlockedReason}"
-                                        FontSize="11" Padding="6,3"/>
-                                <!-- Replaces nothing; appears only while a sync is actually running. -->
-                                <Button Content="Cancel"
-                                        Command="{Binding CancelSyncCommand}"
-                                        IsVisible="{Binding IsSyncing}"
-                                        FontSize="11" Padding="6,3"/>
-                                <CheckBox Content="Force full re-upload"
-                                          IsChecked="{Binding ForceFullReupload}"
-                                          FontSize="11" VerticalAlignment="Center"/>
-                                <CheckBox Content="Preview first"
-                                          IsChecked="{Binding PreviewBeforeDeploy}"
-                                          ToolTip.Tip="Show what would be uploaded, and confirm, before deploying"
-                                          FontSize="11" VerticalAlignment="Center"/>
-                            </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <TextBlock Text="Deploy:" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+                                    <!-- Only worth the space when there's actually a choice to make. -->
+                                    <ComboBox ItemsSource="{Binding DeployTargetList}"
+                                              SelectedItem="{Binding SelectedTarget}"
+                                              IsVisible="{Binding HasMultipleTargets}"
+                                              MinWidth="120" FontSize="11" Padding="6,2"
+                                              VerticalAlignment="Center">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="m:DeployTarget">
+                                                <TextBlock Text="{Binding Name}" FontSize="11"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <Button Content="Configure…"
+                                            Command="{Binding ConfigureSftpCommand}"
+                                            FontSize="11" Padding="6,3"/>
+                                    <Button Content="Quick Sync"
+                                            Command="{Binding QuickSyncCommand}"
+                                            ToolTip.Tip="{Binding SyncBlockedReason}"
+                                            FontSize="11" Padding="6,3"/>
+                                    <Button Content="Verify &amp; Repair"
+                                            Command="{Binding VerifyAndRepairCommand}"
+                                            ToolTip.Tip="{Binding SyncBlockedReason}"
+                                            FontSize="11" Padding="6,3"/>
+                                    <!-- Replaces nothing; appears only while a sync is actually running. -->
+                                    <Button Content="Cancel"
+                                            Command="{Binding CancelSyncCommand}"
+                                            IsVisible="{Binding IsSyncing}"
+                                            FontSize="11" Padding="6,3"/>
+                                    <CheckBox Content="Force full re-upload"
+                                              IsChecked="{Binding ForceFullReupload}"
+                                              FontSize="11" VerticalAlignment="Center"/>
+                                    <CheckBox Content="Preview first"
+                                              IsChecked="{Binding PreviewBeforeDeploy}"
+                                              ToolTip.Tip="Show what would be uploaded, and confirm, before deploying"
+                                              FontSize="11" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </DockPanel>
                             <!-- A greyed-out button that never says why is its own small bug. -->
                             <TextBlock Text="{Binding SyncBlockedReason}"
                                        IsVisible="{Binding SyncBlockedReason, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
