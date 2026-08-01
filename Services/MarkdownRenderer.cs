@@ -29,12 +29,23 @@ public static partial class MarkdownRenderer
     /// source file (at <c>{folder}/{stem}/index.html</c>), so a reference such as
     /// <c>_media/figure.webp</c> still resolves once <c>_media</c> is copied verbatim into the site.
     /// </summary>
-    public static string ToHtml(string mdFilePath)
+    public static string ToHtml(string mdFilePath) =>
+        FileToHtml(mdFilePath, rewriteRelativeUrls: true);
+
+    /// <summary>
+    /// Renders a <c>.md</c> file, choosing whether relative URLs gain a <c>../</c> segment.
+    ///
+    /// They need one when the page sits a directory deeper than the source, which is where an
+    /// artifact page normally goes. A folder holding nothing but this one article publishes it as
+    /// the folder's own index instead, level with the source, and then the segment would be one
+    /// too many — <c>_media/figure.webp</c> is already correct from there.
+    /// </summary>
+    public static string FileToHtml(string mdFilePath, bool rewriteRelativeUrls)
     {
         string text;
         try { text = File.ReadAllText(mdFilePath); }
         catch { return string.Empty; }
-        return ToHtml(text, rewriteRelativeUrls: true);
+        return ToHtml(text, rewriteRelativeUrls);
     }
 
     /// <summary>

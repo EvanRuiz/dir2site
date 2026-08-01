@@ -82,6 +82,9 @@ public class SiteGeneratorTests : IDisposable
     {
         var nested = MakeFolder("Photographs", "1890s");
         MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        // A second artifact keeps 1890s a collection: a folder holding one is published as that
+        // artifact, and these tests are about the menu and staleness, not about that.
+        MakeArtifact(nested, "Landscape.jpg", "A Landscape");
         MakeFolder("Documents");
 
         Generate(Config());
@@ -102,6 +105,9 @@ public class SiteGeneratorTests : IDisposable
     {
         var nested = MakeFolder("Photographs", "1890s");
         MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        // A second artifact keeps 1890s a collection: a folder holding one is published as that
+        // artifact, and these tests are about the menu and staleness, not about that.
+        MakeArtifact(nested, "Landscape.jpg", "A Landscape");
 
         Generate(Config("Old Title"));
         Generate(Config("New Title"));
@@ -116,6 +122,10 @@ public class SiteGeneratorTests : IDisposable
     {
         var nested = MakeFolder("Photographs", "1890s");
         MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        // Two to begin with, so 1890s is a collection before and after: a folder holding a single
+        // artifact publishes it as the folder's own index, and the arrival of a second would move
+        // that page rather than simply adding a card.
+        MakeArtifact(nested, "Sketch.jpg", "A Sketch");
 
         Generate(Config());
         Assert.DoesNotContain("A Landscape", ReadPage("Photographs", "1890s"));
@@ -134,6 +144,9 @@ public class SiteGeneratorTests : IDisposable
     {
         var nested = MakeFolder("Photographs", "1890s");
         MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        // A second artifact keeps 1890s a collection: a folder holding one is published as that
+        // artifact, and these tests are about the menu and staleness, not about that.
+        MakeArtifact(nested, "Landscape.jpg", "A Landscape");
         MakeFolder("Documents");
 
         Generate(Config());
@@ -153,7 +166,10 @@ public class SiteGeneratorTests : IDisposable
     public void OnlyThePagesThatChanged_GetRewritten()
     {
         MakeFolder("Photographs", "1890s");
-        MakeArtifact(MakeFolder("Documents"), "Letter.jpg", "A Letter");
+        var documents = MakeFolder("Documents");
+        MakeArtifact(documents, "Letter.jpg", "A Letter");
+        // Keeps Documents a collection, so Letter has a page of its own whose mtime can be compared.
+        MakeArtifact(documents, "Memo.jpg", "A Memo");
 
         Generate(Config());
         var before = PageMtimes();
