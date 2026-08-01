@@ -350,12 +350,17 @@ public class GenerateProgressTests : IDisposable
     {
         var folder = MakeFolder("Photographs");
         MakeArtifactWithPreviews(folder, "Portrait.jpg", "A Portrait");
+        // Already a collection before the newcomer arrives. With a single artifact the folder
+        // publishes it as its own index, and adding a second would move that page into a
+        // directory of its own — making the existing artifact look new too, which is a different
+        // story than the one this test tells.
+        MakeArtifactWithPreviews(folder, "Landscape.jpg", "A Landscape");
         Generate();
 
         File.WriteAllText(Path.Combine(folder, "Newcomer.md"), "# Newcomer\n\nJust dropped in.\n");
 
         var artifacts = Generate().Artifacts;
-        Assert.Equal(2, artifacts.Total);
+        Assert.Equal(3, artifacts.Total);
         Assert.Equal(1, artifacts.New);
         Assert.Equal(0, artifacts.Updated);
 

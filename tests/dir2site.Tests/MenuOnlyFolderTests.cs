@@ -133,6 +133,9 @@ public class MenuOnlyFolderTests : IDisposable
     {
         var about = MakeFolder("-About");
         MakeArtifact(about, "Team.jpg", "The Team");
+        // Two, so the folder stays a collection — one artifact on its own is published as the
+        // folder's index instead, which SingleItemFolderTests covers.
+        MakeArtifact(about, "Office.jpg", "The Office");
 
         Generate();
 
@@ -150,6 +153,7 @@ public class MenuOnlyFolderTests : IDisposable
         // asset paths would most easily drift apart.
         var about = MakeFolder("-About");
         MakeArtifact(about, "Team.jpg", "The Team");
+        MakeArtifact(about, "Office.jpg", "The Office");
         var previewDir = Path.Combine(about, ".dir2site", "Team");
         Directory.CreateDirectory(previewDir);
         File.WriteAllText(Path.Combine(previewDir, "Team-preview.jpg"), "thumb");

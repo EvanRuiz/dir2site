@@ -76,6 +76,9 @@ public static class SiteGenerator
     /// </summary>
     private static int CountPages(DirectoryTreeItem node)
     {
+        // A folder published as its single artifact writes one page, not two.
+        if (SoleArtifact(node) != null) return 1;
+
         var count = 1;
         foreach (var child in node.Children)
         {
@@ -98,6 +101,23 @@ public static class SiteGenerator
         ConcurrentBag<string> errors,
         GenerateProgressTracker tracker)
     {
+        // The site root always gets a home page, however little is in it.
+        if (depth > 0 && SoleArtifact(node) is { } soleArtifact)
+        {
+            try
+            {
+                var soleChange = GenerateArtifactPage(soleArtifact, outputDir, directoryRoot, config,
+                    topLevelFolders, depth, ancestorNames, templates, progress, atFolderIndex: true);
+                tracker.PageDone(soleChange);
+                tracker.ArtifactChanged(soleChange);
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"{soleArtifact.Name}: {ex.Message}");
+            }
+            return;
+        }
+
         var label = depth == 0 ? "index.html" : $"{PublicName(node.Name)}/index.html";
 
         Directory.CreateDirectory(outputDir);
@@ -388,6 +408,27 @@ public static class SiteGenerator
         return string.Join('/', parts);
     }
 
+    /// <summary>
+    /// The single artifact a folder exists to show, or null when the folder is a collection.
+    ///
+    /// A folder holding one article and nothing else has no collection to present — a page whose
+    /// only content is one card pointing at the thing you already asked for. That folder publishes
+    /// the artifact as its own index instead, so clicking "About" in the menu lands on the article.
+    /// </summary>
+    /// <remarks>
+    /// A lone video is not promoted: videos play inline and have no page of their own, so there
+    /// would be nothing to put at the folder's index. A lone sub-folder is not followed either —
+    /// collapsing chains of folders gets surprising quickly.
+    /// </remarks>
+    private static DirectoryTreeItem? SoleArtifact(DirectoryTreeItem node)
+    {
+        if (node.Children.Count != 1) return null;
+
+        var only = node.Children[0];
+        if (only.IsDirectory || only.Artifact == null) return null;
+        return only.Artifact.Type == ArtifactType.Video ? null : only;
+    }
+
     private static string RelativePrefix(int depth) =>
         string.Concat(Enumerable.Repeat("../", depth));
 
@@ -470,11 +511,16 @@ public static class SiteGenerator
         int depth,
         IList<string> ancestorNames,
         TemplateSet templates,
-        IProgress<string>? progress)
+        IProgress<string>? progress,
+        bool atFolderIndex = false)
     {
         var artifact = item.Artifact!;
         var stem = Path.GetFileNameWithoutExtension(item.Name);
-        var outputDir = Path.Combine(parentOutputDir, stem);
+
+        // Normally the page goes in a folder of its own, one level below its source. When it is
+        // the only thing in its folder it takes the folder's own index, level with the source —
+        // which is what the depth-dependent paths below have to account for.
+        var outputDir = atFolderIndex ? parentOutputDir : Path.Combine(parentOutputDir, stem);
         Directory.CreateDirectory(outputDir);
 
         var indexHtmlPath = Path.Combine(outputDir, "index.html");
@@ -507,7 +553,13 @@ public static class SiteGenerator
 
         var caption = artifact.Caption ?? stem;
         var previewSrc = GetPreviewSrc(artifact, directoryRoot, prefix, stem);
-        var previewLargeSrc = GetPreviewLargeSrc(artifact, stem);
+
+        // An artifact's generated assets are copied to {folder}/{stem}/ and are normally addressed
+        // by bare filename, because the page sits in that same directory. Published at the folder's
+        // index the page is one level up, so they need the segment back. (preview_src is built from
+        // the site root and is already right either way.)
+        var assetPrefix = atFolderIndex ? $"{stem}/" : "";
+        var previewLargeSrc = WithAssetPrefix(assetPrefix, GetPreviewLargeSrc(artifact, stem));
 
         var artifactObj = new ScriptObject();
         artifactObj.SetValue("caption", caption, readOnly: true);
@@ -522,7 +574,7 @@ public static class SiteGenerator
             case ArtifactType.Photo:
             case ArtifactType.Deepzoom:
                 // Prefer the full-res WebP; fall back to large preview if image not yet generated
-                var osdSrc = GetImageSrc(artifact, stem);
+                var osdSrc = WithAssetPrefix(assetPrefix, GetImageSrc(artifact, stem));
                 if (string.IsNullOrEmpty(osdSrc))
                     osdSrc = previewLargeSrc;
                 artifactObj.SetValue("image_src", osdSrc, readOnly: true);
@@ -531,12 +583,16 @@ public static class SiteGenerator
 
             case ArtifactType.Pdf:
                 artifactObj.SetValue("author", (artifact as Document)?.Author ?? "", readOnly: true);
-                artifactObj.SetValue("bookreader_data", BuildBookReaderData(artifact, stem), readOnly: true);
+                artifactObj.SetValue(
+                    "bookreader_data", BuildBookReaderData(artifact, stem, assetPrefix), readOnly: true);
                 templateName = "artifact-pdf";
                 break;
 
             case ArtifactType.Markdown:
-                artifactObj.SetValue("html_content", MarkdownRenderer.ToHtml(item.FullPath), readOnly: true);
+                artifactObj.SetValue(
+                    "html_content",
+                    MarkdownRenderer.FileToHtml(item.FullPath, rewriteRelativeUrls: !atFolderIndex),
+                    readOnly: true);
                 templateName = "artifact-markdown";
                 break;
 
@@ -587,7 +643,10 @@ public static class SiteGenerator
         return StripDir2SitePrefix(photo.Image, stem);
     }
 
-    private static string BuildBookReaderData(Artifact artifact, string stem)
+    private static string WithAssetPrefix(string assetPrefix, string src) =>
+        assetPrefix.Length == 0 || src.Length == 0 ? src : assetPrefix + src;
+
+    private static string BuildBookReaderData(Artifact artifact, string stem, string assetPrefix)
     {
         if (artifact.RootFolder == null) return "[]";
         var jsonPath = Path.Combine(artifact.RootFolder, ".dir2site", stem, $"{stem}.bookreader.json");
@@ -600,16 +659,17 @@ public static class SiteGenerator
             var dataArray = doc?["data"]?.AsArray();
             if (dataArray == null) return "[]";
 
-            // Remap URIs: detail page is one level below the folder, so prepend ../
-            foreach (var spread in dataArray)
+            // Page images are addressed relative to the page, so they only need adjusting when the
+            // page has moved up to the folder's index.
+            if (assetPrefix.Length > 0)
             {
-                if (spread is not JsonArray pages) continue;
-                foreach (var page in pages)
+                foreach (var spread in dataArray)
                 {
-                    if (page?["uri"] is JsonValue uriVal)
+                    if (spread is not JsonArray pages) continue;
+                    foreach (var page in pages)
                     {
-                        var uri = uriVal.GetValue<string>();
-                        page["uri"] = uri;
+                        if (page?["uri"] is JsonValue uriVal)
+                            page["uri"] = assetPrefix + uriVal.GetValue<string>();
                     }
                 }
             }

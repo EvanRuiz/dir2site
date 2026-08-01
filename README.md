@@ -38,6 +38,16 @@ editor; metadata (caption, credit, date) lives in the YAML sidecar like every ot
 Markdown is rendered to HTML for the site, previewed live in the app, and a thumbnail of the
 rendered page is generated for collection cards.
 
+### Folders holding a single item
+
+A folder with exactly one artifact in it publishes that artifact as the folder's own page, rather
+than a collection page whose only content is one card. So `-About/Our Story.md` is served at
+`/About/` — clicking **About** in the menu shows the article itself.
+
+Two things are deliberately left alone: a folder holding only a video (videos play inline and have
+no page of their own, so there is nothing to promote), and a folder holding only another folder
+(collapsing chains of folders gets surprising quickly).
+
 ### Choosing a folder's picture (`cover: true`)
 
 A folder's card is illustrated by whichever artifact inside it sorts first, which is rarely the one
