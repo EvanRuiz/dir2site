@@ -264,4 +264,23 @@ public class SiteGeneratorTests : IDisposable
         Assert.Empty(Directory.EnumerateFiles(SitePath(), "*.pdf", SearchOption.AllDirectories));
         Assert.DoesNotContain("Download PDF", ReadPage("Documents", "Letter"));
     }
+
+    [AvaloniaFact]
+    public void TurningPublishOriginalBackOff_TakesTheAlreadyPublishedPdfDownAgain()
+    {
+        // Generation is otherwise additive, so without this the file stayed in _site and reachable
+        // — the opposite of what turning the flag off is asking for.
+        var documents = MakeFolder("Documents");
+        MakePdf(documents, "Letter.pdf", "A Letter", publishOriginal: true);
+        MakePdf(documents, "Memo.pdf", "A Memo", publishOriginal: false);
+
+        Generate(Config());
+        Assert.True(File.Exists(SitePath("Documents", "Letter", "Letter.pdf")));
+
+        MakePdf(documents, "Letter.pdf", "A Letter", publishOriginal: false);
+        Generate(Config());
+
+        Assert.False(File.Exists(SitePath("Documents", "Letter", "Letter.pdf")));
+        Assert.True(File.Exists(SitePath("Documents", "Letter", "index.html")));
+    }
 }

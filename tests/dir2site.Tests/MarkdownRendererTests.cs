@@ -14,7 +14,7 @@ namespace dir2site.Tests;
 public class MarkdownRendererTests
 {
     private static string Render(string markdown) =>
-        MarkdownRenderer.ToHtml(markdown, rewriteRelativeUrls: true);
+        MarkdownRenderer.ToHtml(markdown, pageIsNested: true);
 
     [Fact]
     public void ASingleNewline_BreaksTheLine()
@@ -183,12 +183,32 @@ public class MarkdownRendererTests
     }
 
     [Fact]
-    public void WithRewritingOff_RelativeUrlsAreUntouched()
+    public void OnAPageThatIsNotNested_RelativeUrlsKeepTheirDepth()
     {
-        var html = MarkdownRenderer.ToHtml("![fig](_media/figure.webp)", rewriteRelativeUrls: false);
+        var html = MarkdownRenderer.ToHtml("![fig](_media/figure.webp)", pageIsNested: false);
 
         Assert.Contains("src=\"_media/figure.webp\"", html);
         Assert.DoesNotContain("../", html);
+    }
+
+    [Fact]
+    public void OnAPageThatIsNotNested_AMarkdownLinkStillPointsAtItsPublishedFolder()
+    {
+        // The ../ is about the page's depth; a .md target is wrong at any depth, because the site
+        // never publishes the file. A sole-artifact article is the layout where they differ.
+        var html = MarkdownRenderer.ToHtml("See the [paper](../Notes/brownian-motion.md).", pageIsNested: false);
+
+        Assert.Contains("href=\"../Notes/brownian-motion/\"", html);
+        Assert.DoesNotContain(".md\"", html);
+    }
+
+    [Fact]
+    public void ALinkIntoAnUnderscoreFolder_KeepsItsExtension()
+    {
+        // An "_"-folder is copied verbatim, so _media/notes.md really is served as that file.
+        var html = Render("See the [notes](_media/notes.md).");
+
+        Assert.Contains("href=\"../_media/notes.md\"", html);
     }
 
     // Artifact metadata lives in the sidecar YAML, so front matter in the body is parsed and dropped

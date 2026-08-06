@@ -58,9 +58,17 @@ public static class SiteGenerator
             [], templates, progress, errors, tracker, homePromotions);
 
         var copyJobs = new List<CopyJob>();
-        CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs);
+        var stalePaths = new List<string>();
+        CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs, stalePaths);
         CollectUnderscoreFolderCopyJobs(directoryRoot, directoryRoot, siteRoot, copyJobs);
         CollectLogoCopyJob(directoryRoot, siteRoot, config.Logo, copyJobs);
+
+        // Before copying, so a file that is both stale and about to be re-copied can't be deleted
+        // after the copy that replaced it.
+        foreach (var path in stalePaths)
+        {
+            try { File.Delete(path); } catch (Exception ex) { errors.Add($"{Path.GetFileName(path)}: {ex.Message}"); }
+        }
 
         tracker.SetFileTotal(copyJobs.Count);
         foreach (var job in copyJobs)
@@ -569,7 +577,14 @@ public static class SiteGenerator
 
     // Walks the tree one directory at a time. Each artifact's previews live in .dir2site/{stem}/
     // so they are self-contained — copy the whole subfolder straight into the artifact's output dir.
-    private static void CollectFolderPreviewCopyJobs(DirectoryTreeItem node, string directoryRoot, string siteRoot, List<CopyJob> jobs)
+    /// <param name="stale">
+    /// Files that must not be in the site any more. Generation is otherwise additive — nothing
+    /// prunes <c>_site</c> — which for <c>publishOriginal</c> would mean turning the flag back off
+    /// left the PDF published and reachable, quietly contradicting the default it was turned off
+    /// to restore.
+    /// </param>
+    private static void CollectFolderPreviewCopyJobs(
+        DirectoryTreeItem node, string directoryRoot, string siteRoot, List<CopyJob> jobs, List<string> stale)
     {
         var folderRel = Path.GetRelativePath(directoryRoot, node.FullPath);
 
@@ -586,6 +601,8 @@ public static class SiteGenerator
             // than a generated one, so it doesn't depend on previews having been generated.
             if (child.Artifact is Pdf { PublishOriginal: true })
                 jobs.Add(new CopyJob(child.FullPath, Path.Combine(destDir, child.Name), child.Name));
+            else if (child.Artifact is Pdf)
+                stale.Add(Path.Combine(destDir, child.Name));
 
             var stemDir = Path.Combine(node.FullPath, ".dir2site", stem);
             if (!Directory.Exists(stemDir)) continue;
@@ -598,7 +615,7 @@ public static class SiteGenerator
         }
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
-            CollectFolderPreviewCopyJobs(child, directoryRoot, siteRoot, jobs);
+            CollectFolderPreviewCopyJobs(child, directoryRoot, siteRoot, jobs, stale);
     }
 
     // Copies every "_"-prefixed folder (e.g. _media) verbatim into _site at its relative path, so
@@ -739,7 +756,7 @@ public static class SiteGenerator
             case ArtifactType.Markdown:
                 artifactObj.SetValue(
                     "html_content",
-                    MarkdownRenderer.FileToHtml(item.FullPath, rewriteRelativeUrls: !atFolderIndex),
+                    MarkdownRenderer.FileToHtml(item.FullPath, pageIsNested: !atFolderIndex),
                     readOnly: true);
                 templateName = "artifact-markdown";
                 break;

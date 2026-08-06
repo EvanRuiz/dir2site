@@ -30,7 +30,7 @@ public static partial class MarkdownRenderer
     /// <c>_media/figure.webp</c> still resolves once <c>_media</c> is copied verbatim into the site.
     /// </summary>
     public static string ToHtml(string mdFilePath) =>
-        FileToHtml(mdFilePath, rewriteRelativeUrls: true);
+        FileToHtml(mdFilePath, pageIsNested: true);
 
     /// <summary>
     /// Renders a <c>.md</c> file, choosing whether relative URLs gain a <c>../</c> segment.
@@ -40,26 +40,33 @@ public static partial class MarkdownRenderer
     /// the folder's own index instead, level with the source, and then the segment would be one
     /// too many — <c>_media/figure.webp</c> is already correct from there.
     /// </summary>
-    public static string FileToHtml(string mdFilePath, bool rewriteRelativeUrls)
+    public static string FileToHtml(string mdFilePath, bool pageIsNested)
     {
         string text;
         try { text = File.ReadAllText(mdFilePath); }
         catch { return string.Empty; }
-        return ToHtml(text, rewriteRelativeUrls);
+        return ToHtml(text, pageIsNested);
     }
 
     /// <summary>
-    /// Renders Markdown text to HTML. When <paramref name="rewriteRelativeUrls"/> is true,
-    /// relative <c>src</c>/<c>href</c> URLs (in both Markdown links/images and raw HTML) are
-    /// prefixed with <c>../</c> (see <see cref="ToHtml(string)"/>), and an <c>href</c> naming a
-    /// sibling <c>.md</c> file is pointed at that article's published <c>stem/</c> folder. URLs
-    /// inside <c>&lt;pre&gt;</c> and <c>&lt;code&gt;</c> spans are left verbatim so documented
-    /// markup renders as written.
+    /// Renders Markdown text to HTML and points relative <c>src</c>/<c>href</c> URLs — in both
+    /// Markdig-emitted links/images and raw HTML — at where the site actually publishes them. An
+    /// <c>href</c> naming a sibling <c>.md</c> file is pointed at that article's published
+    /// <c>stem/</c> folder always; the extra <c>../</c> segment is added only when
+    /// <paramref name="pageIsNested"/> (see <see cref="ToHtml(string)"/>). URLs inside
+    /// <c>&lt;pre&gt;</c> and <c>&lt;code&gt;</c> spans are left verbatim so documented markup
+    /// renders as written.
     /// </summary>
-    public static string ToHtml(string markdown, bool rewriteRelativeUrls)
+    /// <remarks>
+    /// The two rewrites are independent and were once gated together: <c>../</c> compensates for
+    /// the page's depth, while a <c>.md</c> target is wrong at any depth because the site never
+    /// publishes the file. Gating both meant a sole-artifact article — published at its folder's
+    /// index, so not nested — emitted its cross-article links verbatim and 404'd.
+    /// </remarks>
+    public static string ToHtml(string markdown, bool pageIsNested)
     {
         var html = Markdig.Markdown.ToHtml(markdown, Pipeline);
-        return rewriteRelativeUrls ? RewriteRelativeUrls(html) : html;
+        return RewriteRelativeUrls(html, pageIsNested);
     }
 
     // Rewrites relative src=""/href="" attributes — covering both Markdig-emitted links/images and
@@ -70,7 +77,7 @@ public static partial class MarkdownRenderer
     // that documents HTML markup must render its samples verbatim. Markdig escapes " to &quot;
     // inside code but leaves ' alone, so without this a single-quoted src='…' in a fenced block
     // would be silently rewritten.
-    private static string RewriteRelativeUrls(string html) =>
+    private static string RewriteRelativeUrls(string html, bool pageIsNested) =>
         AttrUrlRegex().Replace(html, m =>
         {
             if (m.Groups["skip"].Success) return m.Value;
@@ -80,7 +87,7 @@ public static partial class MarkdownRenderer
             if (attr.StartsWith("href", StringComparison.OrdinalIgnoreCase))
                 url = MapMarkdownTargetToPublishedFolder(url);
             var q = m.Groups["q"].Value;
-            return $"{attr}{q}../{url}{q}";
+            return $"{attr}{q}{(pageIsNested ? "../" : "")}{url}{q}";
         });
 
     // An author writing in an editor that resolves links locally points a cross-article link at the
@@ -88,12 +95,17 @@ public static partial class MarkdownRenderer
     // article becomes the folder brownian-motion/ — so the href is pointed there instead. Any
     // ?query or #fragment rides along unchanged.
     //
-    // href only: a src="" naming a .md is not a page link, and _media is copied verbatim.
+    // href only: a src="" naming a .md is not a page link.
     private static string MapMarkdownTargetToPublishedFolder(string url)
     {
         var cut = url.IndexOfAny(['?', '#']);
         var path = cut < 0 ? url : url[..cut];
         if (!path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) return url;
+
+        // An "_"-folder is copied into the site verbatim, so it is the one place a .md really is
+        // published as a file — linking to _media/notes.md means the file, not an article page.
+        foreach (var segment in path.Split('/'))
+            if (segment.StartsWith('_')) return url;
 
         var stem = path[..^".md".Length];
         // ".md" on its own, or a trailing "dir/.md", names no article — leave it be.
