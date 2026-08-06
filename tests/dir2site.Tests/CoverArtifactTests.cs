@@ -106,6 +106,29 @@ public class CoverArtifactTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void AnExplicitParentCoverFalse_TurnsOffTheLegacySpelling()
+    {
+        // Otherwise a project carrying the old key could never un-choose its cover except by
+        // hand-editing the key it has just been told to stop using.
+        var folder = MakeFolder("Photographs");
+        MakeArtifact(folder, "Apple.jpg", "Apple");
+        MakeArtifact(folder, "Zebra.jpg", "Zebra");
+        File.WriteAllText(Path.Combine(folder, "Zebra.jpg.yaml"),
+            """
+            type: photo
+            caption: Zebra
+            preview: .dir2site/Zebra/Zebra-preview.jpg
+            previewLarge: .dir2site/Zebra/Zebra-preview-large.jpg
+            cover: true
+            parent-cover: false
+            """);
+
+        Generate();
+
+        Assert.Contains("Apple/Apple-preview.jpg", ReadPage());
+    }
+
+    [AvaloniaFact]
     public void AGrandparentCoverRepresentsAFolderOfFolders()
     {
         // Nothing sits directly in Trips, so no parent-cover could ever speak for it.

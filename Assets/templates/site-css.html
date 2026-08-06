@@ -177,6 +177,9 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 
 /* Markdown artifact */
 
+/* The 820px column is also MarkdownPreviewRenderer.SiteColumnWidth, which reads an authored
+   figure width as a fraction of it so the card thumbnail matches the page. SiteColumnWidthTests
+   fails if the two drift apart. */
 .markdown-body { max-width: 820px; margin: 0 auto; line-height: 1.7; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3,
 .markdown-body h4, .markdown-body h5, .markdown-body h6 { margin-top: 1.6rem; margin-bottom: 0.8rem; }

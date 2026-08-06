@@ -74,7 +74,8 @@ Trips/Japan/Cherry Blossom.jpg    grandparent-cover: true
 A `grandparent-cover` never outranks a real direct child, so a folder with its own photos still
 shows one of those.
 
-(`cover: true` is the older spelling of `parent-cover` and still works.)
+(`cover: true` is the older spelling of `parent-cover` and still works. Where a project carries
+both, `parent-cover` decides — including when it says `false`.)
 
 ### Featuring an item on the home page (`home: true`)
 
@@ -82,6 +83,10 @@ Add `home: true` to an artifact's YAML and it also gets a card on the home page,
 tree it actually lives. The card links to the artifact's real page — a video plays in place, as it
 does anywhere else — and the artifact keeps its ordinary card in its own folder, so nothing moves.
 Featured cards come after the home page's own contents.
+
+`parent-cover`, `grandparent-cover` and `home` are set in the YAML sidecar rather than in the app.
+The app shows an artifact's metadata but doesn't edit it — the sidecar is where per-artifact
+settings live, for these as for `publishOriginal` and everything else.
 
 ### Menu-only sections (`-`-folders)
 
@@ -112,6 +117,10 @@ Like the hyphen, the plus is stripped everywhere a visitor can see: the folder i
 `/Archive/Newspapers/`, and its breadcrumbs still show the full path it really lives at. The two
 markers are independent, so `-Newspapers+` is a folder reachable from the menu and the home page
 but not from its parent's listing.
+
+Because the markers are stripped, `Newspapers+` and a plain `Newspapers` beside it would publish to
+the same address and one would overwrite the other. Generate Site reports that rather than letting
+a folder's pages vanish quietly.
 
 ### Static media (`_media` and other `_`-folders)
 

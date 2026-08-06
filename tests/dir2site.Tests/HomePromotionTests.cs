@@ -65,15 +65,15 @@ public class HomePromotionTests : IDisposable
              """);
     }
 
-    private void Generate()
+    private IReadOnlyList<string> Generate()
     {
         var tree = DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>());
-        SiteGenerator.Generate(_root, tree, new Dir2SiteModel
+        return SiteGenerator.Generate(_root, tree, new Dir2SiteModel
         {
             Title = "My Site",
             Footer = "© 2026",
             SiteUrl = "https://example.test",
-        });
+        }).Errors;
     }
 
     [AvaloniaFact]
@@ -186,6 +186,29 @@ public class HomePromotionTests : IDisposable
 
         Assert.Contains("href=\"Pages/About/\"", ReadPage());
         Assert.False(Directory.Exists(Path.Combine(_root, "_site", "Pages", "About", "Story")));
+    }
+
+    [AvaloniaFact]
+    public void TwoSiblingsThatPublishToTheSamePlaceAreReported()
+    {
+        // The markers are stripped from the published name, so these both become /Archive/News/
+        // and one overwrites the other. Which one the author meant isn't ours to guess — but going
+        // quiet about a folder's worth of pages disappearing isn't an option either.
+        MakePhoto(MakeFolder("Archive", "News+"), "Apple.jpg", "Apple");
+        MakePhoto(MakeFolder("Archive", "News"), "Zebra.jpg", "Zebra");
+
+        var errors = Generate();
+
+        Assert.Contains(errors, e => e.Contains("News+") && e.Contains("publish as \"News\""));
+    }
+
+    [AvaloniaFact]
+    public void FoldersThatPublishToDifferentPlacesAreNotReported()
+    {
+        MakePhoto(MakeFolder("Archive", "News+"), "Apple.jpg", "Apple");
+        MakePhoto(MakeFolder("Archive", "Letters"), "Zebra.jpg", "Zebra");
+
+        Assert.Empty(Generate());
     }
 
     [AvaloniaFact]
