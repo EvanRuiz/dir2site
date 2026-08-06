@@ -472,12 +472,19 @@ public static class SiteGenerator
         foreach (var child in node.Children.Where(c => !c.IsDirectory && c.Artifact != null))
         {
             var stem = Path.GetFileNameWithoutExtension(child.Name);
-            var stemDir = Path.Combine(node.FullPath, ".dir2site", stem);
-            if (!Directory.Exists(stemDir)) continue;
 
             var destDir = folderRel == "."
                 ? Path.Combine(siteRoot, stem)
                 : Path.Combine(siteRoot, PublicRelativePath(folderRel), stem);
+
+            // `publishOriginal: true` puts the source PDF itself in the site, next to the page
+            // images, so the artifact page can offer it for download. It is the source file rather
+            // than a generated one, so it doesn't depend on previews having been generated.
+            if (child.Artifact is Pdf { PublishOriginal: true })
+                jobs.Add(new CopyJob(child.FullPath, Path.Combine(destDir, child.Name), child.Name));
+
+            var stemDir = Path.Combine(node.FullPath, ".dir2site", stem);
+            if (!Directory.Exists(stemDir)) continue;
 
             foreach (var file in Directory.EnumerateFiles(stemDir, "*", SearchOption.AllDirectories))
             {
@@ -614,6 +621,14 @@ public static class SiteGenerator
                 artifactObj.SetValue("author", (artifact as Document)?.Author ?? "", readOnly: true);
                 artifactObj.SetValue(
                     "bookreader_data", BuildBookReaderData(artifact, stem, assetPrefix), readOnly: true);
+                // Empty unless the source PDF was published alongside the page images, so the
+                // template can't offer a download of a file that isn't there.
+                artifactObj.SetValue(
+                    "original_src",
+                    artifact is Pdf { PublishOriginal: true }
+                        ? WithAssetPrefix(assetPrefix, Uri.EscapeDataString(item.Name))
+                        : "",
+                    readOnly: true);
                 templateName = "artifact-pdf";
                 break;
 

@@ -67,6 +67,22 @@ public class SiteGeneratorTests : IDisposable
              """);
     }
 
+    /// <summary>
+    /// Writes a fake PDF plus the yaml that makes it show up in the tree, with `publishOriginal`
+    /// set either way. No page images: publishing the original is about the source file, so it
+    /// must not depend on previews having been generated.
+    /// </summary>
+    private void MakePdf(string folder, string fileName, string caption, bool publishOriginal)
+    {
+        File.WriteAllText(Path.Combine(folder, fileName), "not really a pdf");
+        File.WriteAllText(Path.Combine(folder, fileName + ".yaml"),
+            $"""
+             type: pdf
+             caption: {caption}
+             publishOriginal: {(publishOriginal ? "true" : "false")}
+             """);
+    }
+
     private (string Summary, IReadOnlyList<string> Errors) Generate(Dir2SiteModel config)
     {
         var tree = DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>());
@@ -188,5 +204,36 @@ public class SiteGeneratorTests : IDisposable
                      after[SitePath("Documents", "index.html")]);
         Assert.Equal(before[SitePath("Documents", "Letter", "index.html")],
                      after[SitePath("Documents", "Letter", "index.html")]);
+    }
+
+    [AvaloniaFact]
+    public void PublishOriginal_PutsTheSourcePdfBesideItsPageAndOffersTheDownload()
+    {
+        var documents = MakeFolder("Documents");
+        // A space in the name, because the href has to survive being a URL.
+        MakePdf(documents, "Type Specimen.pdf", "A Type Specimen", publishOriginal: true);
+        // A second artifact keeps Documents a collection, so each PDF has a page of its own.
+        MakePdf(documents, "Letter.pdf", "A Letter", publishOriginal: false);
+
+        Generate(Config());
+
+        Assert.True(File.Exists(SitePath("Documents", "Type Specimen", "Type Specimen.pdf")));
+        var page = ReadPage("Documents", "Type Specimen");
+        Assert.Contains("href=\"Type%20Specimen.pdf\"", page);
+        Assert.Contains("Download PDF", page);
+    }
+
+    [AvaloniaFact]
+    public void WithoutPublishOriginal_TheSourcePdfStaysOutOfTheSite()
+    {
+        var documents = MakeFolder("Documents");
+        MakePdf(documents, "Letter.pdf", "A Letter", publishOriginal: false);
+        // A second artifact keeps Documents a collection, so each PDF has a page of its own.
+        MakePdf(documents, "Memo.pdf", "A Memo", publishOriginal: false);
+
+        Generate(Config());
+
+        Assert.Empty(Directory.EnumerateFiles(SitePath(), "*.pdf", SearchOption.AllDirectories));
+        Assert.DoesNotContain("Download PDF", ReadPage("Documents", "Letter"));
     }
 }
