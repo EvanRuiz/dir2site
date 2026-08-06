@@ -51,8 +51,10 @@ public static partial class MarkdownRenderer
     /// <summary>
     /// Renders Markdown text to HTML. When <paramref name="rewriteRelativeUrls"/> is true,
     /// relative <c>src</c>/<c>href</c> URLs (in both Markdown links/images and raw HTML) are
-    /// prefixed with <c>../</c> (see <see cref="ToHtml(string)"/>). URLs inside <c>&lt;pre&gt;</c>
-    /// and <c>&lt;code&gt;</c> spans are left verbatim so documented markup renders as written.
+    /// prefixed with <c>../</c> (see <see cref="ToHtml(string)"/>), and an <c>href</c> naming a
+    /// sibling <c>.md</c> file is pointed at that article's published <c>stem/</c> folder. URLs
+    /// inside <c>&lt;pre&gt;</c> and <c>&lt;code&gt;</c> spans are left verbatim so documented
+    /// markup renders as written.
     /// </summary>
     public static string ToHtml(string markdown, bool rewriteRelativeUrls)
     {
@@ -74,9 +76,31 @@ public static partial class MarkdownRenderer
             if (m.Groups["skip"].Success) return m.Value;
             var url = m.Groups["url"].Value;
             if (!IsRelativeUrl(url)) return m.Value;
+            var attr = m.Groups["attr"].Value;
+            if (attr.StartsWith("href", StringComparison.OrdinalIgnoreCase))
+                url = MapMarkdownTargetToPublishedFolder(url);
             var q = m.Groups["q"].Value;
-            return $"{m.Groups["attr"].Value}{q}../{url}{q}";
+            return $"{attr}{q}../{url}{q}";
         });
+
+    // An author writing in an editor that resolves links locally points a cross-article link at the
+    // sibling source file (brownian-motion.md). The site never publishes the .md itself — the
+    // article becomes the folder brownian-motion/ — so the href is pointed there instead. Any
+    // ?query or #fragment rides along unchanged.
+    //
+    // href only: a src="" naming a .md is not a page link, and _media is copied verbatim.
+    private static string MapMarkdownTargetToPublishedFolder(string url)
+    {
+        var cut = url.IndexOfAny(['?', '#']);
+        var path = cut < 0 ? url : url[..cut];
+        if (!path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) return url;
+
+        var stem = path[..^".md".Length];
+        // ".md" on its own, or a trailing "dir/.md", names no article — leave it be.
+        if (stem.Length == 0 || stem.EndsWith('/')) return url;
+
+        return cut < 0 ? $"{stem}/" : $"{stem}/{url[cut..]}";
+    }
 
     // The (?<![\w-]) guard keeps the attribute name whole, so data-src="…" and the like are left
     // alone rather than being treated as a bare src.

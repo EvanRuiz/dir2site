@@ -130,6 +130,50 @@ public class MarkdownRendererTests
         Assert.DoesNotContain("../", html);
     }
 
+    // Authors write cross-article links the way their editor resolves them — at the sibling source
+    // file. The .md is never copied into the site (the article publishes as a folder), so the href
+    // has to be pointed at the folder or it 404s.
+    [Theory]
+    [InlineData("brownian-motion.md", "../brownian-motion/")]
+    [InlineData("papers/brownian-motion.md", "../papers/brownian-motion/")]
+    [InlineData("../Notes/entry.MD", "../../Notes/entry/")]
+    [InlineData("brownian-motion.md#abstract", "../brownian-motion/#abstract")]
+    [InlineData("brownian-motion.md?v=2", "../brownian-motion/?v=2")]
+    public void ALinkToASiblingMarkdownFile_PointsAtItsPublishedFolder(string url, string expected)
+    {
+        var html = Render($"See the [paper]({url}).");
+
+        Assert.Contains($"href=\"{expected}\"", html);
+    }
+
+    // Nothing here names an article: ".md" alone is a dotfile, and a src is not a page link — while
+    // _media (the one place a .md could be served as a file) is copied verbatim.
+    [Theory]
+    [InlineData("""[label](.md)""", "href=\"../.md\"")]
+    [InlineData("""[label](notes/.md)""", "href=\"../notes/.md\"")]
+    [InlineData("""<img src="_media/diagram.md">""", "src=\"../_media/diagram.md\"")]
+    public void MarkdownSuffixesThatAreNotPageLinks_KeepTheirExtension(string markdown, string expected)
+    {
+        var html = Render(markdown);
+
+        Assert.Contains(expected, html);
+    }
+
+    [Fact]
+    public void AMarkdownLinkInsideACodeBlock_KeepsItsExtension()
+    {
+        // Single-quoted, since Markdig escapes " to &quot; inside code but leaves ' alone — that is
+        // the form that reaches the rewriter unescaped.
+        var html = Render("""
+            ```html
+            <a href='brownian-motion.md'>paper</a>
+            ```
+            """);
+
+        Assert.Contains("href='brownian-motion.md'", html);
+        Assert.DoesNotContain("brownian-motion/", html);
+    }
+
     [Fact]
     public void RawHtmlFigures_AreRewrittenLikeMarkdownImages()
     {
