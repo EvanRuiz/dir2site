@@ -209,6 +209,8 @@ public static class SiteGenerator
         var html = templates.Collection.Render(context);
         tracker.PageDone(WriteIfChanged(indexHtmlPath, html, Encoding.UTF8));
 
+        ReportPublicNameCollisions(node, errors);
+
         foreach (var child in node.Children.Where(c => c.IsDirectory))
         {
             var childOutputDir = Path.Combine(outputDir, PublicName(child.Name));
@@ -457,6 +459,26 @@ public static class SiteGenerator
     /// It is the folder-shaped counterpart of an artifact's "home: true".
     /// </summary>
     private const char HomePromotedSuffix = '+';
+
+    /// <summary>
+    /// Warns when two sibling folders publish to the same place. The markers are stripped from the
+    /// published name, so "Newspapers+" and a plain "Newspapers" beside it both become
+    /// /Newspapers/ and one silently overwrites the other — a folder's worth of pages disappearing
+    /// with nothing said. Reporting is all this does: which one the author meant isn't ours to guess.
+    /// </summary>
+    private static void ReportPublicNameCollisions(DirectoryTreeItem node, ConcurrentBag<string> errors)
+    {
+        var clashes = node.Children
+            .Where(c => c.IsDirectory)
+            .GroupBy(c => PublicName(c.Name), StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1);
+
+        foreach (var clash in clashes)
+        {
+            var names = string.Join(", ", clash.Select(c => c.Name));
+            errors.Add($"{names}: these folders all publish as \"{clash.Key}\" — only one of them will survive.");
+        }
+    }
 
     private static bool IsMenuOnly(DirectoryTreeItem item) =>
         item.IsDirectory && item.Name.Length > 1 && item.Name[0] == MenuOnlyPrefix;

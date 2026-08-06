@@ -30,10 +30,11 @@ public static partial class MarkdownPreviewRenderer
     private const int SmallWidth = 800, SmallHeight = 600;
     private const float Pad = 44f;
 
-    // The column the published article is laid out in (.markdown-body's max-width). An authored
-    // figure width is read as a fraction of it, so this preview and the page agree about how big a
-    // figure looks.
-    private const float SiteColumnWidth = 820f;
+    // The column the published article is laid out in (.markdown-body's max-width in
+    // Assets/templates/site-css.html). An authored figure width is read as a fraction of it, so
+    // this preview and the page agree about how big a figure looks. SiteColumnWidthTests fails if
+    // the two drift apart.
+    internal const float SiteColumnWidth = 820f;
 
     /// <summary>
     /// Renders <paramref name="mdFile"/> to <c>.dir2site/{stem}/preview-{stem}.webp</c> (800×600)
