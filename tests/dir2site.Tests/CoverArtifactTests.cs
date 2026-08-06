@@ -12,9 +12,10 @@ namespace dir2site.Tests;
 
 /// <summary>
 /// Which picture represents a folder. Left alone, the generator takes whichever artifact sorts
-/// first, which is rarely the one that says what the collection is — <c>cover: true</c> is how an
-/// author overrides that. It drives the folder's card on the parent page and the page's own
-/// og:image, so a shared link gets the chosen picture too.
+/// first, which is rarely the one that says what the collection is — <c>parent-cover: true</c> is
+/// how an author overrides that, and <c>grandparent-cover: true</c> reaches one level further for
+/// a folder that holds nothing but sub-folders. It drives the folder's card on the parent page and
+/// the page's own og:image, so a shared link gets the chosen picture too.
 /// </summary>
 public class CoverArtifactTests : IDisposable
 {
@@ -40,7 +41,7 @@ public class CoverArtifactTests : IDisposable
         return path;
     }
 
-    private void MakeArtifact(string folder, string fileName, string caption, bool cover = false)
+    private void MakeArtifact(string folder, string fileName, string caption, string marker = "")
     {
         var stem = Path.GetFileNameWithoutExtension(fileName);
         File.WriteAllText(Path.Combine(folder, fileName), "not really a jpeg");
@@ -50,7 +51,7 @@ public class CoverArtifactTests : IDisposable
              caption: {caption}
              preview: .dir2site/{stem}/{stem}-preview.jpg
              previewLarge: .dir2site/{stem}/{stem}-preview-large.jpg
-             {(cover ? "cover: true" : "")}
+             {(marker.Length > 0 ? marker + ": true" : "")}
              """);
     }
 
@@ -82,7 +83,65 @@ public class CoverArtifactTests : IDisposable
     {
         var folder = MakeFolder("Photographs");
         MakeArtifact(folder, "Apple.jpg", "Apple");
-        MakeArtifact(folder, "Zebra.jpg", "Zebra", cover: true);
+        MakeArtifact(folder, "Zebra.jpg", "Zebra", "parent-cover");
+
+        Generate();
+        var home = ReadPage();
+
+        Assert.Contains("Zebra/Zebra-preview.jpg", home);
+        Assert.DoesNotContain("Apple/Apple-preview.jpg", home);
+    }
+
+    [AvaloniaFact]
+    public void ThePreRenameSpellingStillWorks()
+    {
+        // Projects written before parent-cover existed keep the cover they chose.
+        var folder = MakeFolder("Photographs");
+        MakeArtifact(folder, "Apple.jpg", "Apple");
+        MakeArtifact(folder, "Zebra.jpg", "Zebra", "cover");
+
+        Generate();
+
+        Assert.Contains("Zebra/Zebra-preview.jpg", ReadPage());
+    }
+
+    [AvaloniaFact]
+    public void AGrandparentCoverRepresentsAFolderOfFolders()
+    {
+        // Nothing sits directly in Trips, so no parent-cover could ever speak for it.
+        MakeFolder("Trips");
+        var japan = MakeFolder("Trips", "Japan");
+        MakeArtifact(japan, "Apple.jpg", "Apple");
+        MakeArtifact(japan, "Zebra.jpg", "Zebra", "grandparent-cover");
+
+        Generate();
+
+        Assert.Contains("Zebra/Zebra-preview.jpg", ReadPage());
+    }
+
+    [AvaloniaFact]
+    public void AGrandparentCoverDoesNotOutrankTheFoldersOwnPhotos()
+    {
+        var trips = MakeFolder("Trips");
+        MakeArtifact(trips, "Apple.jpg", "Apple");
+        var japan = MakeFolder("Trips", "Japan");
+        MakeArtifact(japan, "Zebra.jpg", "Zebra", "grandparent-cover");
+
+        Generate();
+
+        Assert.Contains("Apple/Apple-preview.jpg", ReadPage());
+    }
+
+    [AvaloniaFact]
+    public void AGrandparentCoverBeatsTheFirstSubFolderTheScanWouldReach()
+    {
+        // Left alone, a folder of folders shows whatever the first sub-folder turns up — here Alps,
+        // which sorts first. The marker is how the author says which one it should be.
+        MakeFolder("Trips");
+        var alps = MakeFolder("Trips", "Alps");
+        MakeArtifact(alps, "Apple.jpg", "Apple");
+        var japan = MakeFolder("Trips", "Japan");
+        MakeArtifact(japan, "Zebra.jpg", "Zebra", "grandparent-cover");
 
         Generate();
         var home = ReadPage();
@@ -104,7 +163,7 @@ public class CoverArtifactTests : IDisposable
             caption: The Report
             preview: .dir2site/Report/Report-preview.jpg
             previewLarge: .dir2site/Report/Report-preview-large.jpg
-            cover: true
+            parent-cover: true
             """);
 
         Generate();
@@ -117,7 +176,7 @@ public class CoverArtifactTests : IDisposable
     {
         var folder = MakeFolder("Photographs");
         MakeArtifact(folder, "Apple.jpg", "Apple");
-        MakeArtifact(folder, "Zebra.jpg", "Zebra", cover: true);
+        MakeArtifact(folder, "Zebra.jpg", "Zebra", "parent-cover");
 
         Generate();
         var page = ReadPage("Photographs");
@@ -134,7 +193,7 @@ public class CoverArtifactTests : IDisposable
         var parent = MakeFolder("Photographs");
         MakeArtifact(parent, "Apple.jpg", "Apple");
         var nested = MakeFolder("Photographs", "1890s");
-        MakeArtifact(nested, "Zebra.jpg", "Zebra", cover: true);
+        MakeArtifact(nested, "Zebra.jpg", "Zebra", "parent-cover");
 
         Generate();
 
@@ -148,7 +207,7 @@ public class CoverArtifactTests : IDisposable
         var folder = MakeFolder("Photographs");
         File.WriteAllText(Path.Combine(folder, "Broken.jpg"), "not really a jpeg");
         File.WriteAllText(Path.Combine(folder, "Broken.jpg.yaml"),
-            "type: photo\ncaption: Broken\ncover: true\n");
+            "type: photo\ncaption: Broken\nparent-cover: true\n");
         MakeArtifact(folder, "Apple.jpg", "Apple");
 
         Generate();
