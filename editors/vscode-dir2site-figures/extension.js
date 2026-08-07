@@ -20,6 +20,11 @@ function activate() {
       const config = vscode.workspace.getConfiguration('dir2siteFigures');
       if (config.get('hardLineBreaks', true)) {
         md.set({ breaks: true });
+        // The option alone doesn't hold: VS Code applies its own markdown.preview.breaks to this
+        // same instance after extendMarkdownIt returns, so a newline went back to being a space
+        // and hand-wrapped paragraphs previewed as one long line while the site broke them.
+        // Nothing re-applies renderer rules, so setting the rule is what actually sticks.
+        md.renderer.rules.softbreak = () => '<br>\n';
       }
 
       return md.use(dir2siteFigures);

@@ -33,8 +33,8 @@ function normalise(html) {
 }
 
 let failures = 0;
-function check(name, src, expected) {
-  const actual = normalise(md.render(src));
+function checkWith(instance, name, src, expected) {
+  const actual = normalise(instance.render(src));
   try {
     assert.strictEqual(actual, normalise(expected));
     console.log(`  ok   ${name}`);
@@ -45,6 +45,8 @@ function check(name, src, expected) {
     console.log(`       actual:   ${actual}`);
   }
 }
+
+const check = (name, src, expected) => checkWith(md, name, src, expected);
 
 console.log('dir2site figure plugin');
 
@@ -112,6 +114,32 @@ check(
   'a malformed attribute block stays visible instead of vanishing',
   '![](a.jpg){.unclosed\n',
   '<p><img src="a.jpg" alt="" />{.unclosed</p>'
+);
+
+/**
+ * The extension itself, with `vscode` stubbed. This exercises the one thing the plugin can't:
+ * VS Code hands extendMarkdownIt a live instance and then applies its own markdown.preview.breaks
+ * to it afterwards, so an instance built without `breaks` — and re-set without it — still has to
+ * come out breaking lines the way dir2site does.
+ */
+const Module = require('node:module');
+const load = Module._load;
+Module._load = (request, ...rest) =>
+  request === 'vscode'
+    ? { workspace: { getConfiguration: () => ({ get: (_, fallback) => fallback }) } }
+    : load(request, ...rest);
+const extension = require('./extension');
+Module._load = load;
+
+const hosted = new MarkdownIt({ html: true });
+extension.activate().extendMarkdownIt(hosted);
+hosted.set({ breaks: false }); // what VS Code does to us after we've had our turn
+
+checkWith(
+  hosted,
+  'lines still break after the host resets the option',
+  'First line\nSecond line\n',
+  '<p>First line<br>\nSecond line</p>'
 );
 
 console.log(failures === 0 ? '\nall passed' : `\n${failures} failed`);

@@ -52,6 +52,25 @@ public partial class DirectoryTreeItem : ObservableObject
     /// <summary>Any errors encountered while parsing the YAML file.</summary>
     public List<string> YamlErrors { get; } = new();
 
+    /// <summary>
+    /// Things in the YAML that parsed but do nothing — a misspelled setting. The artifact loaded,
+    /// so this is not an error, and saying so in the same breath would make a typo look like a
+    /// failure.
+    /// </summary>
+    public List<string> YamlWarnings { get; } = new();
+
+    /// <summary>
+    /// Both, as one line each for the tree to show. Filled in while the tree is built, before
+    /// anything binds to them, so they need no change notification.
+    /// </summary>
+    public bool HasYamlErrors => YamlErrors.Count > 0;
+
+    public string YamlErrorText => string.Join("  ", YamlErrors);
+
+    public bool HasYamlWarnings => YamlWarnings.Count > 0;
+
+    public string YamlWarningText => string.Join("  ", YamlWarnings);
+
     public ObservableCollection<DirectoryTreeItem> Children { get; } = new();
 
     public DirectoryTreeItem() { }

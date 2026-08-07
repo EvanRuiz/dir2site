@@ -177,6 +177,9 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 
 /* Markdown artifact */
 
+/* The 820px column is also MarkdownPreviewRenderer.SiteColumnWidth, which reads an authored
+   figure width as a fraction of it so the card thumbnail matches the page. SiteColumnWidthTests
+   fails if the two drift apart. */
 .markdown-body { max-width: 820px; margin: 0 auto; line-height: 1.7; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3,
 .markdown-body h4, .markdown-body h5, .markdown-body h6 { margin-top: 1.6rem; margin-bottom: 0.8rem; }
@@ -204,8 +207,12 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
    {.figure-right} — but floating the image leaves the <figcaption> as a full-width block
    starting level with it, so the caption rendered beside the picture instead of under it.
    Floating the whole <figure> is the shape the :::figure-* container already uses and gets
-   right: the image and its caption then stack inside a box that is itself pulled aside. */
-.markdown-body figure { margin: 1.4em 0; text-align: center; }
+   right: the image and its caption then stack inside a box that is itself pulled aside.
+
+   fit-content is what keeps an authored {width=220} honest: the box is sized by the image's
+   own width rather than spanning whatever is available, so the caption sits under a picture
+   that is still the width the author asked for. max-width stays as the runaway guard. */
+.markdown-body figure { width: fit-content; max-width: 100%; margin: 1.4em 0; text-align: center; }
 .markdown-body figure:has(img.figure-right) { float: right; max-width: 45%; margin: 0.3em 0 1.2em 1.6em; }
 .markdown-body figure:has(img.figure-left)  { float: left;  max-width: 45%; margin: 0.3em 1.6em 1.2em 0; }
 .markdown-body figure:has(img.figure-center) { margin: 1.4em auto; }
@@ -221,3 +228,7 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 .markdown-body .figure-center p:last-child, .markdown-body figure figcaption {
   font-size: 0.85em; color: #555; font-style: italic; margin: 0.4em 0 0;
 }
+/* Zero width with a 100% minimum takes the caption out of the figure's intrinsic sizing while
+   still filling it: without this a caption longer than the picture widens the whole box, and the
+   image's authored width no longer describes what the reader sees. */
+.markdown-body figure figcaption { width: 0; min-width: 100%; }

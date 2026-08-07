@@ -180,6 +180,25 @@ public class SingleItemFolderTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void ACrossArticleLinkResolvesFromTheFoldersOwnIndex()
+    {
+        // The published page is level with its source here, so it needs no ../ — but the .md target
+        // is still wrong, because the site publishes the article as a folder and never as a file.
+        var about = MakeFolder("About");
+        MakeArticle(about, "Our Story.md", "Our Story", "See the [notes](../Notes/Colophon.md).");
+        var notes = MakeFolder("Notes");
+        MakeArticle(notes, "Colophon.md", "Colophon");
+        MakeArticle(notes, "Other.md", "Other");
+
+        Generate();
+        var page = ReadPage("About");
+
+        Assert.Contains("href=\"../Notes/Colophon/\"", page);
+        Assert.DoesNotContain("Colophon.md", page);
+        Assert.True(File.Exists(SitePath("Notes", "Colophon", "index.html")));
+    }
+
+    [AvaloniaFact]
     public void TheSiteRootAlwaysKeepsItsHomePage()
     {
         // Even a site with one article needs somewhere for the menu and the title to live.
