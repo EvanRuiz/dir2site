@@ -20,7 +20,13 @@ namespace dir2site.Services;
 
 public static class SiteGenerator
 {
-    public static (string Summary, IReadOnlyList<string> Errors) Generate(
+    /// <returns>
+    /// What happened, what failed, and what merely didn't do anything. Warnings are kept apart
+    /// from errors because a misspelled setting or two folders competing for one address leave a
+    /// site that generated perfectly well — reporting them as errors would make every typo read
+    /// like a failed build.
+    /// </returns>
+    public static (string Summary, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings) Generate(
         string directoryRoot,
         DirectoryTreeItem rootItem,
         Dir2SiteModel config,
@@ -52,11 +58,12 @@ public static class SiteGenerator
         var templates = new TemplateSet(loader);
 
         var errors = new ConcurrentBag<string>();
-        ReportYamlErrors(rootItem, errors);
+        var warnings = new ConcurrentBag<string>();
+        ReportYamlNotes(rootItem, errors, warnings);
         tracker.SetPageTotal(CountPages(rootItem));
         var homePromotions = CollectHomePromotions(rootItem, directoryRoot);
         GeneratePage(rootItem, siteRoot, directoryRoot, config, topLevelFolders, 0,
-            [], templates, progress, errors, tracker, homePromotions);
+            [], templates, progress, errors, warnings, tracker, homePromotions);
 
         var copyJobs = new List<CopyJob>();
         var stalePaths = new List<string>();
@@ -77,7 +84,7 @@ public static class SiteGenerator
             tracker.FileDone(CopyFileIfNewer(job.Src, job.Dest, progress, job.Label));
         }
 
-        return ("Site generated → _site/", [.. errors]);
+        return ("Site generated → _site/", [.. errors], [.. warnings]);
     }
 
     /// <summary>
@@ -110,6 +117,7 @@ public static class SiteGenerator
         TemplateSet templates,
         IProgress<string> progress,
         ConcurrentBag<string> errors,
+        ConcurrentBag<string> warnings,
         GenerateProgressTracker tracker,
         IReadOnlyList<HomePromotion> homePromotions)
     {
@@ -210,13 +218,13 @@ public static class SiteGenerator
         var html = templates.Collection.Render(context);
         tracker.PageDone(WriteIfChanged(indexHtmlPath, html, Encoding.UTF8));
 
-        ReportPublicNameCollisions(node, errors);
+        ReportPublicNameCollisions(node, warnings);
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
         {
             var childOutputDir = Path.Combine(outputDir, PublicName(child.Name));
             GeneratePage(child, childOutputDir, directoryRoot, config, topLevelFolders,
-                depth + 1, childAncestors, templates, progress, errors, tracker, homePromotions);
+                depth + 1, childAncestors, templates, progress, errors, warnings, tracker, homePromotions);
         }
 
         // Videos play inline on this page, so they get no page of their own — generating one would
@@ -466,29 +474,38 @@ public static class SiteGenerator
     /// building the tree and nothing had ever read them, so a sidecar that failed to parse — or a
     /// setting spelled slightly wrong — was silent everywhere.
     /// </summary>
-    private static void ReportYamlErrors(DirectoryTreeItem node, ConcurrentBag<string> errors)
+    private static void ReportYamlNotes(
+        DirectoryTreeItem node, ConcurrentBag<string> errors, ConcurrentBag<string> warnings)
     {
         foreach (var error in node.YamlErrors) errors.Add(error);
-        foreach (var child in node.Children) ReportYamlErrors(child, errors);
+        foreach (var warning in node.YamlWarnings) warnings.Add(warning);
+        foreach (var child in node.Children) ReportYamlNotes(child, errors, warnings);
     }
 
     /// <summary>
-    /// Warns when two sibling folders publish to the same place. The markers are stripped from the
+    /// Warns when two siblings publish to the same place. A folder's markers are stripped from its
     /// published name, so "Newspapers+" and a plain "Newspapers" beside it both become
-    /// /Newspapers/ and one silently overwrites the other — a folder's worth of pages disappearing
-    /// with nothing said. Reporting is all this does: which one the author meant isn't ours to guess.
+    /// /Newspapers/; and an artifact publishes under its stem, so "Foo.jpg" lands on a sibling
+    /// folder "Foo" and "Foo.pdf" lands on "Foo.jpg". Either way one silently overwrites the other
+    /// — a page's worth of work disappearing with nothing said. Reporting is all this does: which
+    /// one the author meant isn't ours to guess.
     /// </summary>
-    private static void ReportPublicNameCollisions(DirectoryTreeItem node, ConcurrentBag<string> errors)
+    private static void ReportPublicNameCollisions(DirectoryTreeItem node, ConcurrentBag<string> warnings)
     {
-        var clashes = node.Children
-            .Where(c => c.IsDirectory)
-            .GroupBy(c => PublicName(c.Name), StringComparer.OrdinalIgnoreCase)
+        // Videos are left out: they play on the page they sit in and publish nothing of their own.
+        var published = node.Children
+            .Where(c => c.IsDirectory || (c.Artifact != null && c.Artifact.Type != ArtifactType.Video));
+
+        var clashes = published
+            .GroupBy(
+                c => c.IsDirectory ? PublicName(c.Name) : Path.GetFileNameWithoutExtension(c.Name),
+                StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Count() > 1);
 
         foreach (var clash in clashes)
         {
             var names = string.Join(", ", clash.Select(c => c.Name));
-            errors.Add($"{names}: these folders all publish as \"{clash.Key}\" — only one of them will survive.");
+            warnings.Add($"{names}: these all publish as \"{clash.Key}/\" — only one of them will survive.");
         }
     }
 

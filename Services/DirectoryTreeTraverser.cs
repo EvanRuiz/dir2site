@@ -78,7 +78,7 @@ public static class DirectoryTraverser
 
                 var child = new DirectoryTreeItem(file);
 
-                var artifact = YamlParser.TryParseYamlMeta(file, child.YamlErrors);
+                var artifact = YamlParser.TryParseYamlMeta(file, child.YamlErrors, child.YamlWarnings);
                 if (artifact != null)
                 {
                     artifact.RootFolder    = rootPath;

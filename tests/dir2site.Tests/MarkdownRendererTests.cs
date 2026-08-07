@@ -211,6 +211,18 @@ public class MarkdownRendererTests
         Assert.Contains("href=\"../_media/notes.md\"", html);
     }
 
+    [Theory]
+    [InlineData("_notes.md", "../_notes/")]
+    [InlineData("Archive/_notes.md", "../Archive/_notes/")]
+    public void AnArticleWhoseOwnNameStartsWithUnderscore_IsStillAnArticle(string url, string expected)
+    {
+        // Only directories are held out of the tree — nothing skips an "_"-prefixed file, so
+        // _notes.md is an ordinary article published at _notes/ like any other.
+        var html = Render($"See the [notes]({url}).");
+
+        Assert.Contains($"href=\"{expected}\"", html);
+    }
+
     // Artifact metadata lives in the sidecar YAML, so front matter in the body is parsed and dropped
     // rather than rendered as content.
     [Fact]

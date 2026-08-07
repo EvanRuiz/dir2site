@@ -39,13 +39,6 @@ public class Artifact
     /// </summary>
     public bool Cover {get; set;}
 
-    /// <remarks>
-    /// Nullable so that "absent" and "false" are different answers. A project carrying the legacy
-    /// <see cref="Cover"/> key otherwise had no way to un-choose its cover: "parent-cover: false"
-    /// would be read as the default and the legacy true would win, leaving hand-editing a key the
-    /// docs say not to use as the only way out.
-    /// </remarks>
-
     /// <summary>
     /// Marks this artifact as the picture for its own folder's card, in place of the one the
     /// generator would otherwise pick. Without it a collection is represented by whichever photo
@@ -53,6 +46,12 @@ public class Artifact
     ///
     /// Only meaningful on an artifact that has a preview, and only for the folder it sits in.
     /// </summary>
+    /// <remarks>
+    /// Nullable so that "absent" and "false" are different answers. A project carrying the legacy
+    /// <see cref="Cover"/> key otherwise had no way to un-choose its cover: "parent-cover: false"
+    /// would be read as the default and the legacy true would win, leaving hand-editing a key the
+    /// docs say not to use as the only way out.
+    /// </remarks>
     [YamlMember(Alias = "parent-cover", ApplyNamingConventions = false)]
     public bool? ParentCover {get; set;}
 

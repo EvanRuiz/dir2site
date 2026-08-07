@@ -62,7 +62,13 @@ public static class YamlParser
     /// If none exists and the file extension is a known media type, creates one from the default template.
     /// Returns the parsed <see cref="Artifact"/> (or null), and populates <paramref name="errors"/> on failure.
     /// </summary>
-    public static Artifact? TryParseYamlMeta(string filePath, List<string> errors)
+    /// <param name="warnings">
+    /// Where "this parsed, but something in it does nothing" goes — a misspelled key being the
+    /// case that exists. Separate from <paramref name="errors"/> because the artifact loaded fine,
+    /// and a typo shouldn't read like a failed generation. Optional so a caller that only wants the
+    /// artifact needn't invent a list.
+    /// </param>
+    public static Artifact? TryParseYamlMeta(string filePath, List<string> errors, List<string>? warnings = null)
     {
         var yamlPath = FindYamlMeta(filePath);
 
@@ -95,7 +101,7 @@ public static class YamlParser
             {
                 if (parse(yaml) is { } artifact)
                 {
-                    ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), errors);
+                    ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), warnings);
                     return artifact;
                 }
             }
@@ -109,7 +115,7 @@ public static class YamlParser
             {
                 if (attempt(yaml) is { } artifact)
                 {
-                    ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), errors);
+                    ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), warnings);
                     return artifact;
                 }
             }
@@ -133,8 +139,10 @@ public static class YamlParser
     /// <remarks>
     /// Read back as a plain map, so a commented-out setting is not a key and says nothing.
     /// </remarks>
-    private static void ReportUnknownKeys(string yaml, string yamlPath, Type modelType, List<string> errors)
+    private static void ReportUnknownKeys(string yaml, string yamlPath, Type modelType, List<string>? warnings)
     {
+        if (warnings == null) return;
+
         Dictionary<object, object>? doc;
         // A document that won't read as a map has a real problem, and it isn't this one.
         try { doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml); }
@@ -149,9 +157,11 @@ public static class YamlParser
 
         if (unknown.Count == 0) return;
 
-        var subject = unknown.Count == 1 ? "is not a setting" : "are not settings";
-        errors.Add(
-            $"{Path.GetFileName(yamlPath)}: {string.Join(", ", unknown)} {subject} dir2site knows, so nothing was done with it.");
+        var (subject, tail) = unknown.Count == 1
+            ? ("is not a setting", "it")
+            : ("are not settings", "them");
+        warnings.Add(
+            $"{Path.GetFileName(yamlPath)}: {string.Join(", ", unknown)} {subject} dir2site knows, so nothing was done with {tail}.");
     }
 
     // Reflected once per model — the same handful of types are parsed for every file in a project.

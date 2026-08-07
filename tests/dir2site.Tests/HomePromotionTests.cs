@@ -65,15 +65,18 @@ public class HomePromotionTests : IDisposable
              """);
     }
 
+    /// Generates, and hands back what the run had to say short of failing.
     private IReadOnlyList<string> Generate()
     {
         var tree = DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>());
-        return SiteGenerator.Generate(_root, tree, new Dir2SiteModel
+        var result = SiteGenerator.Generate(_root, tree, new Dir2SiteModel
         {
             Title = "My Site",
             Footer = "© 2026",
             SiteUrl = "https://example.test",
-        }).Errors;
+        });
+        Assert.Empty(result.Errors);
+        return result.Warnings;
     }
 
     [AvaloniaFact]
@@ -197,9 +200,36 @@ public class HomePromotionTests : IDisposable
         MakePhoto(MakeFolder("Archive", "News+"), "Apple.jpg", "Apple");
         MakePhoto(MakeFolder("Archive", "News"), "Zebra.jpg", "Zebra");
 
-        var errors = Generate();
+        var warnings = Generate();
 
-        Assert.Contains(errors, e => e.Contains("News+") && e.Contains("publish as \"News\""));
+        Assert.Contains(warnings, w => w.Contains("News+") && w.Contains("publish as \"News/\""));
+    }
+
+    [AvaloniaFact]
+    public void AnArtifactAndAFolderCompetingForOneAddressAreReported()
+    {
+        // Foo.jpg publishes to Foo/ and so does a sibling folder Foo — the same overwrite, in the
+        // shape that has nothing to do with the markers.
+        var archive = MakeFolder("Archive");
+        MakePhoto(archive, "News.jpg", "The News");
+        MakePhoto(MakeFolder("Archive", "News"), "Zebra.jpg", "Zebra");
+
+        var warnings = Generate();
+
+        Assert.Contains(warnings, w => w.Contains("News.jpg") && w.Contains("publish as \"News/\""));
+    }
+
+    [AvaloniaFact]
+    public void TwoArtifactsSharingAStemAreReported()
+    {
+        var archive = MakeFolder("Archive");
+        MakePhoto(archive, "News.jpg", "The News");
+        File.WriteAllText(Path.Combine(archive, "News.pdf"), "not really a pdf");
+        File.WriteAllText(Path.Combine(archive, "News.pdf.yaml"), "type: pdf\ncaption: The News\n");
+
+        var warnings = Generate();
+
+        Assert.Contains(warnings, w => w.Contains("News.pdf") && w.Contains("publish as \"News/\""));
     }
 
     [AvaloniaFact]

@@ -88,7 +88,7 @@ public class VideoArtifactTests : IDisposable
              """);
     }
 
-    private (string Summary, IReadOnlyList<string> Errors) Generate()
+    private (string Summary, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings) Generate()
     {
         var tree = DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>());
         return SiteGenerator.Generate(_root, tree, Config());
