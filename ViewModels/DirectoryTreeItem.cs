@@ -52,6 +52,14 @@ public partial class DirectoryTreeItem : ObservableObject
     /// <summary>Any errors encountered while parsing the YAML file.</summary>
     public List<string> YamlErrors { get; } = new();
 
+    /// <summary>
+    /// The same, as one line for the tree to show. Filled in while the tree is built, before
+    /// anything binds to it, so it needs no change notification.
+    /// </summary>
+    public bool HasYamlErrors => YamlErrors.Count > 0;
+
+    public string YamlErrorText => string.Join("  ", YamlErrors);
+
     public ObservableCollection<DirectoryTreeItem> Children { get; } = new();
 
     public DirectoryTreeItem() { }

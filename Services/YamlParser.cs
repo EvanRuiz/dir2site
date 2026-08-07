@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using dir2site.Models;
@@ -81,11 +83,23 @@ public static class YamlParser
             return null;
         }
 
+        // Held back until every route has failed. A model that didn't fit is how the fallback chain
+        // below finds the one that does, so reporting each miss as it happens would bury the file
+        // that really is broken under complaints about files that parsed perfectly.
+        var attemptErrors = new List<string>();
+
         // The type token names the model, so use it when there is one.
         if (PeekTypeToken(yaml) is { } token && TypeTokenToParser.TryGetValue(token, out var parse))
         {
-            try { return parse(yaml); }
-            catch (Exception ex) { errors.Add($"[{token}] {ex.Message}"); }
+            try
+            {
+                if (parse(yaml) is { } artifact)
+                {
+                    ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), errors);
+                    return artifact;
+                }
+            }
+            catch (Exception ex) { attemptErrors.Add($"[{token}] {ex.Message}"); }
         }
 
         // Try each concrete type from most-specific to least-specific.
@@ -93,18 +107,74 @@ public static class YamlParser
         {
             try
             {
-                var artifact = attempt(yaml);
-                return artifact;
+                if (attempt(yaml) is { } artifact)
+                {
+                    ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), errors);
+                    return artifact;
+                }
             }
             catch (Exception ex)
             {
-                errors.Add($"[{attempt.Method.ReturnType.Name}] {ex.Message}");
+                attemptErrors.Add($"[{attempt.Method.ReturnType.Name}] {ex.Message}");
             }
         }
 
+        errors.AddRange(attemptErrors);
         errors.Add($"Could not parse '{yamlPath}' into any known model type.");
         return null;
     }
+
+    /// <summary>
+    /// Reports keys the model doesn't declare. The deserializer ignores whatever it doesn't
+    /// recognise (see its construction above), which keeps an unfamiliar file readable but means a
+    /// misspelling — <c>parentcover</c>, <c>grandparent_cover</c> — is accepted and then does
+    /// nothing at all, with the artifact looking exactly as if the setting had never been written.
+    /// </summary>
+    /// <remarks>
+    /// Read back as a plain map, so a commented-out setting is not a key and says nothing.
+    /// </remarks>
+    private static void ReportUnknownKeys(string yaml, string yamlPath, Type modelType, List<string> errors)
+    {
+        Dictionary<object, object>? doc;
+        // A document that won't read as a map has a real problem, and it isn't this one.
+        try { doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml); }
+        catch { return; }
+        if (doc == null) return;
+
+        var declared = DeclaredKeys(modelType);
+        var unknown = doc.Keys
+            .Select(k => k?.ToString())
+            .Where(k => !string.IsNullOrEmpty(k) && !declared.Contains(k))
+            .ToList();
+
+        if (unknown.Count == 0) return;
+
+        var subject = unknown.Count == 1 ? "is not a setting" : "are not settings";
+        errors.Add(
+            $"{Path.GetFileName(yamlPath)}: {string.Join(", ", unknown)} {subject} dir2site knows, so nothing was done with it.");
+    }
+
+    // Reflected once per model — the same handful of types are parsed for every file in a project.
+    private static readonly ConcurrentDictionary<Type, HashSet<string>> DeclaredKeysByType = new();
+
+    /// <summary>The keys a model accepts, spelled the way the deserializer expects to see them.</summary>
+    private static HashSet<string> DeclaredKeys(Type modelType) =>
+        DeclaredKeysByType.GetOrAdd(modelType, static type =>
+        {
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (property.GetCustomAttribute<YamlIgnoreAttribute>() != null) continue;
+
+                var member = property.GetCustomAttribute<YamlMemberAttribute>();
+                // An alias only escapes the naming convention when it says so — the same rule the
+                // deserializer applies, which is why "url-text" has to turn it off.
+                keys.Add(member?.Alias is { Length: > 0 } alias
+                    ? member.ApplyNamingConventions ? CamelCaseNamingConvention.Instance.Apply(alias) : alias
+                    : CamelCaseNamingConvention.Instance.Apply(property.Name));
+            }
+            return keys;
+        });
 
     /// <summary>
     /// Maps the yaml's <c>type:</c> token to the model that actually holds that type's fields.

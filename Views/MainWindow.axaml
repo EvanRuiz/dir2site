@@ -401,6 +401,15 @@
                                           ItemsSource="{Binding Children}">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                <!-- A yaml the traverser couldn't read, or a setting spelled wrong.
+                                     Shown here because this is where you are when you'd fix it. -->
+                                <TextBlock Text="{Binding YamlErrorText}"
+                                           IsVisible="{Binding HasYamlErrors}"
+                                           Foreground="#c0392b"
+                                           FontSize="11"
+                                           MaxWidth="420"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Center"/>
                                 <Panel IsVisible="{Binding ArtifactViewModel, Converter={x:Static ObjectConverters.IsNotNull}}">
                                     <v:ArtifactView DataContext="{Binding ArtifactViewModel}"></v:ArtifactView>
                                 </Panel>

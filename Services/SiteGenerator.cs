@@ -52,6 +52,7 @@ public static class SiteGenerator
         var templates = new TemplateSet(loader);
 
         var errors = new ConcurrentBag<string>();
+        ReportYamlErrors(rootItem, errors);
         tracker.SetPageTotal(CountPages(rootItem));
         var homePromotions = CollectHomePromotions(rootItem, directoryRoot);
         GeneratePage(rootItem, siteRoot, directoryRoot, config, topLevelFolders, 0,
@@ -459,6 +460,17 @@ public static class SiteGenerator
     /// It is the folder-shaped counterpart of an artifact's "home: true".
     /// </summary>
     private const char HomePromotedSuffix = '+';
+
+    /// <summary>
+    /// Passes on what the traverser found wrong with each artifact's yaml. It collected these while
+    /// building the tree and nothing had ever read them, so a sidecar that failed to parse — or a
+    /// setting spelled slightly wrong — was silent everywhere.
+    /// </summary>
+    private static void ReportYamlErrors(DirectoryTreeItem node, ConcurrentBag<string> errors)
+    {
+        foreach (var error in node.YamlErrors) errors.Add(error);
+        foreach (var child in node.Children) ReportYamlErrors(child, errors);
+    }
 
     /// <summary>
     /// Warns when two sibling folders publish to the same place. The markers are stripped from the
