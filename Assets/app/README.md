@@ -13,7 +13,7 @@ These files are yours to edit. When dir2site updates one it changes only the val
 ## Getting Started
 
 1. Click **Choose…** to select your site project folder
-2. Adjust site settings — title, footer, colors, and logo
+2. Adjust site settings — title, footer, colors, and logo. The footer accepts HTML, so it can hold a link.
 3. Click **Generate Site** — the static site is written to a `_site/` subfolder inside your project folder
 4. Click **▶ Start** to launch a local preview and open in your browser
 
