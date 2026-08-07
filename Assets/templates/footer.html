@@ -1,1 +1,3 @@
-  <footer class="container my-3 text-muted small">{{ site.footer | html.escape }}</footer>
+  {{## Deliberately unescaped: the footer is written by the site owner in their own dir2site.yaml,
+      the same trust level as an artifact's markdown body, and a footer nearly always wants a link. ##}}
+  <footer class="container my-3 text-muted small">{{ site.footer }}</footer>

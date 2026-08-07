@@ -220,7 +220,8 @@
 
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Label Width="140">Footer</Label>
-                                    <TextBox Text="{Binding Dir2SiteConfig.Footer}" Width="260"/>
+                                    <TextBox Text="{Binding Dir2SiteConfig.Footer}" Width="260"
+                                             ToolTip.Tip="Shown at the bottom of every page. HTML is allowed, so you can include a link."/>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Spacing="8">

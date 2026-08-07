@@ -19,7 +19,7 @@ Dir2Site is a open-source cross-platform desktop application that walks your loc
 - **Markdown articles** — render `.md` files as clean web pages
 - **Videos** — drop in a YouTube `.url` shortcut; plays inline on the collection page
 - **Collection pages** — browsable index pages for every subdirectory
-- **Customizable branding** — site title, footer, primary/secondary colors, custom logo, dark or light navbar
+- **Customizable branding** — site title, footer (HTML allowed, so it can hold a link), primary/secondary colors, custom logo, dark or light navbar
 - **YAML configuration** — You can edit directly in the app, or choose to edit the YAML files per artifact directly for fine-grained control.
 - **Built-in preview server** — one click to serve and open in your browser, no external tools needed
 - **One-click generation** — static HTML output written directly alongside your files
