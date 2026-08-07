@@ -30,6 +30,12 @@ public static partial class MarkdownPreviewRenderer
     private const int SmallWidth = 800, SmallHeight = 600;
     private const float Pad = 44f;
 
+    // The column the published article is laid out in (.markdown-body's max-width in
+    // Assets/templates/site-css.html). An authored figure width is read as a fraction of it, so
+    // this preview and the page agree about how big a figure looks. SiteColumnWidthTests fails if
+    // the two drift apart.
+    internal const float SiteColumnWidth = 820f;
+
     /// <summary>
     /// Renders <paramref name="mdFile"/> to <c>.dir2site/{stem}/preview-{stem}.webp</c> (800×600)
     /// and <c>preview-lg-{stem}.webp</c> (1200×900). Returns the two relative filenames, or null.
@@ -423,7 +429,13 @@ public static partial class MarkdownPreviewRenderer
             var bmp = figureBmp;
             if (bmp != null)
             {
-                float wf = Math.Clamp((figure.Width ?? 230) * 1.45f, 240f, contentWidth * 0.42f);
+                // An authored width is a fraction of the site's column, so it means the same
+                // fraction here. The old fixed ×1.45 with a 240 floor landed width=150 and
+                // width=200 on the same value, which is the one thing a stated width shouldn't do.
+                // Without a width there is nothing to honour, so the original default stands.
+                float wf = figure.Width is { } authored
+                    ? Math.Clamp(authored / SiteColumnWidth * contentWidth, 120f, contentWidth * 0.45f)
+                    : Math.Clamp(230f * 1.45f, 240f, contentWidth * 0.42f);
                 float hf = wf * bmp.Height / bmp.Width;
                 float fx = figure.Align == FigureAlign.Left ? x0
                          : figure.Align == FigureAlign.Right ? x1 - wf

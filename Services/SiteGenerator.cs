@@ -20,7 +20,13 @@ namespace dir2site.Services;
 
 public static class SiteGenerator
 {
-    public static (string Summary, IReadOnlyList<string> Errors) Generate(
+    /// <returns>
+    /// What happened, what failed, and what merely didn't do anything. Warnings are kept apart
+    /// from errors because a misspelled setting or two folders competing for one address leave a
+    /// site that generated perfectly well — reporting them as errors would make every typo read
+    /// like a failed build.
+    /// </returns>
+    public static (string Summary, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings) Generate(
         string directoryRoot,
         DirectoryTreeItem rootItem,
         Dir2SiteModel config,
@@ -52,14 +58,25 @@ public static class SiteGenerator
         var templates = new TemplateSet(loader);
 
         var errors = new ConcurrentBag<string>();
+        var warnings = new ConcurrentBag<string>();
+        ReportYamlNotes(rootItem, errors, warnings);
         tracker.SetPageTotal(CountPages(rootItem));
+        var homePromotions = CollectHomePromotions(rootItem, directoryRoot);
         GeneratePage(rootItem, siteRoot, directoryRoot, config, topLevelFolders, 0,
-            [], templates, progress, errors, tracker);
+            [], templates, progress, errors, warnings, tracker, homePromotions);
 
         var copyJobs = new List<CopyJob>();
-        CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs);
+        var stalePaths = new List<string>();
+        CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs, stalePaths);
         CollectUnderscoreFolderCopyJobs(directoryRoot, directoryRoot, siteRoot, copyJobs);
         CollectLogoCopyJob(directoryRoot, siteRoot, config.Logo, copyJobs);
+
+        // Before copying, so a file that is both stale and about to be re-copied can't be deleted
+        // after the copy that replaced it.
+        foreach (var path in stalePaths)
+        {
+            try { File.Delete(path); } catch (Exception ex) { errors.Add($"{Path.GetFileName(path)}: {ex.Message}"); }
+        }
 
         tracker.SetFileTotal(copyJobs.Count);
         foreach (var job in copyJobs)
@@ -67,7 +84,7 @@ public static class SiteGenerator
             tracker.FileDone(CopyFileIfNewer(job.Src, job.Dest, progress, job.Label));
         }
 
-        return ("Site generated → _site/", [.. errors]);
+        return ("Site generated → _site/", [.. errors], [.. warnings]);
     }
 
     /// <summary>
@@ -100,7 +117,9 @@ public static class SiteGenerator
         TemplateSet templates,
         IProgress<string> progress,
         ConcurrentBag<string> errors,
-        GenerateProgressTracker tracker)
+        ConcurrentBag<string> warnings,
+        GenerateProgressTracker tracker,
+        IReadOnlyList<HomePromotion> homePromotions)
     {
         // The site root always gets a home page, however little is in it.
         if (depth > 0 && SoleArtifact(node) is { } soleArtifact)
@@ -162,8 +181,15 @@ public static class SiteGenerator
             .Select(child => (object)BuildCardModel(child, prefix, directoryRoot))
             .ToList();
 
+        // Cards for things that live deeper but asked to be reachable from the front door. They go
+        // after the root's own children so the home page still opens with what the site is.
+        var promoted = depth == 0 ? homePromotions : [];
+        foreach (var promotion in promoted)
+            items.Add(BuildCardModel(promotion.Item, prefix, directoryRoot, promotion.Href));
+
         // Only pages that actually embed a player pull in the YouTube glue.
-        var hasVideo = node.Children.Any(c => !c.IsDirectory && c.Artifact?.Type == ArtifactType.Video);
+        var hasVideo = node.Children.Concat(promoted.Select(p => p.Item))
+            .Any(c => !c.IsDirectory && c.Artifact?.Type == ArtifactType.Video);
 
         var ogTitle = depth == 0
             ? config.Title
@@ -192,11 +218,13 @@ public static class SiteGenerator
         var html = templates.Collection.Render(context);
         tracker.PageDone(WriteIfChanged(indexHtmlPath, html, Encoding.UTF8));
 
+        ReportPublicNameCollisions(node, warnings);
+
         foreach (var child in node.Children.Where(c => c.IsDirectory))
         {
             var childOutputDir = Path.Combine(outputDir, PublicName(child.Name));
             GeneratePage(child, childOutputDir, directoryRoot, config, topLevelFolders,
-                depth + 1, childAncestors, templates, progress, errors, tracker);
+                depth + 1, childAncestors, templates, progress, errors, warnings, tracker, homePromotions);
         }
 
         // Videos play inline on this page, so they get no page of their own — generating one would
@@ -287,10 +315,15 @@ public static class SiteGenerator
         return crumbs;
     }
 
+    /// <param name="hrefOverride">
+    /// Where the card points when it isn't a sibling of the page showing it — a home page card for
+    /// something further down the tree. A video keeps its empty href either way: it plays in place.
+    /// </param>
     private static ScriptObject BuildCardModel(
         DirectoryTreeItem item,
         string prefix,
-        string directoryRoot)
+        string directoryRoot,
+        string? hrefOverride = null)
     {
         string caption, badge, badgeIcon, href, imgSrc;
         var video = item.Artifact as Video;
@@ -316,6 +349,8 @@ public static class SiteGenerator
             href = video != null ? "" : $"{stem}/";
             imgSrc = item.Artifact != null ? GetPreviewSrc(item.Artifact, directoryRoot, prefix, stem) : "";
         }
+
+        if (hrefOverride != null && video == null) href = hrefOverride;
 
         var obj = new ScriptObject();
         obj.SetValue("caption", caption, readOnly: true);
@@ -371,13 +406,27 @@ public static class SiteGenerator
         // by caption. The automatic order is a fallback for folders nobody has chosen a cover for.
         var direct = node.Children
             .Where(c => !c.IsDirectory && c.Artifact?.Preview != null)
-            .OrderBy(c => c.Artifact!.Cover ? 0 : 1)
+            .OrderBy(c => c.Artifact!.IsParentCover ? 0 : 1)
             .ThenBy(c => c.Artifact!.Type is ArtifactType.Photo or ArtifactType.Deepzoom ? 0 : 1)
             .ThenBy(c => c.Artifact!.Caption ?? c.Name, StringComparer.OrdinalIgnoreCase)
             .Select(c => (c.Artifact!, Path.GetFileNameWithoutExtension(c.Name)))
             .FirstOrDefault();
 
         if (direct.Item1 != null) return direct;
+
+        // Nothing directly here to show. A grandchild marked grandparent-cover is a deliberate
+        // answer to exactly this — a folder of folders, which can never have a parent-cover of its
+        // own — so it is asked before falling through to "whatever turns up first below".
+        var grandchild = node.Children
+            .Where(c => c.IsDirectory)
+            .SelectMany(sub => sub.Children
+                .Where(c => !c.IsDirectory && c.Artifact?.Preview != null && c.Artifact.GrandparentCover)
+                .OrderBy(c => c.Artifact!.Type is ArtifactType.Photo or ArtifactType.Deepzoom ? 0 : 1)
+                .ThenBy(c => c.Artifact!.Caption ?? c.Name, StringComparer.OrdinalIgnoreCase))
+            .Select(c => (c.Artifact!, Path.GetFileNameWithoutExtension(c.Name)))
+            .FirstOrDefault();
+
+        if (grandchild.Item1 != null) return grandchild;
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
         {
@@ -413,15 +462,71 @@ public static class SiteGenerator
     /// </summary>
     private const char MenuOnlyPrefix = '-';
 
+    /// <summary>
+    /// Folders whose name ends in '+' also get a card on the home page, on top of the one in their
+    /// parent's listing: "Newspapers+" three levels down is still one click from the front door.
+    /// It is the folder-shaped counterpart of an artifact's "home: true".
+    /// </summary>
+    private const char HomePromotedSuffix = '+';
+
+    /// <summary>
+    /// Passes on what the traverser found wrong with each artifact's yaml. It collected these while
+    /// building the tree and nothing had ever read them, so a sidecar that failed to parse — or a
+    /// setting spelled slightly wrong — was silent everywhere.
+    /// </summary>
+    private static void ReportYamlNotes(
+        DirectoryTreeItem node, ConcurrentBag<string> errors, ConcurrentBag<string> warnings)
+    {
+        foreach (var error in node.YamlErrors) errors.Add(error);
+        foreach (var warning in node.YamlWarnings) warnings.Add(warning);
+        foreach (var child in node.Children) ReportYamlNotes(child, errors, warnings);
+    }
+
+    /// <summary>
+    /// Warns when two siblings publish to the same place. A folder's markers are stripped from its
+    /// published name, so "Newspapers+" and a plain "Newspapers" beside it both become
+    /// /Newspapers/; and an artifact publishes under its stem, so "Foo.jpg" lands on a sibling
+    /// folder "Foo" and "Foo.pdf" lands on "Foo.jpg". Either way one silently overwrites the other
+    /// — a page's worth of work disappearing with nothing said. Reporting is all this does: which
+    /// one the author meant isn't ours to guess.
+    /// </summary>
+    private static void ReportPublicNameCollisions(DirectoryTreeItem node, ConcurrentBag<string> warnings)
+    {
+        // Videos are left out: they play on the page they sit in and publish nothing of their own.
+        var published = node.Children
+            .Where(c => c.IsDirectory || (c.Artifact != null && c.Artifact.Type != ArtifactType.Video));
+
+        var clashes = published
+            .GroupBy(
+                c => c.IsDirectory ? PublicName(c.Name) : Path.GetFileNameWithoutExtension(c.Name),
+                StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1);
+
+        foreach (var clash in clashes)
+        {
+            var names = string.Join(", ", clash.Select(c => c.Name));
+            warnings.Add($"{names}: these all publish as \"{clash.Key}/\" — only one of them will survive.");
+        }
+    }
+
     private static bool IsMenuOnly(DirectoryTreeItem item) =>
         item.IsDirectory && item.Name.Length > 1 && item.Name[0] == MenuOnlyPrefix;
 
+    private static bool IsHomePromoted(DirectoryTreeItem item) =>
+        item.IsDirectory && item.Name.Length > 1 && item.Name[^1] == HomePromotedSuffix;
+
     /// <summary>
-    /// The marker instructs the generator; it is not part of the name. It appears in no menu label,
-    /// page title, breadcrumb or URL — "-About" is published as "About".
+    /// The markers instruct the generator; they are not part of the name. Neither appears in a menu
+    /// label, page title, breadcrumb or URL — "-About" is published as "About", "Newspapers+" as
+    /// "Newspapers". They are independent, so "-Newspapers+" is both and is published as
+    /// "Newspapers". A folder named only "-" or "+" is a name, not a marker, and is left alone.
     /// </summary>
-    private static string PublicName(string name) =>
-        name.Length > 1 && name[0] == MenuOnlyPrefix ? name[1..] : name;
+    private static string PublicName(string name)
+    {
+        if (name.Length > 1 && name[0] == MenuOnlyPrefix) name = name[1..];
+        if (name.Length > 1 && name[^1] == HomePromotedSuffix) name = name[..^1];
+        return name;
+    }
 
     /// <summary>
     /// Where a source path's content is published, with the marker stripped from every segment.
@@ -457,6 +562,64 @@ public static class SiteGenerator
         return only.Artifact.Type == ArtifactType.Video ? null : only;
     }
 
+    /// <summary>
+    /// Something from deeper in the tree that the home page also shows, and the root-relative href
+    /// that reaches it. The href has to be carried alongside because a card's own href is written
+    /// for a sibling — "Japan/" means something different on the home page than it does in Trips.
+    /// </summary>
+    private sealed record HomePromotion(DirectoryTreeItem Item, string Href);
+
+    /// <summary>
+    /// Everything below the root that asked to appear on the home page: folders marked with the
+    /// '+' suffix and artifacts marked "home: true". Depth-0 children are skipped — they are the
+    /// home page already — and the tree's own order is kept, so the extra cards read like the site.
+    /// </summary>
+    private static List<HomePromotion> CollectHomePromotions(DirectoryTreeItem root, string directoryRoot)
+    {
+        var promoted = new List<HomePromotion>();
+        // The root's own children are the home page already; only what lies under them can be
+        // promoted onto it, so the walk starts inside each of them rather than at them.
+        foreach (var child in root.Children.Where(c => c.IsDirectory))
+            CollectHomePromotions(child, directoryRoot, promoted);
+        return promoted;
+    }
+
+    private static void CollectHomePromotions(
+        DirectoryTreeItem node, string directoryRoot, List<HomePromotion> promoted)
+    {
+        // A folder published as its single artifact has no page beneath it, so a promoted artifact
+        // there is reached at the folder's own address.
+        var sole = SoleArtifact(node);
+
+        foreach (var child in node.Children)
+        {
+            if (child.IsDirectory)
+            {
+                if (IsHomePromoted(child))
+                    promoted.Add(new HomePromotion(child, FolderHref(child, directoryRoot)));
+                CollectHomePromotions(child, directoryRoot, promoted);
+            }
+            else if (child.Artifact?.Home == true)
+            {
+                var href = ReferenceEquals(child, sole)
+                    ? FolderHref(node, directoryRoot)
+                    : ArtifactHref(child, directoryRoot);
+                promoted.Add(new HomePromotion(child, href));
+            }
+        }
+    }
+
+    private static string FolderHref(DirectoryTreeItem folder, string directoryRoot) =>
+        $"{PublicRelativePath(Path.GetRelativePath(directoryRoot, folder.FullPath))}/";
+
+    private static string ArtifactHref(DirectoryTreeItem file, string directoryRoot)
+    {
+        var dir = PublicRelativePath(
+            Path.GetRelativePath(directoryRoot, Path.GetDirectoryName(file.FullPath) ?? directoryRoot));
+        var stem = Path.GetFileNameWithoutExtension(file.Name);
+        return dir == "." ? $"{stem}/" : $"{dir}/{stem}/";
+    }
+
     private static string RelativePrefix(int depth) =>
         string.Concat(Enumerable.Repeat("../", depth));
 
@@ -465,7 +628,14 @@ public static class SiteGenerator
 
     // Walks the tree one directory at a time. Each artifact's previews live in .dir2site/{stem}/
     // so they are self-contained — copy the whole subfolder straight into the artifact's output dir.
-    private static void CollectFolderPreviewCopyJobs(DirectoryTreeItem node, string directoryRoot, string siteRoot, List<CopyJob> jobs)
+    /// <param name="stale">
+    /// Files that must not be in the site any more. Generation is otherwise additive — nothing
+    /// prunes <c>_site</c> — which for <c>publishOriginal</c> would mean turning the flag back off
+    /// left the PDF published and reachable, quietly contradicting the default it was turned off
+    /// to restore.
+    /// </param>
+    private static void CollectFolderPreviewCopyJobs(
+        DirectoryTreeItem node, string directoryRoot, string siteRoot, List<CopyJob> jobs, List<string> stale)
     {
         var folderRel = Path.GetRelativePath(directoryRoot, node.FullPath);
 
@@ -482,6 +652,8 @@ public static class SiteGenerator
             // than a generated one, so it doesn't depend on previews having been generated.
             if (child.Artifact is Pdf { PublishOriginal: true })
                 jobs.Add(new CopyJob(child.FullPath, Path.Combine(destDir, child.Name), child.Name));
+            else if (child.Artifact is Pdf)
+                stale.Add(Path.Combine(destDir, child.Name));
 
             var stemDir = Path.Combine(node.FullPath, ".dir2site", stem);
             if (!Directory.Exists(stemDir)) continue;
@@ -494,7 +666,7 @@ public static class SiteGenerator
         }
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
-            CollectFolderPreviewCopyJobs(child, directoryRoot, siteRoot, jobs);
+            CollectFolderPreviewCopyJobs(child, directoryRoot, siteRoot, jobs, stale);
     }
 
     // Copies every "_"-prefixed folder (e.g. _media) verbatim into _site at its relative path, so
@@ -635,7 +807,7 @@ public static class SiteGenerator
             case ArtifactType.Markdown:
                 artifactObj.SetValue(
                     "html_content",
-                    MarkdownRenderer.FileToHtml(item.FullPath, rewriteRelativeUrls: !atFolderIndex),
+                    MarkdownRenderer.FileToHtml(item.FullPath, pageIsNested: !atFolderIndex),
                     readOnly: true);
                 templateName = "artifact-markdown";
                 break;

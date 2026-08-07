@@ -20,7 +20,7 @@ Dir2Site is a open-source cross-platform desktop application that walks your loc
 - **Videos** — drop in a YouTube `.url` shortcut; plays inline on the collection page
 - **Collection pages** — browsable index pages for every subdirectory
 - **Customizable branding** — site title, footer (HTML allowed, so it can hold a link), primary/secondary colors, custom logo, dark or light navbar
-- **YAML configuration** — You can edit directly in the app, or choose to edit the YAML files per artifact directly for fine-grained control.
+- **YAML configuration** — Site settings are editable in the app; per-artifact metadata lives in a YAML sidecar you edit in any text editor, and the app shows you what it holds.
 - **Built-in preview server** — one click to serve and open in your browser, no external tools needed
 - **One-click generation** — static HTML output written directly alongside your files
 
@@ -48,20 +48,45 @@ Two things are deliberately left alone: a folder holding only a video (videos pl
 no page of their own, so there is nothing to promote), and a folder holding only another folder
 (collapsing chains of folders gets surprising quickly).
 
-### Choosing a folder's picture (`cover: true`)
+### Choosing a folder's picture (`parent-cover`, `grandparent-cover`)
 
 A folder's card is illustrated by whichever artifact inside it sorts first, which is rarely the one
-that says what the collection is. Add `cover: true` to an artifact's YAML to choose it instead:
+that says what the collection is. Add `parent-cover: true` to an artifact's YAML to choose it
+instead:
 
 ```yaml
 type: photo
 caption: The one that says what this is
-cover: true
+parent-cover: true
 ```
 
 It also becomes the folder page's `og:image`, so a shared link shows the same picture. Only the
-folder the artifact sits in is affected — marking something nested doesn't make it the cover of
-everything above it.
+folder the artifact sits in is affected — that's what "parent" names.
+
+A folder that holds nothing but sub-folders has no artifacts of its own to choose from. Mark one a
+level deeper with `grandparent-cover: true` and it illustrates that folder too:
+
+```
+Trips/                      card shows Cherry Blossom.jpg
+Trips/Japan/Cherry Blossom.jpg    grandparent-cover: true
+```
+
+A `grandparent-cover` never outranks a real direct child, so a folder with its own photos still
+shows one of those.
+
+(`cover: true` is the older spelling of `parent-cover` and still works. Where a project carries
+both, `parent-cover` decides — including when it says `false`.)
+
+### Featuring an item on the home page (`home: true`)
+
+Add `home: true` to an artifact's YAML and it also gets a card on the home page, wherever in the
+tree it actually lives. The card links to the artifact's real page — a video plays in place, as it
+does anywhere else — and the artifact keeps its ordinary card in its own folder, so nothing moves.
+Featured cards come after the home page's own contents.
+
+`parent-cover`, `grandparent-cover` and `home` are set in the YAML sidecar rather than in the app.
+The app shows an artifact's metadata but doesn't edit it — the sidecar is where per-artifact
+settings live, for these as for `publishOriginal` and everything else.
 
 ### Menu-only sections (`-`-folders)
 
@@ -77,6 +102,25 @@ Documents/            shown in the menu and as a card
 
 The hyphen is an instruction to the generator, not part of the name: `-About` is published at
 `/About/` and shows as "About" everywhere a visitor can see.
+
+### Folders featured on the home page (`+`-folders)
+
+A folder whose name ends in a plus (e.g. `Newspapers+`) also gets a card on the home page, however
+deep it sits. It is the folder-shaped counterpart of `home: true`, and the way to say which folders
+in the tree are worth a direct link from the front door.
+
+```
+Archive/Newspapers+/    a card in Archive, and a card on the home page
+```
+
+Like the hyphen, the plus is stripped everywhere a visitor can see: the folder is published at
+`/Archive/Newspapers/`, and its breadcrumbs still show the full path it really lives at. The two
+markers are independent, so `-Newspapers+` is a folder reachable from the menu and the home page
+but not from its parent's listing.
+
+Because the markers are stripped, `Newspapers+` and a plain `Newspapers` beside it would publish to
+the same address and one would overwrite the other. Generate Site reports that rather than letting
+a folder's pages vanish quietly.
 
 ### Static media (`_media` and other `_`-folders)
 

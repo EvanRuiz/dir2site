@@ -142,6 +142,31 @@
             </Grid>
         </Border>
 
+        <!-- Warning banner. Amber and separate from the red one above: the site did generate,
+             something in it just didn't do what was written. -->
+        <Border DockPanel.Dock="Top"
+                Background="#B9770E"
+                Padding="10,6"
+                IsVisible="{Binding HasWarnings}">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding WarningText}"
+                           FontSize="12"
+                           Foreground="White"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"/>
+                <Button Grid.Column="1"
+                        Content="✕"
+                        Command="{Binding DismissWarningsCommand}"
+                        Foreground="White"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        FontSize="14"
+                        Padding="8,2"
+                        VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
         <!-- Fill area: welcome panel or content, whichever is active -->
         <Panel>
 
@@ -401,6 +426,22 @@
                                           ItemsSource="{Binding Children}">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                <!-- A yaml the traverser couldn't read, or a setting spelled wrong.
+                                     Shown here because this is where you are when you'd fix it. -->
+                                <TextBlock Text="{Binding YamlErrorText}"
+                                           IsVisible="{Binding HasYamlErrors}"
+                                           Foreground="#c0392b"
+                                           FontSize="11"
+                                           MaxWidth="420"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding YamlWarningText}"
+                                           IsVisible="{Binding HasYamlWarnings}"
+                                           Foreground="#b9770e"
+                                           FontSize="11"
+                                           MaxWidth="420"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Center"/>
                                 <Panel IsVisible="{Binding ArtifactViewModel, Converter={x:Static ObjectConverters.IsNotNull}}">
                                     <v:ArtifactView DataContext="{Binding ArtifactViewModel}"></v:ArtifactView>
                                 </Panel>

@@ -114,6 +114,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _hasErrors;
 
+    [ObservableProperty]
+    private string _warningText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasWarnings;
+
     [RelayCommand]
     private void DismissErrors()
     {
@@ -121,10 +127,28 @@ public partial class MainWindowViewModel : ViewModelBase
         HasErrors = false;
     }
 
+    [RelayCommand]
+    private void DismissWarnings()
+    {
+        WarningText = string.Empty;
+        HasWarnings = false;
+    }
+
     private void AppendError(string message)
     {
         ErrorText = HasErrors ? $"{ErrorText}\n{message}" : message;
         HasErrors = true;
+    }
+
+    /// <summary>
+    /// Things that didn't stop the site being generated but didn't do what was written either —
+    /// a misspelled setting, two folders competing for one address. Kept off the error banner so
+    /// a typo doesn't announce itself as a failed build.
+    /// </summary>
+    private void AppendWarning(string message)
+    {
+        WarningText = HasWarnings ? $"{WarningText}\n{message}" : message;
+        HasWarnings = true;
     }
 
     [ObservableProperty]
@@ -486,6 +510,8 @@ public partial class MainWindowViewModel : ViewModelBase
         GenerateCounters = tracker.Snapshot().Counters;
         if (result.Errors.Count > 0)
             AppendError(string.Join("\n", result.Errors));
+        if (result.Warnings.Count > 0)
+            AppendWarning(string.Join("\n", result.Warnings));
         StartServerCommand.NotifyCanExecuteChanged();
         QuickSyncCommand.NotifyCanExecuteChanged();
         VerifyAndRepairCommand.NotifyCanExecuteChanged();
