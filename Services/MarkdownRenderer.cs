@@ -104,8 +104,11 @@ public static partial class MarkdownRenderer
 
         // An "_"-folder is copied into the site verbatim, so it is the one place a .md really is
         // published as a file — linking to _media/notes.md means the file, not an article page.
-        foreach (var segment in path.Split('/'))
-            if (segment.StartsWith('_')) return url;
+        // Directory segments only: the rule holds out folders, never files, so a plain "_notes.md"
+        // beside the article is an ordinary article published at _notes/ like any other.
+        var segments = path.Split('/');
+        for (var i = 0; i < segments.Length - 1; i++)
+            if (segments[i].StartsWith('_')) return url;
 
         var stem = path[..^".md".Length];
         // ".md" on its own, or a trailing "dir/.md", names no article — leave it be.

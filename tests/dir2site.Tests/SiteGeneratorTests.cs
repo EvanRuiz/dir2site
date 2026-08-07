@@ -83,7 +83,7 @@ public class SiteGeneratorTests : IDisposable
              """);
     }
 
-    private (string Summary, IReadOnlyList<string> Errors) Generate(Dir2SiteModel config)
+    private (string Summary, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings) Generate(Dir2SiteModel config)
     {
         var tree = DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>());
         return SiteGenerator.Generate(_root, tree, config);

@@ -28,31 +28,37 @@ public class UnknownYamlKeyTests : IDisposable
         try { Directory.Delete(_root, recursive: true); } catch { }
     }
 
-    /// Writes a photo and its sidecar, and returns what parsing the sidecar had to say.
-    private List<string> ParseErrors(string yaml, string fileName = "Apple.jpg")
+    /// <summary>
+    /// Writes a photo and its sidecar, and returns what parsing had to say about it. The artifact
+    /// itself must parse — everything here is about a file that loaded and still isn't doing what
+    /// it says, so anything landing in the error list would mean the test set itself up wrong.
+    /// </summary>
+    private List<string> ParseWarnings(string yaml, string fileName = "Apple.jpg")
     {
         var path = Path.Combine(_root, fileName);
         File.WriteAllText(path, "not really a jpeg");
         File.WriteAllText(path + ".yaml", yaml);
 
         var errors = new List<string>();
-        Assert.NotNull(YamlParser.TryParseYamlMeta(path, errors));
-        return errors;
+        var warnings = new List<string>();
+        Assert.NotNull(YamlParser.TryParseYamlMeta(path, errors, warnings));
+        Assert.Empty(errors);
+        return warnings;
     }
 
     [Fact]
     public void AMisspelledSettingIsReported()
     {
-        var errors = ParseErrors("type: photo\ncaption: Apple\nparentcover: true\n");
+        var warnings = ParseWarnings("type: photo\ncaption: Apple\nparentcover: true\n");
 
-        Assert.Contains(errors, e => e.Contains("parentcover") && e.Contains("Apple.jpg.yaml"));
+        Assert.Contains(warnings, w => w.Contains("parentcover") && w.Contains("Apple.jpg.yaml"));
     }
 
     [Fact]
     public void EveryKeyTheModelDeclaresIsAccepted()
     {
         // Plain, camelCase, hyphen-aliased, and a subtype's own key.
-        var errors = ParseErrors(
+        var warnings = ParseWarnings(
             """
             type: photo
             caption: Apple
@@ -67,24 +73,24 @@ public class UnknownYamlKeyTests : IDisposable
             photographer: A. Nother
             """);
 
-        Assert.Empty(errors);
+        Assert.Empty(warnings);
     }
 
     [Fact]
     public void ACommentedOutSettingSaysNothing()
     {
         // A comment is not a key, so the reader that finds unknown keys never sees it.
-        var errors = ParseErrors("type: photo\ncaption: Apple\n# parentcover: true\n");
+        var warnings = ParseWarnings("type: photo\ncaption: Apple\n# parentcover: true\n");
 
-        Assert.Empty(errors);
+        Assert.Empty(warnings);
     }
 
     [Fact]
     public void SeveralUnknownKeysAreReportedTogether()
     {
-        var errors = ParseErrors("type: photo\ncaption: Apple\nfoo: 1\nbar: 2\n");
+        var warnings = ParseWarnings("type: photo\ncaption: Apple\nfoo: 1\nbar: 2\n");
 
-        var report = Assert.Single(errors);
+        var report = Assert.Single(warnings);
         Assert.Contains("foo", report);
         Assert.Contains("bar", report);
     }
@@ -93,9 +99,9 @@ public class UnknownYamlKeyTests : IDisposable
     public void AKeyBelongingToAnotherTypeIsStillUnknownHere()
     {
         // publishOriginal is real, but only on a PDF — on a photo it does nothing.
-        var errors = ParseErrors("type: photo\ncaption: Apple\npublishOriginal: true\n");
+        var warnings = ParseWarnings("type: photo\ncaption: Apple\npublishOriginal: true\n");
 
-        Assert.Contains(errors, e => e.Contains("publishOriginal"));
+        Assert.Contains(warnings, w => w.Contains("publishOriginal"));
     }
 
     [Fact]
@@ -103,13 +109,13 @@ public class UnknownYamlKeyTests : IDisposable
     {
         // Without a type token the parser tries each model in turn; the ones that don't fit are how
         // it finds the one that does, and are nobody's problem.
-        var errors = ParseErrors("caption: Apple\n");
+        var warnings = ParseWarnings("caption: Apple\n");
 
-        Assert.Empty(errors);
+        Assert.Empty(warnings);
     }
 
     [AvaloniaFact]
-    public void GenerateReportsWhatTheTraverserFoundWrong()
+    public void GenerateReportsWhatTheTraverserFoundWrong_AsAWarningNotAnError()
     {
         var folder = Path.Combine(_root, "Photographs");
         Directory.CreateDirectory(folder);
@@ -118,13 +124,13 @@ public class UnknownYamlKeyTests : IDisposable
             "type: photo\ncaption: Apple\ngrandparent_cover: true\n");
 
         var tree = DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>());
-        var (_, errors) = SiteGenerator.Generate(_root, tree, new Dir2SiteModel
+        var (_, _, warnings) = SiteGenerator.Generate(_root, tree, new Dir2SiteModel
         {
             Title = "My Site",
             Footer = "© 2026",
             SiteUrl = "https://example.test",
         });
 
-        Assert.Contains(errors, e => e.Contains("grandparent_cover"));
+        Assert.Contains(warnings, w => w.Contains("grandparent_cover"));
     }
 }
