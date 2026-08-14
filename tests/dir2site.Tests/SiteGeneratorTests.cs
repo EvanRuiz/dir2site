@@ -521,10 +521,11 @@ public class SiteGeneratorTests : IDisposable
     /// and none of those leaves a trace the user could act on.
     /// </summary>
     /// <remarks>
-    /// Runs on Windows and Unix alike — see <see cref="UnreadableDirectory"/>. Windows is where
-    /// this matters most: cloud-synced folders, network shares and virus scanners are the triggers.
-    /// If the machine won't let the directory be made unreadable (an elevated session can bypass a
-    /// deny ACE) the test says so rather than passing on a readable folder.
+    /// The failure is injected through <see cref="SourceListing"/> rather than staged with real
+    /// permissions, so this is one test running the same way on every platform. What the OS does
+    /// when a folder can't be read is a framework guarantee, not a per-platform one — the
+    /// SearchOption overloads use EnumerationOptions.Compatible, so an unreadable entry raises
+    /// UnauthorizedAccessException instead of being silently skipped.
     /// </remarks>
     [AvaloniaFact]
     public void AnUnreadableFolder_TakesTheWholeRemovalOfferOffTheTable()
@@ -538,13 +539,8 @@ public class SiteGeneratorTests : IDisposable
         Assert.Empty(Generate(Config()).Orphans);
         Assert.True(File.Exists(SitePath("Articles", "_media", "figure.webp")));
 
-        using (var denied = UnreadableDirectory.Make(articles))
+        using (SourceListing.PretendUnreadable(articles))
         {
-            // Loud rather than quiet: a pass on a directory that stayed readable would be no
-            // coverage at all, on the platform where this failure is most likely.
-            Assert.True(denied != null,
-                "could not make the folder unreadable, so this test proved nothing");
-
             var result = Generate(Config());
 
             // Nothing offered, and the reason said out loud — the alternative was silently
@@ -554,6 +550,37 @@ public class SiteGeneratorTests : IDisposable
         }
 
         Assert.True(File.Exists(SitePath("Articles", "_media", "figure.webp")));
+
+        // And the run after it, with the folder readable again, is back to normal — the gap
+        // suppresses one report rather than switching the sweep off for good.
+        Assert.Empty(Generate(Config()).Orphans);
+    }
+
+    /// <summary>
+    /// The same gap reached through the previews folder rather than a static-media one. Preview
+    /// regeneration failing is silent, so the removal dialog would otherwise be the only hint
+    /// anything went wrong — and it would say the files came from content that was deleted.
+    /// </summary>
+    [AvaloniaFact]
+    public void AnUnreadablePreviewsFolder_AlsoStopsTheOffer()
+    {
+        var nested = MakeFolder("Photographs", "1890s");
+        MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        MakeArtifact(nested, "Landscape.jpg", "A Landscape");
+        var previews = MakeFolder("Photographs", "1890s", ".dir2site", "Portrait");
+        File.WriteAllText(Path.Combine(previews, "Portrait-preview.jpg"), "not really a jpeg");
+
+        Assert.Empty(Generate(Config()).Orphans);
+
+        using (SourceListing.PretendUnreadable(previews))
+        {
+            var result = Generate(Config());
+
+            Assert.Empty(result.Orphans);
+            Assert.Contains(result.Warnings, w => w.Contains("could not be read"));
+        }
+
+        Assert.True(File.Exists(SitePath("Photographs", "1890s", "Portrait", "Portrait-preview.jpg")));
     }
 
     /// <summary>
