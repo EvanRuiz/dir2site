@@ -29,17 +29,24 @@
             <Button Content="Ignore" Command="{Binding IgnoreCommand}"/>
         </StackPanel>
 
+        <!-- ListBox, not ItemsControl in a ScrollViewer: only a control with its own viewport can
+             virtualise, and this list is as long as the server has files the site no longer has —
+             tens of thousands after a big rename. Realising a checkbox for each freezes the app
+             for a minute before the dialog appears. -->
         <Border BorderBrush="#444" BorderThickness="1" CornerRadius="4">
-            <ScrollViewer>
-                <ItemsControl ItemsSource="{Binding Items}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:StaleFileItem">
-                            <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Path}"
-                                      Margin="6,2" FontFamily="Courier New"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
+            <ListBox ItemsSource="{Binding Items}" SelectionMode="Toggle" Background="Transparent">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel/>
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:StaleFileItem">
+                        <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Path}"
+                                  Margin="6,2" FontFamily="Courier New"/>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Border>
     </DockPanel>
 </Window>
