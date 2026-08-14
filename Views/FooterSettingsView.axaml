@@ -1,0 +1,119 @@
+<!-- SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:dir2site.ViewModels"
+                mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="560"
+        x:Class="dir2site.Views.FooterSettingsView"
+        x:DataType="vm:FooterSettingsViewModel"
+        Width="800" Height="620" MinWidth="640" MinHeight="420" CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        Title="Footer Settings">
+
+    <Window.Styles>
+        <Style Selector="Grid.row">
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+        <Style Selector="Grid.row > Label">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <!-- The rows are edited in place, so they need the full width of the list rather than the
+             hugging width a selectable item would take by default. -->
+        <Style Selector="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="8,6"/>
+        </Style>
+        <Style Selector="TextBlock.fieldLabel">
+            <Setter Property="Foreground" Value="#999"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,0,0,2"/>
+        </Style>
+    </Window.Styles>
+
+    <DockPanel Margin="16">
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="8" Margin="0,12,0,0">
+            <Button Content="Save" Command="{Binding SaveCommand}"/>
+            <Button Content="Cancel" Command="{Binding CancelCommand}"/>
+        </StackPanel>
+
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding Status}"
+                   TextWrapping="Wrap" Foreground="#4A9EFF" Margin="0,12,0,0"/>
+
+        <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,12">
+            <TextBlock Text="Footer" FontWeight="Bold" FontSize="14"/>
+            <TextBlock TextWrapping="Wrap" Foreground="#999" FontSize="12"
+                       Text="Each row is one link in the footer. Rows sharing a column number are stacked together, and columns run left to right. A link can be an artifact in this project, an address starting with https:// or mailto:, or a site path starting with /."/>
+
+            <Grid Classes="row" ColumnDefinitions="140,160,*">
+                <Label Grid.Column="0">Footer colour</Label>
+                <TextBox Grid.Column="1" Text="{Binding FooterColor}" Watermark="#101c32"/>
+                <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="8,0,0,0"
+                           Foreground="#999" FontSize="12"
+                           Text="Leave empty to follow the primary colour."/>
+            </Grid>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Right" Width="130" Spacing="6" Margin="12,0,0,0">
+            <Button Content="Add item" HorizontalAlignment="Stretch"
+                    Command="{Binding AddItemCommand}"/>
+            <Button Content="Remove" HorizontalAlignment="Stretch"
+                    Command="{Binding RemoveItemCommand}"/>
+            <Button Content="Choose link…" HorizontalAlignment="Stretch"
+                    Command="{Binding ChooseLinkCommand}"
+                    ToolTip.Tip="Pick a file in this project; its path is stored relative to the project folder."/>
+            <Separator/>
+            <Button Content="Move up" HorizontalAlignment="Stretch"
+                    Command="{Binding MoveUpCommand}"/>
+            <Button Content="Move down" HorizontalAlignment="Stretch"
+                    Command="{Binding MoveDownCommand}"/>
+            <TextBlock TextWrapping="Wrap" Foreground="#999" FontSize="11" Margin="0,8,0,0"
+                       Text="Icon fill shows through a brand icon's cut-out — set it to #ffffff for a YouTube or Facebook mark."/>
+        </StackPanel>
+
+        <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:FooterItemRow">
+                    <StackPanel Spacing="4">
+                        <Grid ColumnDefinitions="60,*,2*" ColumnSpacing="8">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Classes="fieldLabel" Text="Column"/>
+                                <NumericUpDown Value="{Binding Column}" Minimum="1" Maximum="4"
+                                               Increment="1" ShowButtonSpinner="False"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Classes="fieldLabel" Text="Title"/>
+                                <TextBox Text="{Binding Title}" Watermark="Contact"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Classes="fieldLabel" Text="Link"/>
+                                <TextBox Text="{Binding Link}" Watermark="-Info/About.md"/>
+                            </StackPanel>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,*,*,2*" ColumnSpacing="8">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Classes="fieldLabel" Text="Icon"/>
+                                <TextBox Text="{Binding Icon}" Watermark="bi-envelope"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Classes="fieldLabel" Text="Icon colour"/>
+                                <TextBox Text="{Binding IconColor}" Watermark="#ff0000"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Classes="fieldLabel" Text="Icon fill"/>
+                                <TextBox Text="{Binding IconBackground}" Watermark="#ffffff"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="3">
+                                <TextBlock Classes="fieldLabel" Text="Note"/>
+                                <TextBox Text="{Binding Note}" Watermark="Maintained by the volunteers"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</Window>

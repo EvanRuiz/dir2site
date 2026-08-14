@@ -186,6 +186,44 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
    whitespace the template would have to be careful about. */
 .artifact-meta-sep { margin: 0 0.4rem; opacity: 0.6; }
 
+/* Footer */
+
+/* Full-bleed band with the content held to the same container as the rest of the page — the colour
+   should reach the window edges even though the columns line up with everything above them. */
+.site-footer { background-color: {{ site.footer_color }}; }
+
+.site-footer,
+.site-footer .footer-link { color: {{ if site.footer_dark }}rgba(255, 255, 255, 0.72){{ else }}#555555{{ end }}; }
+.site-footer .footer-link { text-decoration: none; }
+.site-footer .footer-link:hover { color: {{ if site.footer_dark }}#ffffff{{ else }}#000000{{ end }}; }
+
+/* Indented to sit under the link's text rather than under its icon, which is where the eye expects
+   a caption to start. Matches the icon's width plus the flex gap. */
+.footer-note {
+  color: {{ if site.footer_dark }}rgba(255, 255, 255, 0.5){{ else }}#777777{{ end }};
+  padding-left: 1.75rem;
+}
+
+/* line-height:1 and the block glyph are what make the inset below mean anything: without them the
+   wrapper is as tall as the text line rather than as tall as the glyph, and a percentage inset is
+   measured against the wrong box — which showed as the patch spilling out under a round mark. */
+.footer-icon { position: relative; display: inline-flex; isolation: isolate; line-height: 1; }
+.footer-icon > .bi { display: block; line-height: 1; }
+
+/* Bootstrap's brand glyphs are one shape with the inner symbol cut out, so on a dark band that
+   cut-out shows the band and a YouTube mark comes out with a navy triangle instead of a white one.
+   This patch sits behind the glyph and the glyph's own ink masks it: everything except the cut-out
+   is painted over. That is why it can be a plain inset rectangle — it never has to follow the
+   glyph's rounded corners, only stay inside them and cover the hole, which is also why it survives
+   any font size. 22% clears the cut-out on the brand glyphs while staying inside the mark. */
+.footer-icon-knockout::before {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  background: var(--knockout);
+  z-index: -1;
+}
+
 /* Markdown artifact */
 
 /* The 820px column is also MarkdownPreviewRenderer.SiteColumnWidth, which reads an authored

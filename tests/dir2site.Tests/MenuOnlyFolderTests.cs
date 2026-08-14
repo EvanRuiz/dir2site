@@ -187,4 +187,81 @@ public class MenuOnlyFolderTests : IDisposable
         Assert.True(File.Exists(SitePath("Photographs", "Credits", "index.html")));
         Assert.DoesNotContain("stretched-link\" href=\"Credits/\"", ReadPage("Photographs"));
     }
+
+    // Doubling the marker also takes away the menu entry, for pages you only ever arrive at from a
+    // link — the footer's own pages being the case it exists for.
+
+    [AvaloniaFact]
+    public void ADoubleMarkerKeepsThePageOutOfTheMenuAsWellAsTheCards()
+    {
+        MakeFolder("--Footer");
+        var photos = MakeFolder("Photographs");
+        MakeArtifact(photos, "Portrait.jpg", "A Portrait");
+
+        Generate();
+        var home = ReadPage();
+
+        Assert.True(File.Exists(SitePath("Footer", "index.html")));
+        Assert.DoesNotContain("nav-link\" href=\"Footer/\"", home);
+        Assert.DoesNotContain("stretched-link\" href=\"Footer/\"", home);
+        // The single-dash folder is unaffected by the new rule.
+        Assert.Contains("Photographs/", home);
+    }
+
+    [AvaloniaFact]
+    public void ADoubleMarkerLosesBothDashesFromItsAddress()
+    {
+        var footer = MakeFolder("--Footer");
+        MakeArtifact(footer, "Privacy.jpg", "Privacy");
+        MakeArtifact(footer, "Use.jpg", "Use and Conditions");
+
+        Generate();
+
+        // Stripping only one dash would publish this at "-Footer/" and leave the dash in every URL.
+        Assert.True(File.Exists(SitePath("Footer", "index.html")));
+        Assert.True(File.Exists(SitePath("Footer", "Privacy", "index.html")));
+        Assert.False(Directory.Exists(SitePath("-Footer")));
+
+        foreach (var page in Directory.EnumerateFiles(SitePath(), "*.html", SearchOption.AllDirectories))
+            Assert.DoesNotContain("-Footer", File.ReadAllText(page));
+    }
+
+    [AvaloniaFact]
+    public void ASingleDashFolderStillReachesTheMenu()
+    {
+        MakeFolder("-About");
+        MakeFolder("--Footer");
+
+        Generate();
+        var home = ReadPage();
+
+        Assert.Contains("<a class=\"nav-link\" href=\"About/\">About</a>", home);
+        Assert.DoesNotContain("nav-link\" href=\"Footer/\"", home);
+    }
+
+    [AvaloniaFact]
+    public void ADoubleDashOnItsOwnIsNotTheUnlistedMarker()
+    {
+        // Each marker needs a name after it, so "--" isn't the unlisted one — it is the single-dash
+        // marker on a folder named "-", which is what it already meant before "--" existed. Odd, but
+        // unchanged, and it keeps both rules stated the same way.
+        MakeFolder("--");
+
+        Generate();
+
+        Assert.True(Directory.Exists(SitePath("-")));
+        Assert.Contains("nav-link\" href=\"-/\"", ReadPage());
+    }
+
+    [AvaloniaFact]
+    public void ADoubleAndSingleMarkerCompetingForOneAddressIsReported()
+    {
+        MakeFolder("--Footer");
+        MakeFolder("-Footer");
+
+        var tree = DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>());
+        var result = SiteGenerator.Generate(_root, tree, new Dir2SiteModel { Title = "My Site" });
+
+        Assert.Contains(result.Warnings, w => w.Contains("Footer/"));
+    }
 }

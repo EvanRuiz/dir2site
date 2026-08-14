@@ -480,6 +480,12 @@ public partial class MainWindowViewModel : ViewModelBase
                 Title = Path.GetFileName(DirectoryRoot) is { Length: > 0 } n ? n : "My Site",
                 Footer = $"© {DateTime.Now.Year}",
             };
+
+            // Said at load rather than at Generate: a misspelled setting is wrong the moment the
+            // project opens, and waiting until a generate run to mention it is a slower loop.
+            var configWarnings = new List<string>();
+            YamlParser.ReportUnknownConfigKeys(yaml, configPath, configWarnings);
+            foreach (var warning in configWarnings) AppendWarning(warning);
         }
         else
         {
@@ -608,6 +614,37 @@ public partial class MainWindowViewModel : ViewModelBase
             IsLoading = false;
         }
     }
+
+    // ---- Footer -------------------------------------------------------------
+
+    /// <summary>
+    /// Opens the footer's own dialog. Its rows are a list of records rather than a single value, so
+    /// they don't fit beside the other site settings the way a colour or a title does.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanConfigureFooter))]
+    private async Task ConfigureFooter()
+    {
+        if (DirectoryRoot == null || Dir2SiteConfig == null || TopLevel is not Window owner) return;
+
+        var dialog = new FooterSettingsView(DirectoryRoot, Dir2SiteConfig);
+        if (await dialog.ShowDialog<FooterSettingsResult?>(owner) is not { } result) return;
+
+        Dir2SiteConfig.FooterColor = result.FooterColor;
+        Dir2SiteConfig.FooterItems = [.. result.Items];
+
+        // Written now rather than at the next Generate, so closing the app doesn't lose the edit.
+        if (ConfigPath() is { } path)
+        {
+            var config = Dir2SiteConfig;
+            await Task.Run(() => YamlParser.SaveDir2SiteConfig(path, config));
+        }
+
+        StatusText = result.Items.Count == 1
+            ? "Footer saved — 1 item"
+            : $"Footer saved — {result.Items.Count} items";
+    }
+
+    private bool CanConfigureFooter() => DirectoryRoot != null && Dir2SiteConfig != null;
 
     // ---- SFTP deploy --------------------------------------------------------
 

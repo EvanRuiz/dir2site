@@ -113,6 +113,99 @@ public class SaveDir2SiteConfigTests : IDisposable
         Assert.Equal(before, File.ReadAllText(Path_));
     }
 
+    // footerItems is the only setting that is a list of records rather than a single value, so it
+    // takes the block-rewriting path rather than the scalar one.
+
+    [Fact]
+    public void FooterItems_RoundTripThroughTheFile()
+    {
+        var config = Sample();
+        config.FooterItems =
+        [
+            new FooterItem
+            {
+                Column = 2,
+                Icon = "bi-youtube",
+                IconColor = "#ff0000",
+                IconBackground = "#ffffff",
+                Title = "Example External Link",
+                Link = "https://example.test/channel",
+                Note = "12,000+ views",
+            },
+            new FooterItem { Column = 1, Title = "Example Privacy", Link = "--Footer/Privacy.md" },
+        ];
+
+        YamlParser.SaveDir2SiteConfig(Path_, config);
+        var loaded = YamlParser.DeserializeAs<Dir2SiteModel>(File.ReadAllText(Path_));
+
+        Assert.Equal(2, loaded.FooterItems.Count);
+        Assert.Equal("bi-youtube", loaded.FooterItems[0].Icon);
+        Assert.Equal("#ff0000", loaded.FooterItems[0].IconColor);
+        Assert.Equal("#ffffff", loaded.FooterItems[0].IconBackground);
+        Assert.Equal("12,000+ views", loaded.FooterItems[0].Note);
+        Assert.Equal(2, loaded.FooterItems[0].Column);
+        Assert.Equal("--Footer/Privacy.md", loaded.FooterItems[1].Link);
+    }
+
+    [Fact]
+    public void FooterItems_LeaveTheRestOfAHandEditedFileAlone()
+    {
+        File.WriteAllText(Path_,
+            """
+            # My site config — please don't eat my notes
+            title: Old Name
+            footer: © 2026
+            primaryColor: '#333333'
+            """);
+
+        var config = Sample();
+        config.FooterItems = [new FooterItem { Title = "Example About", Link = "-Info/About.md" }];
+        YamlParser.SaveDir2SiteConfig(Path_, config);
+
+        var text = File.ReadAllText(Path_);
+        Assert.Contains("# My site config — please don't eat my notes", text);
+        Assert.Contains("footerItems:", text);
+        Assert.Contains("Example About", text);
+    }
+
+    [Fact]
+    public void FooterItems_SavingTwiceIsIdempotent()
+    {
+        var config = Sample();
+        config.FooterItems = [new FooterItem { Title = "Example About", Link = "-Info/About.md" }];
+
+        YamlParser.SaveDir2SiteConfig(Path_, config);
+        var before = File.ReadAllText(Path_);
+        YamlParser.SaveDir2SiteConfig(Path_, config);
+
+        Assert.Equal(before, File.ReadAllText(Path_));
+    }
+
+    [Fact]
+    public void ClearingTheFooterItems_RemovesTheKey()
+    {
+        var config = Sample();
+        config.FooterItems = [new FooterItem { Title = "Example About", Link = "-Info/About.md" }];
+        YamlParser.SaveDir2SiteConfig(Path_, config);
+        Assert.Contains("footerItems:", File.ReadAllText(Path_));
+
+        config.FooterItems = [];
+        YamlParser.SaveDir2SiteConfig(Path_, config);
+
+        var text = File.ReadAllText(Path_);
+        Assert.DoesNotContain("footerItems", text);
+        // Everything else is still there — only the one block went.
+        Assert.Contains("title: My Site", text);
+    }
+
+    [Fact]
+    public void AProjectWithNoFooterItems_NeverGrowsAnEmptyBlock()
+    {
+        YamlParser.SaveDir2SiteConfig(Path_, Sample());
+
+        Assert.DoesNotContain("footerItems", File.ReadAllText(Path_));
+    }
+
     [Fact]
     public void UnparseableConfig_IsRewrittenRatherThanLost()
     {
