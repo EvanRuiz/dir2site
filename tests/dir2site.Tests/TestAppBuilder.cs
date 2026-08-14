@@ -19,6 +19,14 @@ namespace dir2site.Tests;
 /// </summary>
 public static class TestAppBuilder
 {
+    /// <remarks>
+    /// Skia rather than headless drawing, because headless drawing stubs out text and cannot create
+    /// a typeface — so anything using the vendored icon font failed here while working in the app,
+    /// which is the wrong way round for a test to be wrong. With real drawing the font is genuinely
+    /// loaded, and a font this project ships but cannot read fails a test.
+    /// </remarks>
     public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<App>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
+        AppBuilder.Configure<App>()
+            .UseSkia()
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
 }

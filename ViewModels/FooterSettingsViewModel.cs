@@ -11,6 +11,7 @@ using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using dir2site.Models;
+using dir2site.Services;
 
 namespace dir2site.ViewModels;
 
@@ -31,6 +32,16 @@ public partial class FooterItemRow : ObservableObject
     [ObservableProperty] private string _title = string.Empty;
     [ObservableProperty] private string _link = string.Empty;
     [ObservableProperty] private string _note = string.Empty;
+
+    /// <summary>
+    /// Every available icon, for the row's icon box to complete against and to draw beside each
+    /// name. An instance property over a shared list because the box binds per row, and there are
+    /// two thousand icons that only ever need reading once.
+    /// </summary>
+    public IReadOnlyList<IconChoice> IconChoices => BootstrapIcons.Icons;
+
+    /// <summary>The font those glyphs are drawn in.</summary>
+    public string IconFontFamily => BootstrapIcons.FontFamily;
 
     public static FooterItemRow From(FooterItem item) => new()
     {

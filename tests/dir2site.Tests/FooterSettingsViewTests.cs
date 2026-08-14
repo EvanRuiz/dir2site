@@ -4,10 +4,13 @@ using System;
 using System.IO;
 using System.Linq;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using dir2site.Models;
+using dir2site.Services;
 using dir2site.ViewModels;
 using dir2site.Views;
 using Xunit;
@@ -37,6 +40,31 @@ public class FooterSettingsViewTests : IDisposable
         view.Show();
         Dispatcher.UIThread.RunJobs();
         return (view, (FooterSettingsViewModel)view.DataContext!);
+    }
+
+    /// <summary>
+    /// A press on the control itself. The handler tunnels, so raising it on the box is what a click
+    /// landing anywhere inside it amounts to.
+    /// </summary>
+    private static void Click(AutoCompleteBox box)
+    {
+        box.RaiseEvent(new PointerPressedEventArgs(
+            box, new Pointer(0, PointerType.Mouse, true), box, default,
+            0, new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.LeftButtonPressed),
+            KeyModifiers.None));
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>
+    /// Types into the box the way a person does. The inner text box is what holds focus and takes
+    /// the characters, so typing at the AutoCompleteBox itself goes nowhere.
+    /// </summary>
+    private static void Type(Window window, AutoCompleteBox box, string text)
+    {
+        box.GetVisualDescendants().OfType<TextBox>().First().Focus();
+        Dispatcher.UIThread.RunJobs();
+        window.KeyTextInput(text);
+        Dispatcher.UIThread.RunJobs();
     }
 
     private static Dir2SiteModel ConfigWith(params FooterItem[] items) => new()
@@ -106,18 +134,142 @@ public class FooterSettingsViewTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void TheIconColourBoxesClaimNoDefaultOfTheirOwn()
+    public void TheOnlyPlaceholderIsTheOneThatStatesARealDefault()
     {
         var (view, _) = Show(ConfigWith(
             new FooterItem { Title = "Row", Icon = "bi-youtube", Link = "https://example.test/a" }));
 
-        // Empty means "inherit, or the brand's own colour" — never a fixed red or white, so a
-        // placeholder naming one would be describing behaviour that doesn't exist.
+        // An example in a box reads as a default. Only the footer color has one — the primary color
+        // it genuinely falls back to; every other field is simply empty when empty.
         var watermarks = view.GetVisualDescendants().OfType<TextBox>()
             .Select(b => b.Watermark)
+            .Where(w => !string.IsNullOrEmpty(w))
             .ToList();
-        Assert.DoesNotContain("#ff0000", watermarks);
-        Assert.DoesNotContain("#ffffff", watermarks);
+
+        Assert.Equal(["#333333"], watermarks);
+    }
+
+    [AvaloniaFact]
+    public void TheIconBoxCompletesAgainstEveryAvailableIcon()
+    {
+        var (view, _) = Show(ConfigWith(new FooterItem { Title = "Row", Link = "https://example.test/a" }));
+
+        var box = view.GetVisualDescendants().OfType<AutoCompleteBox>().First();
+        var offered = box.ItemsSource!.Cast<IconChoice>().ToList();
+
+        Assert.True(offered.Count > 1500, $"expected the whole icon set, got {offered.Count}");
+        Assert.Contains(offered, i => i.Name == "bi-youtube");
+
+        // Clicking in with nothing typed has to show the set, since nobody knows a name to start
+        // from. The matching itself is pinned by the two filter tests below.
+        Assert.Equal(0, box.MinimumPrefixLength);
+    }
+
+    [AvaloniaFact]
+    public void ClickingIntoAFilledIconBoxOffersEveryIconNotJustTheOneAlreadyThere()
+    {
+        var (view, _) = Show(ConfigWith(
+            new FooterItem { Title = "Row", Icon = "bi-youtube", Link = "https://example.test/a" }));
+
+        var box = view.GetVisualDescendants().OfType<AutoCompleteBox>().First();
+        Click(box);
+
+        Assert.True(box.IsDropDownOpen);
+
+        // With ordinary Contains filtering the one match for "bi-youtube" is itself, so the list
+        // opened on the single icon the user clicked in to change. A click suspends the filter.
+        var filter = box.ItemFilter;
+        Assert.NotNull(filter);
+        Assert.True(filter("bi-youtube", new IconChoice("bi-lock", "x")));
+        Assert.True(filter("bi-youtube", new IconChoice("bi-envelope", "y")));
+    }
+
+    [AvaloniaFact]
+    public void ChoosingAnIconClosesTheListRatherThanReopeningIt()
+    {
+        var (view, _) = Show(ConfigWith(
+            new FooterItem { Title = "Row", Icon = "bi-youtube", Link = "https://example.test/a" }));
+
+        var box = view.GetVisualDescendants().OfType<AutoCompleteBox>().First();
+        Click(box);
+        Assert.True(box.IsDropDownOpen);
+
+        // Picking from the popup closes it and hands focus back to the box. Opening on focus made
+        // that look like a fresh click, so the action that should end the interaction restarted it.
+        box.SelectedItem = BootstrapIcons.Icons.First(i => i.Name == "bi-lock");
+        box.IsDropDownOpen = false;
+        box.Focus();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(box.IsDropDownOpen);
+    }
+
+    [AvaloniaFact]
+    public void TypingNarrowsTheIconListAgain()
+    {
+        var (view, _) = Show(ConfigWith(
+            new FooterItem { Title = "Row", Icon = "bi-youtube", Link = "https://example.test/a" }));
+
+        var box = view.GetVisualDescendants().OfType<AutoCompleteBox>().First();
+        Click(box);
+        Type(view, box, "question");
+
+        var matching = BootstrapIcons.Icons.Count(i => box.ItemFilter!(box.SearchText, i));
+
+        // Typed for real rather than by raising a key event, because that is what found this: the
+        // filter used to hang off a KeyDown handler, and characters arrive as text input, so the
+        // list stayed on all two thousand icons however much was typed.
+        Assert.InRange(matching, 1, 50);
+        Assert.True(box.ItemFilter!(box.SearchText, new IconChoice("bi-question", "x")));
+        Assert.False(box.ItemFilter!(box.SearchText, new IconChoice("bi-envelope", "y")));
+    }
+
+    [AvaloniaFact]
+    public void TypingNarrowsAnIconBoxThatAlreadyHadAValue()
+    {
+        var (view, _) = Show(ConfigWith(
+            new FooterItem { Title = "Row", Icon = "bi-lock", Link = "https://example.test/a" }));
+
+        var box = view.GetVisualDescendants().OfType<AutoCompleteBox>().First();
+        Click(box);
+        Type(view, box, "question");
+
+        Assert.True(box.ItemFilter!(box.SearchText, new IconChoice("bi-question", "x")));
+        Assert.False(box.ItemFilter!(box.SearchText, new IconChoice("bi-lock", "y")));
+    }
+
+    [AvaloniaFact]
+    public void MatchingIsAnywhereInTheNameAndIgnoresCase()
+    {
+        var (view, _) = Show(ConfigWith(new FooterItem { Title = "Row", Link = "https://example.test/a" }));
+
+        var box = view.GetVisualDescendants().OfType<AutoCompleteBox>().First();
+        Click(box);
+        Type(view, box, "TUBE");
+
+        Assert.True(box.ItemFilter!(box.SearchText, new IconChoice("bi-youtube", "x")));
+        Assert.False(box.ItemFilter!(box.SearchText, new IconChoice("bi-lock", "y")));
+    }
+
+    [AvaloniaFact]
+    public void TheChosenIconIsDrawnBesideItsField()
+    {
+        var (view, vm) = Show(ConfigWith(
+            new FooterItem { Title = "Row", Icon = "bi-youtube", Link = "https://example.test/a" }));
+
+        var glyph = BootstrapIcons.GlyphFor("bi-youtube");
+        var preview = view.GetVisualDescendants().OfType<TextBlock>()
+            .FirstOrDefault(t => t.Text == glyph);
+        Assert.NotNull(preview);
+
+        // It follows the field, so a name typed over the top redraws rather than going stale.
+        vm.Items[0].Icon = "bi-lock";
+        Dispatcher.UIThread.RunJobs();
+
+        var updated = BootstrapIcons.GlyphFor("bi-lock");
+        Assert.Contains(view.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == updated);
+        Assert.DoesNotContain(view.GetVisualDescendants().OfType<TextBlock>(),
+            t => t.Text == glyph && !ReferenceEquals(t, preview));
     }
 
     [AvaloniaFact]
