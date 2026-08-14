@@ -18,22 +18,31 @@ img.figure-center { display: block; margin: 1.4em auto; }
    <figure> is the shape the :::figure-* container already uses and gets right: the image and its
    caption stack inside a box that is itself pulled aside.
 
-   fit-content is what keeps an authored {width=220} honest: the box is sized by the image's own
-   width rather than spanning whatever is available, so the caption sits under a picture that is
-   still the width the author asked for. max-width stays as the runaway guard. */
+   fit-content sizes the box by the image rather than by whatever space is available, so the caption
+   sits under a picture rather than beside it; 45% is the runaway guard for a figure that states no
+   width of its own. */
 figure { width: fit-content; max-width: 100%; margin: 1.4em 0; text-align: center; }
 figure:has(img.figure-right)  { float: right; max-width: 45%; margin: 0.3em 0 1.2em 1.6em; }
 figure:has(img.figure-left)   { float: left;  max-width: 45%; margin: 0.3em 1.6em 1.2em 0; }
 figure:has(img.figure-center) { margin: 1.4em auto; }
+/* An authored {width=420} is a statement about what the reader should see, so it outranks that
+   guard and is bounded only by the column — which still narrows the picture on a small screen.
+   Must stay after the rules above: equal specificity, so order is what decides. */
+figure:has(img[width]) { max-width: 100%; }
 figure img.figure-right,
 figure img.figure-left,
 figure img.figure-center { float: none; margin: 0; }
 figure p { margin: 0; }
 
-/* Container form, for :::figure-right … ::: */
-.figure-right  { float: right; max-width: 45%; margin: 0.3em 0 1.2em 1.6em; text-align: center; }
-.figure-left   { float: left;  max-width: 45%; margin: 0.3em 1.6em 1.2em 0; text-align: center; }
-.figure-center { display: block; margin: 1.4em auto; text-align: center; }
+/* Container form, for :::figure-right … :::
+   :not(img) keeps these off an image carrying the same class — the ^^^ form puts it there, and
+   without this the picture was clamped to 45% of a figure already clamped to 45% of the column. */
+:not(img).figure-right  { float: right; max-width: 45%; margin: 0.3em 0 1.2em 1.6em; text-align: center; }
+:not(img).figure-left   { float: left;  max-width: 45%; margin: 0.3em 1.6em 1.2em 0; text-align: center; }
+:not(img).figure-center { display: block; margin: 1.4em auto; text-align: center; }
+/* An authored width wins here too, as it does on the <figure>. */
+:not(img).figure-right:has(img[width]),
+:not(img).figure-left:has(img[width]) { max-width: 100%; }
 
 .figure-right img,
 .figure-left img,
