@@ -31,6 +31,57 @@ Dir2Site is a open-source cross-platform desktop application that walks your loc
 3. Click **Generate Site** — the static site is written to a `_site/` subfolder inside your project folder
 4. Click **▶ Start** to launch the preview server, then open it in your browser
 
+## Artifact settings
+
+Every artifact — photo, PDF, article, video — has a YAML file beside it holding its settings.
+Dir2Site writes one the first time it sees the file, listing every setting that artifact type
+accepts, blank or at its default. A yaml written before a setting existed gains it on the next scan,
+so what's in the file is always the whole menu.
+
+| Setting | What it does | Default |
+|---|---|---|
+| `caption` | The title on the card and the page | the filename, tidied up |
+| `credit` | Attribution line under the caption | blank |
+| `date` | Shown under the credit; free text, so `1890` and `March 1890` both work | blank |
+| `url` | An external source or reference to link out to | blank |
+| `url-text` | The words of that link; blank uses the address itself | blank |
+| `home` | Also show this artifact on the home page — see [below](#featuring-an-item-on-the-home-page-home-true) | `false` |
+| `parent-cover` | Make this the picture for its folder's card — see [below](#choosing-a-folders-picture-parent-cover-grandparent-cover) | `false` |
+| `grandparent-cover` | The same, one level further up | `false` |
+
+Some types add their own: `photographer` on a photo, `author` and `publishOriginal` on a PDF,
+`provider`, `videoId` and `start` on a video.
+
+Anything else you find in a yaml — `id`, `preview`, `previewLarge`, `image`, `overlays` — belongs to
+Dir2Site, which fills it in and overwrites it as the site is generated. Leave those alone.
+
+A misspelled setting is reported as a warning when you generate, because YAML has no way of knowing
+that `parentcover` was meant to be `parent-cover` and would otherwise just sit there doing nothing.
+
+### Linking to a source (`url`, `url-text`)
+
+An artifact often came from somewhere — a catalogue entry, an archive record, the page you found it
+on. Put the address in `url` and the words in `url-text`:
+
+```yaml
+type: photo
+caption: Portrait of a Stranger
+credit: Unknown photographer
+url: https://example.org/archive/1890/portrait
+url-text: See the archive record
+```
+
+The link appears on the artifact's own page, under the credit line, with an "opens in a new window"
+icon and in your site's secondary colour. Leave `url-text` blank and the address itself is the link
+text — filling in only the address never means no link at all.
+
+Cards don't carry the link; the card's one job is to take you to the artifact.
+
+Videos are the exception, as they are for most things: a video has no page of its own, so its link
+sits on the card, and a blank `url` there means the `.url` shortcut's own address rather than no
+link — `url-text` is what decides whether the link appears at all. See
+[Adding videos](docs/adding-videos.md).
+
 ## Markdown articles
 
 Drop a `.md` file into your project folder and it becomes an article page. Edit the body in any

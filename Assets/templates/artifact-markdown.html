@@ -20,6 +20,7 @@
     <div class="artifact-meta border-top mt-4 pt-3">
       {{ include 'badge' artifact.badge artifact.badge_icon }}
       {{ if artifact.credit != "" }}<span class="text-muted small ms-2">{{ artifact.credit | html.escape }}</span>{{ end }}
+      {{ include 'artifact-link' 'span' 'ms-2' }}
       {{ if artifact.date != "" }}<span class="text-muted small ms-2">{{ artifact.date | html.escape }}</span>{{ end }}
     </div>
   </div>

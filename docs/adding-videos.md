@@ -30,14 +30,26 @@ On the next scan Dir2Site creates `My Talk.url.yaml` next to it:
 type: video
 caption: My Talk      # the title shown on the card
 credit:               # optional attribution line
-url-text:             # fill in to add a link out to the video; blank means no link
 provider: youtube
 videoId: AbCdEfGhIjK
 start:                # playback offset in seconds
+date:
+url:                  # blank sends the link to the .url shortcut's own address
+url-text:             # fill in to add a link out to the video; blank means no link
+home: false
+parent-cover: false
+grandparent-cover: false
 ```
+
+The last few are the settings every artifact has; see [Artifact settings](../README.md#artifact-settings).
 
 Cards carry no outbound link by default — the player already offers YouTube's own. Put text in
 `url-text` (e.g. `View on YouTube`) and the card gains a link to the URL from your `.url` file.
+
+This is the one place `url-text` works without a `url` beside it: a video's address comes from the
+shortcut, so there is nothing for you to type. Fill in `url` anyway and the link goes there instead
+— the talk's own page rather than the upload, say. And because a video has no page of its own, its
+link sits on the card, where every other artifact's sits under the credit line on its page.
 
 Edit the caption and credit in the app or directly in the YAML, exactly as for any other artifact.
 
@@ -85,7 +97,8 @@ different video and regenerate: the card moves to the new video, the poster is r
 the yaml is brought back into line. Editing `videoId` in the yaml by hand does not stick,
 because the `.url` will overwrite it on the next run — change the link instead.
 
-`caption`, `credit`, `url-text` and `start` are yours; nothing overwrites those.
+`caption`, `credit`, `url-text`, `start` and the settings every artifact has are yours; nothing
+overwrites those.
 
 ---
 

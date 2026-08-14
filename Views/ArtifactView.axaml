@@ -40,9 +40,9 @@
                        TextWrapping="Wrap"
                        IsVisible="{Binding Credit, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-            <TextBlock Text="{Binding UrlText}"
+            <TextBlock Text="{Binding UrlDisplay}"
                        TextWrapping="Wrap"
-                       IsVisible="{Binding UrlText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                       IsVisible="{Binding UrlDisplay, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
             <TextBlock Text="{Binding Id}"
                        FontSize="11"

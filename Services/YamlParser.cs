@@ -72,6 +72,9 @@ public static class YamlParser
     {
         var yamlPath = FindYamlMeta(filePath);
 
+        // A file we just wrote already carries the current key set; only a pre-existing one can be
+        // behind it.
+        var scaffolded = yamlPath is null;
         if (yamlPath is null)
             yamlPath = CreateDefaultYamlMeta(filePath, errors);
 
@@ -102,6 +105,7 @@ public static class YamlParser
                 if (parse(yaml) is { } artifact)
                 {
                     ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), warnings);
+                    if (!scaffolded) EnsureDefaultKeys(yamlPath, yaml, token);
                     return artifact;
                 }
             }
@@ -164,11 +168,57 @@ public static class YamlParser
             $"{Path.GetFileName(yamlPath)}: {string.Join(", ", unknown)} {subject} dir2site knows, so nothing was done with {tail}.");
     }
 
+    /// <summary>
+    /// Brings a yaml written before a feature existed up to the current key set: every key
+    /// <see cref="DefaultKeys"/> lists for this type and the document does not already have is
+    /// appended at its default. A setting is otherwise only discoverable from the docs, which is how
+    /// <c>home</c> and the cover markers went years without appearing in a single file.
+    /// </summary>
+    /// <remarks>
+    /// Only ever adds. Values already on disk are never rewritten and keys are never removed or
+    /// reordered, so a blank the site owner left blank stays that way. Absence is read from the
+    /// document rather than the parsed model, where blank and absent are the same null.
+    ///
+    /// New keys land at the end of the file, because that is where <see cref="YamlDocumentEditor"/>
+    /// can splice without disturbing anything — putting them in template order would mean rewriting
+    /// the file and losing the comments this whole path exists to protect. For the same reason a
+    /// document the editor cannot load is left alone entirely: this is housekeeping, and no missing
+    /// key is worth a comment.
+    /// </remarks>
+    private static void EnsureDefaultKeys(string yamlPath, string yaml, string artifactType)
+    {
+        Dictionary<object, object>? doc;
+        try { doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml); }
+        catch { return; }
+        if (doc == null) return;
+
+        var present = doc.Keys
+            .Select(k => k?.ToString())
+            .Where(k => !string.IsNullOrEmpty(k))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var missing = DefaultKeys(artifactType).Where(kv => !present.Contains(kv.Key)).ToList();
+        if (missing.Count == 0) return;
+
+        var editor = YamlDocumentEditor.TryLoad(yaml);
+        if (editor == null) return;
+
+        foreach (var (key, value) in missing)
+        {
+            if (!editor.AddIfAbsent(key, value)) return;
+        }
+
+        if (!editor.IsModified) return;
+
+        try { File.WriteAllText(yamlPath, editor.Text); }
+        catch { /* read-only media, a file open elsewhere: the artifact still parsed fine. */ }
+    }
+
     // Reflected once per model — the same handful of types are parsed for every file in a project.
     private static readonly ConcurrentDictionary<Type, HashSet<string>> DeclaredKeysByType = new();
 
     /// <summary>The keys a model accepts, spelled the way the deserializer expects to see them.</summary>
-    private static HashSet<string> DeclaredKeys(Type modelType) =>
+    internal static HashSet<string> DeclaredKeys(Type modelType) =>
         DeclaredKeysByType.GetOrAdd(modelType, static type =>
         {
             var keys = new HashSet<string>(StringComparer.Ordinal);
@@ -423,25 +473,85 @@ public static class YamlParser
         }
     }
 
+    /// <summary>
+    /// Keys the tool writes for itself, and so never scaffolds or backfills. A blank one in a fresh
+    /// file only invites hand-editing a value the generator, the preview pipeline or the overlay
+    /// editor will overwrite; <c>cover</c> is the legacy spelling of <c>parent-cover</c>, which the
+    /// docs already say not to reach for.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> ToolOwnedKeys = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "type", "id", "preview", "previewLarge", "image", "original", "tile", "overlays", "cover",
+    };
+
+    // Every artifact carries these, so a photo's yaml advertises the same settings as a PDF's.
+    private static readonly string[] SharedTail =
+        ["date", "url", "url-text", "home", "parent-cover", "grandparent-cover"];
+
+    /// <summary>
+    /// The authored keys a type's yaml should carry, in the order they are written, paired with the
+    /// value a fresh file gets. This is the single source of truth behind both the scaffolder
+    /// (<see cref="BuildTemplate"/>) and the backfill (<see cref="EnsureDefaultKeys"/>) — a setting
+    /// added to a model and listed here shows up in new and existing yaml alike, instead of being a
+    /// feature you can only find in the docs.
+    /// </summary>
+    /// <remarks>
+    /// <c>type:</c> and <c>caption:</c> are deliberately absent: both are derived from the file
+    /// itself rather than defaulted, so <see cref="BuildTemplate"/> writes them and the backfill
+    /// leaves them alone. Tool-owned keys are absent too — see <see cref="ToolOwnedKeys"/>.
+    /// </remarks>
+    internal static IReadOnlyList<KeyValuePair<string, string>> DefaultKeys(string artifactType)
+    {
+        var head = artifactType switch
+        {
+            "photo" or "deepzoom" => new[] { "credit", "photographer" },
+            "pdf"                 => ["credit", "author", "publishOriginal"],
+            "video"               => ["credit", "provider", "videoId", "start"],
+            _                     => ["credit"],
+        };
+
+        return head.Concat(SharedTail)
+            .Select(key => new KeyValuePair<string, string>(key, DefaultValue(key)))
+            .ToList();
+    }
+
+    // Blank is the right default for anything the site owner writes in prose; the flags need a
+    // value, because a bare "home:" reads as null rather than false.
+    private static string DefaultValue(string key) => key switch
+    {
+        "home" or "parent-cover" or "grandparent-cover" or "publishOriginal" => "false",
+        _ => "",
+    };
+
     // The video arm needs the shortcut's target, which the caller has already parsed — re-reading
     // the .url here would just be a second chance to disagree with it.
     private static string BuildTemplate(
         string artifactType,
         string caption,
-        InternetShortcutParser.VideoRef? video = null) => artifactType switch
+        InternetShortcutParser.VideoRef? video = null)
     {
-        "photo"    => $"type: photo\ncaption: {caption}\ncredit:\nphotographer:\n",
-        "deepzoom" => $"type: deepzoom\ncaption: {caption}\ncredit:\nphotographer:\n",
-        "pdf"      => $"type: pdf\ncaption: {caption}\ncredit:\nauthor:\npublishOriginal: false\n",
-        "markdown" => $"type: markdown\ncaption: {caption}\ncredit:\n",
-        // url-text is left blank on purpose: the player carries YouTube's own affordance, so a card
-        // only gets an outbound link when the site owner asks for one by filling this in.
-        "video"    => $"type: video\ncaption: {caption}\ncredit:\nurl-text:\n"
-                      + $"provider: {video?.Provider ?? InternetShortcutParser.YouTube}\n"
-                      + $"videoId: {video?.VideoId}\n"
-                      + $"start:{(video?.Start is { } s ? $" {s}" : "")}\n",
-        _          => $"type: {artifactType}\ncaption: {caption}\ncredit:\n",
-    };
+        // A video's provider and id come from the .url and are rewritten from it on every scan, so
+        // the template starts them off right rather than blank. url-text stays empty on purpose:
+        // the player carries YouTube's own affordance, so a card only gets an outbound link when
+        // the site owner asks for one by filling this in.
+        var seeded = artifactType == "video"
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["provider"] = video?.Provider ?? InternetShortcutParser.YouTube,
+                ["videoId"]  = video?.VideoId ?? "",
+                ["start"]    = video?.Start is { } s ? s.ToString() : "",
+            }
+            : [];
+
+        var sb = new StringBuilder();
+        sb.Append($"type: {artifactType}\ncaption: {caption}\n");
+        foreach (var (key, fallback) in DefaultKeys(artifactType))
+        {
+            var value = seeded.TryGetValue(key, out var seed) ? seed : fallback;
+            sb.Append(value.Length == 0 ? $"{key}:\n" : $"{key}: {value}\n");
+        }
+        return sb.ToString();
+    }
 
     /// <summary>
     /// Drops the provider suffix a browser appends when it saves a video shortcut, so

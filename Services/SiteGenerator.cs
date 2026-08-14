@@ -362,7 +362,13 @@ public static class SiteGenerator
         obj.SetValue("is_video", video != null, readOnly: true);
         obj.SetValue("video_id", video?.VideoId ?? "", readOnly: true);
         obj.SetValue("video_start", video?.Start?.ToString() ?? "", readOnly: true);
-        obj.SetValue("video_url", video?.SourceUrl ?? "", readOnly: true);
+        // A video's link out is the shortcut's own target, unless the yaml names somewhere better
+        // to send people — the talk's page rather than the upload, say. Everywhere else `url` is a
+        // link on the artifact's page; a video has no page, so here it lands on the card.
+        obj.SetValue(
+            "video_url",
+            video == null ? "" : item.Artifact?.Url is { Length: > 0 } chosen ? chosen : video.SourceUrl ?? "",
+            readOnly: true);
         obj.SetValue("url_text", video != null ? item.Artifact?.UrlText ?? "" : "", readOnly: true);
         obj.SetValue("credit", item.Artifact?.Credit ?? "", readOnly: true);
         return obj;
@@ -772,6 +778,17 @@ public static class SiteGenerator
         artifactObj.SetValue("caption", caption, readOnly: true);
         artifactObj.SetValue("credit", artifact.Credit ?? "", readOnly: true);
         artifactObj.SetValue("date", artifact.Date ?? "", readOnly: true);
+
+        // Blank link text falls back to the address itself, so a url the site owner typed is never
+        // silently dropped. Both keys are always set: the artifact templates share this object and
+        // Scriban reads members per template, so a missing one is an error rather than a blank.
+        var url = artifact.Url ?? "";
+        artifactObj.SetValue("url", url, readOnly: true);
+        artifactObj.SetValue(
+            "url_text",
+            url.Length == 0 ? "" : artifact.UrlText is { Length: > 0 } text ? text : url,
+            readOnly: true);
+
         artifactObj.SetValue("badge", TypeBadge(artifact.Type), readOnly: true);
         artifactObj.SetValue("badge_icon", TypeIcon(artifact.Type), readOnly: true);
         artifactObj.SetValue("preview_src", previewSrc, readOnly: true);
