@@ -124,7 +124,7 @@ public class UnknownYamlKeyTests : IDisposable
             "type: photo\ncaption: Apple\ngrandparent_cover: true\n");
 
         var tree = DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>());
-        var (_, _, warnings) = SiteGenerator.Generate(_root, tree, new Dir2SiteModel
+        var (_, _, warnings, _) = SiteGenerator.Generate(_root, tree, new Dir2SiteModel
         {
             Title = "My Site",
             Footer = "© 2026",

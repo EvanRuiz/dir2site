@@ -7,6 +7,7 @@ using System.Linq;
 using Avalonia.Headless.XUnit;
 using dir2site.Models;
 using dir2site.Services;
+using dir2site.SftpSync.Core;
 using Xunit;
 
 namespace dir2site.Tests;
@@ -16,6 +17,10 @@ namespace dir2site.Tests;
 /// the folder being rendered — so the generator can't decide from a folder's own mtime whether its
 /// page is stale. It re-renders everything, every time, and only writes what actually changed.
 /// These tests pin both halves of that: the freshness, and the untouched mtimes deploys rely on.
+///
+/// The same re-render is what lets it say which files the site no longer has any reason to hold —
+/// what a deleted or renamed source leaves behind — so the sweep that offers those up is pinned
+/// here too, from both directions: that it finds the leftovers, and that it finds nothing else.
 /// </summary>
 public class SiteGeneratorTests : IDisposable
 {
@@ -83,14 +88,31 @@ public class SiteGeneratorTests : IDisposable
              """);
     }
 
-    private (string Summary, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings) Generate(Dir2SiteModel config)
+    private (string Summary, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings,
+        IReadOnlyList<string> Orphans) Generate(Dir2SiteModel config)
     {
         var tree = DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>());
         return SiteGenerator.Generate(_root, tree, config);
     }
 
+    /// <summary>
+    /// Generate, then take away everything it reported as no longer belonging — what the app does
+    /// when the user accepts the dialog. Returns the orphans, so a test can check both what was
+    /// offered and what became of it.
+    /// </summary>
+    private IReadOnlyList<string> GenerateAndPrune(Dir2SiteModel config)
+    {
+        var result = Generate(config);
+        SiteGenerator.RemoveOrphans(SitePath(), result.Orphans);
+        return result.Orphans;
+    }
+
     private Dictionary<string, DateTime> PageMtimes() =>
         Directory.EnumerateFiles(SitePath(), "index.html", SearchOption.AllDirectories)
+                 .ToDictionary(p => p, File.GetLastWriteTimeUtc);
+
+    private Dictionary<string, DateTime> AllFileMtimes() =>
+        Directory.EnumerateFiles(SitePath(), "*", SearchOption.AllDirectories)
                  .ToDictionary(p => p, File.GetLastWriteTimeUtc);
 
     [AvaloniaFact]
@@ -268,8 +290,9 @@ public class SiteGeneratorTests : IDisposable
     [AvaloniaFact]
     public void TurningPublishOriginalBackOff_TakesTheAlreadyPublishedPdfDownAgain()
     {
-        // Generation is otherwise additive, so without this the file stayed in _site and reachable
-        // — the opposite of what turning the flag off is asking for.
+        // No special case does this any more: with the flag off, nothing asks for the PDF, so the
+        // copy already in the site belongs to nothing and the sweep offers it up like any other
+        // leftover. Leaving it would be the opposite of what turning the flag off is asking for.
         var documents = MakeFolder("Documents");
         MakePdf(documents, "Letter.pdf", "A Letter", publishOriginal: true);
         MakePdf(documents, "Memo.pdf", "A Memo", publishOriginal: false);
@@ -278,9 +301,246 @@ public class SiteGeneratorTests : IDisposable
         Assert.True(File.Exists(SitePath("Documents", "Letter", "Letter.pdf")));
 
         MakePdf(documents, "Letter.pdf", "A Letter", publishOriginal: false);
-        Generate(Config());
+        GenerateAndPrune(Config());
 
         Assert.False(File.Exists(SitePath("Documents", "Letter", "Letter.pdf")));
         Assert.True(File.Exists(SitePath("Documents", "Letter", "index.html")));
+    }
+
+    /// <summary>
+    /// The one that matters most. Generating writes only what changed, so on a second run almost
+    /// every asset is left alone as already current — and if being left alone meant going
+    /// unrecorded, the sweep would read the whole framework as leftovers and take the site apart.
+    /// Each path below is a different one of those "nothing to do" early returns.
+    /// </summary>
+    [AvaloniaFact]
+    public void AnAssetNothingRecopied_IsStillThereAfterTheSweep()
+    {
+        var nested = MakeFolder("Photographs", "1890s");
+        MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        MakeArtifact(nested, "Landscape.jpg", "A Landscape");
+        // A preview to copy, so the mtime-skip path in CopyFileIfNewer is exercised too.
+        var previews = MakeFolder("Photographs", "1890s", ".dir2site", "Portrait");
+        File.WriteAllText(Path.Combine(previews, "Portrait-preview.jpg"), "not really a jpeg");
+
+        Generate(Config());
+        var orphans = GenerateAndPrune(Config());
+
+        Assert.Empty(orphans);
+
+        // Rendered templates, skipped because the text is identical.
+        Assert.True(File.Exists(SitePath("css", "site.css")));
+        Assert.True(File.Exists(SitePath("js", "site.js")));
+        Assert.True(File.Exists(SitePath("js", "video.js")));
+
+        // Embedded assets, skipped because they're no older than the app that carries them.
+        Assert.True(File.Exists(SitePath("js", "bootstrap", "bootstrap.min.css")));
+        Assert.True(File.Exists(SitePath("js", "bootstrap", "bootstrap.bundle.min.js")));
+        Assert.True(File.Exists(SitePath("js", "bootstrap-icons", "bootstrap-icons.css")));
+        Assert.NotEmpty(Directory.EnumerateFiles(SitePath("js", "bootstrap-icons", "fonts")));
+        Assert.True(File.Exists(SitePath("js", "openseadragon", "openseadragon.min.js")));
+        Assert.NotEmpty(Directory.EnumerateFiles(SitePath("js", "openseadragon", "images")));
+        Assert.True(File.Exists(SitePath("js", "bookreader", "BookReader.js")));
+        Assert.NotEmpty(Directory.EnumerateFiles(SitePath("js", "bookreader", "images")));
+
+        // A copied file, skipped because the site's copy is no older than the source.
+        Assert.True(File.Exists(SitePath("Photographs", "1890s", "Portrait", "Portrait-preview.jpg")));
+    }
+
+    [AvaloniaFact]
+    public void ADeletedFolder_TakesItsPagesOutOfTheSiteWithIt()
+    {
+        var nested = MakeFolder("Photographs", "1890s");
+        MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        MakeArtifact(nested, "Landscape.jpg", "A Landscape");
+        var documents = MakeFolder("Documents");
+        MakeArtifact(documents, "Letter.jpg", "A Letter");
+        MakeArtifact(documents, "Memo.jpg", "A Memo");
+
+        Generate(Config());
+        Assert.True(File.Exists(SitePath("Photographs", "1890s", "Portrait", "index.html")));
+
+        Directory.Delete(nested, recursive: true);
+        GenerateAndPrune(Config());
+
+        // The folder and everything under it goes, down to the now-empty directories.
+        Assert.False(Directory.Exists(SitePath("Photographs", "1890s")));
+
+        // And nothing else does. A sweep that took the site with it would pass the check above.
+        Assert.True(File.Exists(SitePath("Photographs", "index.html")));
+        Assert.True(File.Exists(SitePath("Documents", "index.html")));
+        Assert.True(File.Exists(SitePath("Documents", "Letter", "index.html")));
+        Assert.True(File.Exists(SitePath("index.html")));
+    }
+
+    [AvaloniaFact]
+    public void ARenamedArtifact_LeavesNothingAtItsOldAddress()
+    {
+        var nested = MakeFolder("Photographs", "1890s");
+        MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        // A sibling keeps 1890s a collection, so neither name is published as the folder's index.
+        MakeArtifact(nested, "Landscape.jpg", "A Landscape");
+
+        Generate(Config());
+        Assert.True(File.Exists(SitePath("Photographs", "1890s", "Portrait", "index.html")));
+
+        File.Move(Path.Combine(nested, "Portrait.jpg"), Path.Combine(nested, "Headshot.jpg"));
+        File.Move(Path.Combine(nested, "Portrait.jpg.yaml"), Path.Combine(nested, "Headshot.jpg.yaml"));
+        GenerateAndPrune(Config());
+
+        // A rename is a delete and an add; without the sweep the old URL kept working and kept
+        // being published, which is how a renamed page ends up live at two addresses.
+        Assert.False(Directory.Exists(SitePath("Photographs", "1890s", "Portrait")));
+        Assert.True(File.Exists(SitePath("Photographs", "1890s", "Headshot", "index.html")));
+    }
+
+    [AvaloniaFact]
+    public void AStrayFileInTheSite_DoesNotSurviveTheNextGenerate()
+    {
+        var documents = MakeFolder("Documents");
+        MakeArtifact(documents, "Letter.jpg", "A Letter");
+        MakeArtifact(documents, "Memo.jpg", "A Memo");
+
+        Generate(Config());
+
+        File.WriteAllText(SitePath("leftover.html"), "from some earlier life");
+        Directory.CreateDirectory(SitePath("old"));
+        File.WriteAllText(SitePath("old", "index.html"), "likewise");
+
+        var orphans = GenerateAndPrune(Config());
+
+        Assert.Contains("leftover.html", orphans);
+        Assert.Contains("old/index.html", orphans);
+        Assert.False(File.Exists(SitePath("leftover.html")));
+        Assert.False(File.Exists(SitePath("old", "index.html")));
+        // The directory goes too, once the last thing in it has — otherwise the site fills up with
+        // empty folders that the deploy still has to walk.
+        Assert.False(Directory.Exists(SitePath("old")));
+    }
+
+    [AvaloniaFact]
+    public void AHandPlacedDotFile_IsLeftAlone()
+    {
+        var documents = MakeFolder("Documents");
+        MakeArtifact(documents, "Letter.jpg", "A Letter");
+        MakeArtifact(documents, "Memo.jpg", "A Memo");
+
+        Generate(Config());
+
+        // dir2site writes no dot-entries into _site, so these can only have come from a person or
+        // a server — and it doesn't delete what it didn't create. The deploy applies the same rule
+        // at the far end, so the two halves agree about what is nobody's business to remove.
+        File.WriteAllText(SitePath(".htaccess"), "Redirect 301 /old /new");
+        Directory.CreateDirectory(SitePath(".well-known", "acme-challenge"));
+        File.WriteAllText(SitePath(".well-known", "acme-challenge", "token"), "abc123");
+
+        var orphans = GenerateAndPrune(Config());
+
+        Assert.DoesNotContain(orphans, o => o.Contains(".htaccess"));
+        Assert.DoesNotContain(orphans, o => o.Contains("acme-challenge"));
+        Assert.True(File.Exists(SitePath(".htaccess")));
+        Assert.True(File.Exists(SitePath(".well-known", "acme-challenge", "token")));
+    }
+
+    [AvaloniaFact]
+    public void RegeneratingWithNoChanges_LeavesEveryFileMtimeAlone()
+    {
+        var nested = MakeFolder("Photographs", "1890s");
+        MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        MakeArtifact(nested, "Landscape.jpg", "A Landscape");
+        MakeFolder("Documents");
+
+        Generate(Config());
+        var before = AllFileMtimes();
+
+        var orphans = GenerateAndPrune(Config());
+        var after = AllFileMtimes();
+
+        // The page-level version of this above guards the same contract for pages. Widened to
+        // every file, it is also what says the sweep is inert on a no-op run: nothing reported,
+        // nothing removed, nothing rewritten — so a deploy has nothing to re-upload.
+        Assert.Empty(orphans);
+        Assert.Equal(before.Keys.OrderBy(k => k), after.Keys.OrderBy(k => k));
+        foreach (var (path, mtime) in before)
+            Assert.Equal(mtime, after[path]);
+    }
+
+    [AvaloniaFact]
+    public void ALogoDroppedFromTheConfig_LeavesTheSite()
+    {
+        var documents = MakeFolder("Documents");
+        MakeArtifact(documents, "Letter.jpg", "A Letter");
+        MakeArtifact(documents, "Memo.jpg", "A Memo");
+        File.WriteAllText(Path.Combine(_root, "logo.png"), "not really a png");
+
+        var config = Config();
+        config.Logo = "logo.png";
+        Generate(config);
+        Assert.True(File.Exists(SitePath("logo.png")));
+
+        // The logo is copied by name from the config, so clearing the setting is the only thing
+        // that can retire it — nothing about the source folder changed.
+        config.Logo = "";
+        GenerateAndPrune(config);
+
+        Assert.False(File.Exists(SitePath("logo.png")));
+    }
+
+    [AvaloniaFact]
+    public void AFileRemovedFromAnUnderscoreFolder_LeavesTheSite()
+    {
+        var documents = MakeFolder("Documents");
+        MakeArtifact(documents, "Letter.jpg", "A Letter");
+        MakeArtifact(documents, "Memo.jpg", "A Memo");
+        var media = MakeFolder("_media");
+        File.WriteAllText(Path.Combine(media, "a.png"), "not really a png");
+        File.WriteAllText(Path.Combine(media, "b.png"), "not really a png either");
+
+        Generate(Config());
+        Assert.True(File.Exists(SitePath("_media", "b.png")));
+
+        // Underscore folders are copied verbatim rather than scanned as artifacts, so they had no
+        // pruning story at all before this.
+        File.Delete(Path.Combine(media, "b.png"));
+        GenerateAndPrune(Config());
+
+        Assert.True(File.Exists(SitePath("_media", "a.png")));
+        Assert.False(File.Exists(SitePath("_media", "b.png")));
+
+        File.Delete(Path.Combine(media, "a.png"));
+        GenerateAndPrune(Config());
+
+        Assert.False(Directory.Exists(SitePath("_media")));
+    }
+
+    /// <summary>
+    /// The point of all of it. The deploy takes the local manifest by walking _site, so while a
+    /// deleted page's file stayed there it still looked like part of the site: uploaded on every
+    /// sync, and never able to appear as stale on the server, because "stale" means present
+    /// remotely and absent locally. Taking it out of _site is what lets the server be told.
+    /// </summary>
+    [AvaloniaFact]
+    public void OnceRemoved_ADeletedPageIsOfferedForDeletionOnTheServerToo()
+    {
+        var nested = MakeFolder("Photographs", "1890s");
+        MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        MakeArtifact(nested, "Landscape.jpg", "A Landscape");
+        MakeFolder("Documents");
+
+        Generate(Config());
+        // Stands in for what the last deploy left on the server.
+        var uploaded = SyncManifestBuilder.BuildLocal(SitePath());
+        Assert.Contains("Photographs/1890s/Portrait/index.html", uploaded.Files.Keys);
+
+        Directory.Delete(nested, recursive: true);
+        GenerateAndPrune(Config());
+
+        var diff = SyncManifestBuilder.Compare(SyncManifestBuilder.BuildLocal(SitePath()), uploaded);
+
+        Assert.Contains("Photographs/1890s/Portrait/index.html", diff.StaleRemote);
+        Assert.Contains("Photographs/1890s/index.html", diff.StaleRemote);
+        // And the pages that are still real aren't swept up with them.
+        Assert.DoesNotContain("Photographs/index.html", diff.StaleRemote);
+        Assert.DoesNotContain("index.html", diff.StaleRemote);
     }
 }
