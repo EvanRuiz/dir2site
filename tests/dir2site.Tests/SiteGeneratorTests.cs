@@ -514,6 +514,39 @@ public class SiteGeneratorTests : IDisposable
     }
 
     /// <summary>
+    /// The sweep works inside _site and nowhere else. Everything it deletes has a twin in the
+    /// project folder — _media/logo.png is copied to _site/_media/logo.png — so a sweep that
+    /// wandered up out of _site would be deleting the user's originals, not generated copies.
+    /// </summary>
+    [AvaloniaFact]
+    public void TheSweepNeverReachesOutOfTheSiteIntoTheProjectFolder()
+    {
+        var documents = MakeFolder("Documents");
+        MakeArtifact(documents, "Letter.jpg", "A Letter");
+        MakeArtifact(documents, "Memo.jpg", "A Memo");
+        var media = MakeFolder("_media");
+        File.WriteAllText(Path.Combine(media, "logo.png"), "not really a png");
+
+        Generate(Config());
+
+        // Stray copies in _site, named exactly like the sources they came from. Removing these must
+        // not take the originals with them.
+        File.WriteAllText(SitePath("_media", "orphan.png"), "left over");
+        var orphans = GenerateAndPrune(Config());
+
+        Assert.Contains("_media/orphan.png", orphans);
+        Assert.False(File.Exists(SitePath("_media", "orphan.png")));
+
+        // The project folder is untouched: sources, their yamls, and the source _media itself.
+        Assert.True(File.Exists(Path.Combine(media, "logo.png")));
+        Assert.True(Directory.Exists(media));
+        Assert.True(File.Exists(Path.Combine(documents, "Letter.jpg")));
+        Assert.True(File.Exists(Path.Combine(documents, "Letter.jpg.yaml")));
+        // Every reported path stays within _site — nothing climbs out with a "..".
+        Assert.DoesNotContain(orphans, o => o.Contains(".."));
+    }
+
+    /// <summary>
     /// The point of all of it. The deploy takes the local manifest by walking _site, so while a
     /// deleted page's file stayed there it still looked like part of the site: uploaded on every
     /// sync, and never able to appear as stale on the server, because "stale" means present
@@ -542,5 +575,39 @@ public class SiteGeneratorTests : IDisposable
         // And the pages that are still real aren't swept up with them.
         Assert.DoesNotContain("Photographs/index.html", diff.StaleRemote);
         Assert.DoesNotContain("index.html", diff.StaleRemote);
+    }
+
+    /// <summary>
+    /// The server is meant to end up one-to-one with _site, and _media is the case where that is
+    /// easiest to get wrong: it's copied in verbatim rather than generated, and it's the one thing
+    /// in the site an article links to by hand. A static include that is still in the project must
+    /// never be proposed for deletion on the server — and one that isn't, must be.
+    /// </summary>
+    [AvaloniaFact]
+    public void StaticMediaIsOfferedForRemoteDeletionOnlyOnceItIsGoneLocally()
+    {
+        var documents = MakeFolder("Documents");
+        MakeArtifact(documents, "Letter.jpg", "A Letter");
+        MakeArtifact(documents, "Memo.jpg", "A Memo");
+        var media = MakeFolder("_media");
+        File.WriteAllText(Path.Combine(media, "diagram.png"), "not really a png");
+        File.WriteAllText(Path.Combine(media, "chart.png"), "not really a png either");
+
+        Generate(Config());
+        var uploaded = SyncManifestBuilder.BuildLocal(SitePath());
+        Assert.Contains("_media/diagram.png", uploaded.Files.Keys);
+        Assert.Contains("_media/chart.png", uploaded.Files.Keys);
+
+        // Only one of them goes.
+        File.Delete(Path.Combine(media, "chart.png"));
+        GenerateAndPrune(Config());
+
+        var diff = SyncManifestBuilder.Compare(SyncManifestBuilder.BuildLocal(SitePath()), uploaded);
+
+        Assert.Contains("_media/chart.png", diff.StaleRemote);
+        // The one still in the project stays published, and isn't queued for re-upload either —
+        // nothing about it changed.
+        Assert.DoesNotContain("_media/diagram.png", diff.StaleRemote);
+        Assert.DoesNotContain("_media/diagram.png", diff.ToUpload);
     }
 }
