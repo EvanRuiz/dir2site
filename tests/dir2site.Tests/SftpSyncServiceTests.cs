@@ -55,8 +55,8 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
     [SkippableFact]
     public void ADotFolderInTheSiteNeverReachesTheServer()
     {
-        // _site is never cleaned, so a tool run with it as the working directory leaves its state
-        // behind for good — and every later deploy would have published it.
+        // Generating leaves dot-entries alone on purpose, so a tool run with _site as its working
+        // directory leaves its state behind for good — and every later deploy would publish it.
         var d = Seeded(
             ("index.html", "home"),
             (".claude/settings.json", "{}"),
