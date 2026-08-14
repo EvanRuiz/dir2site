@@ -520,6 +520,22 @@ public static class SiteGenerator
         return rel == "." ? $"{prefix}{stem}/{filename}" : $"{prefix}{rel}/{stem}/{filename}";
     }
 
+    /// <summary>
+    /// Registers where a preview the yaml declares would land in the site, so it counts as wanted
+    /// even on a run that couldn't produce or read it. Blank means the artifact type has no such
+    /// file, which is a real answer rather than a missing one.
+    /// </summary>
+    private static void KeepDeclared(string? declared, string destDir, string stem, SiteLedger ledger)
+    {
+        if (declared is not { Length: > 0 }) return;
+
+        var relative = StripDir2SitePrefix(declared, stem)
+            .Replace('/', Path.DirectorySeparatorChar);
+        if (relative.Length == 0) return;
+
+        ledger.Keep(Path.Combine(destDir, relative));
+    }
+
     // Strips the ".dir2site/{stem}/" prefix from a stored preview path, leaving the bare filename (or subpath).
     private static string StripDir2SitePrefix(string path, string stem)
     {
@@ -902,10 +918,22 @@ public static class SiteGenerator
             if (child.Artifact is Pdf { PublishOriginal: true })
                 jobs.Add(new CopyJob(child.FullPath, Path.Combine(destDir, child.Name), child.Name));
 
+            // What the yaml says this artifact has, registered whether or not the file is there to
+            // copy right now. A preview that failed to regenerate — or a previews folder that has
+            // gone missing — is a failure, not a deletion, and the copy already in the site should
+            // survive it rather than be offered up while the yaml still claims it. This is what
+            // tells "these previews have gone" apart from "this artifact never had any": a video
+            // declares none, so it is unaffected, and an artifact whose yaml no longer names a
+            // preview still has the old one swept.
+
+
+            KeepDeclared(child.Artifact!.Preview, destDir, stem, ledger);
+            KeepDeclared(child.Artifact.PreviewLarge, destDir, stem, ledger);
+            if (child.Artifact is Photo photo) KeepDeclared(photo.Image, destDir, stem, ledger);
+
             var stemDir = Path.Combine(node.FullPath, ".dir2site", stem);
-            // No previews folder is a real answer — a video has none — so it isn't treated as a
-            // gap. One that exists but won't be read is a gap, and must not be read as "these
-            // previews are gone" while the pages still point at them.
+            // No previews folder at all is a real answer — a video has none — so it isn't a gap in
+            // itself. One that exists but won't be read is, and is marked below.
             if (!Directory.Exists(stemDir)) continue;
 
             try

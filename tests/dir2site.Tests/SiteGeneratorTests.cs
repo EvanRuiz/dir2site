@@ -663,6 +663,64 @@ public class SiteGeneratorTests : IDisposable
     }
 
     /// <summary>
+    /// Previews that vanish from the source while the yaml still declares them are a failure to
+    /// regenerate, not content the user deleted — so the published copies stay. Preview failures
+    /// are silent, which made the removal dialog the only sign anything had gone wrong, and it
+    /// described the files as coming from "content you have since deleted or renamed".
+    /// </summary>
+    [AvaloniaFact]
+    public void PreviewsThatFailedToRegenerate_AreNotMistakenForDeletedContent()
+    {
+        var nested = MakeFolder("Photographs", "1890s");
+        MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        MakeArtifact(nested, "Landscape.jpg", "A Landscape");
+        var previews = MakeFolder("Photographs", "1890s", ".dir2site", "Portrait");
+        File.WriteAllText(Path.Combine(previews, "Portrait-preview.jpg"), "not really a jpeg");
+        File.WriteAllText(Path.Combine(previews, "Portrait-preview-large.jpg"), "not really a jpeg");
+
+        Assert.Empty(Generate(Config()).Orphans);
+
+        // The whole previews folder gone — what a failed regeneration leaves behind. The yaml still
+        // names both files, and the page still points at them.
+        Directory.Delete(previews, recursive: true);
+        var orphans = GenerateAndPrune(Config());
+
+        Assert.Empty(orphans);
+        Assert.True(File.Exists(SitePath("Photographs", "1890s", "Portrait", "Portrait-preview.jpg")));
+        Assert.True(File.Exists(SitePath("Photographs", "1890s", "Portrait", "Portrait-preview-large.jpg")));
+    }
+
+    /// <summary>
+    /// The other half of the same rule: what the yaml stops claiming really is gone. Without this
+    /// the fix above would be a licence to keep any preview that had ever been published.
+    /// </summary>
+    [AvaloniaFact]
+    public void APreviewTheYamlNoLongerClaims_IsStillSweptAway()
+    {
+        var nested = MakeFolder("Photographs", "1890s");
+        MakeArtifact(nested, "Portrait.jpg", "A Portrait");
+        MakeArtifact(nested, "Landscape.jpg", "A Landscape");
+        var previews = MakeFolder("Photographs", "1890s", ".dir2site", "Portrait");
+        File.WriteAllText(Path.Combine(previews, "Portrait-preview.jpg"), "not really a jpeg");
+
+        Generate(Config());
+        Assert.True(File.Exists(SitePath("Photographs", "1890s", "Portrait", "Portrait-preview.jpg")));
+
+        // Rewrite the yaml without any preview keys, and take the source previews away with it —
+        // the artifact is still there, it simply has no preview any more.
+        File.WriteAllText(Path.Combine(nested, "Portrait.jpg.yaml"),
+            """
+            type: photo
+            caption: A Portrait
+            """);
+        Directory.Delete(previews, recursive: true);
+        GenerateAndPrune(Config());
+
+        Assert.False(File.Exists(SitePath("Photographs", "1890s", "Portrait", "Portrait-preview.jpg")));
+        Assert.True(File.Exists(SitePath("Photographs", "1890s", "Portrait", "index.html")));
+    }
+
+    /// <summary>
     /// The sweep works inside _site and nowhere else. Everything it deletes has a twin in the
     /// project folder — _media/logo.png is copied to _site/_media/logo.png — so a sweep that
     /// wandered up out of _site would be deleting the user's originals, not generated copies.
