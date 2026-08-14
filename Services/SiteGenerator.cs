@@ -3,11 +3,13 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Avalonia.Platform;
 using dir2site.Models;
@@ -44,8 +46,10 @@ public static class SiteGenerator
         Directory.CreateDirectory(siteRoot);
         var ledger = new SiteLedger(siteRoot);
 
-        var topLevelFolders = rootItem.Children
-            .Where(c => c.IsDirectory)
+        // Only ever read to build the menu — page generation walks each node's own children — so the
+        // '--' folders are dropped here rather than filtered again on every page.
+        var menuFolders = rootItem.Children
+            .Where(c => c.IsDirectory && !IsUnlisted(c))
             .OrderBy(c => IsMenuOnly(c) ? 1 : 0)
             .ToList();
 
@@ -66,8 +70,9 @@ public static class SiteGenerator
         ReportYamlNotes(rootItem, errors, warnings);
         tracker.SetPageTotal(CountPages(rootItem));
         var homePromotions = CollectHomePromotions(rootItem, directoryRoot);
-        GeneratePage(rootItem, siteRoot, directoryRoot, config, topLevelFolders, 0,
-            [], templates, progress, errors, warnings, tracker, homePromotions, ledger);
+        var footerColumns = BuildFooterColumns(config, directoryRoot, rootItem, warnings);
+        GeneratePage(rootItem, siteRoot, directoryRoot, config, menuFolders, 0,
+            [], templates, progress, errors, warnings, tracker, homePromotions, ledger, footerColumns);
 
         var copyJobs = new List<CopyJob>();
         CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs, ledger);
@@ -142,7 +147,7 @@ public static class SiteGenerator
         string outputDir,
         string directoryRoot,
         Dir2SiteModel config,
-        IList<DirectoryTreeItem> topLevelFolders,
+        IList<DirectoryTreeItem> menuFolders,
         int depth,
         IList<string> ancestorNames,
         TemplateSet templates,
@@ -151,7 +156,8 @@ public static class SiteGenerator
         ConcurrentBag<string> warnings,
         GenerateProgressTracker tracker,
         IReadOnlyList<HomePromotion> homePromotions,
-        SiteLedger ledger)
+        SiteLedger ledger,
+        List<List<FooterLink>> footerColumns)
     {
         // The site root always gets a home page, however little is in it.
         if (depth > 0 && SoleArtifact(node) is { } soleArtifact)
@@ -159,7 +165,8 @@ public static class SiteGenerator
             try
             {
                 var soleChange = GenerateArtifactPage(soleArtifact, outputDir, directoryRoot, config,
-                    topLevelFolders, depth, ancestorNames, templates, progress, ledger, atFolderIndex: true);
+                    menuFolders, depth, ancestorNames, templates, footerColumns, progress, ledger,
+                    atFolderIndex: true);
                 tracker.PageDone(soleChange);
                 tracker.ArtifactChanged(soleChange);
             }
@@ -192,17 +199,9 @@ public static class SiteGenerator
         var pageTitle = depth == 0 ? config.Title : PublicName(node.Name);
         var prefix = RelativePrefix(depth);
 
-        var siteObj = new ScriptObject();
-        siteObj.SetValue("title", config.Title, readOnly: true);
-        siteObj.SetValue("footer", config.Footer, readOnly: true);
-        siteObj.SetValue("logo", config.Logo, readOnly: true);
-        siteObj.SetValue("primary_color", config.PrimaryColor, readOnly: true);
-        siteObj.SetValue("secondary_color", config.SecondaryColor, readOnly: true);
-        siteObj.SetValue("background_color", config.BackgroundColor, readOnly: true);
-        siteObj.SetValue("navbar_dark", config.NavbarDark, readOnly: true);
-        siteObj.SetValue("url", config.SiteUrl.TrimEnd('/'), readOnly: true);
+        var siteObj = BuildSiteObject(config, footerColumns);
 
-        var navFolders = topLevelFolders
+        var navFolders = menuFolders
             .Select(f =>
             {
                 var obj = new ScriptObject();
@@ -261,9 +260,9 @@ public static class SiteGenerator
         foreach (var child in node.Children.Where(c => c.IsDirectory))
         {
             var childOutputDir = Path.Combine(outputDir, PublicName(child.Name));
-            GeneratePage(child, childOutputDir, directoryRoot, config, topLevelFolders,
+            GeneratePage(child, childOutputDir, directoryRoot, config, menuFolders,
                 depth + 1, childAncestors, templates, progress, errors, warnings, tracker,
-                homePromotions, ledger);
+                homePromotions, ledger, footerColumns);
         }
 
         // Videos play inline on this page, so they get no page of their own — generating one would
@@ -275,8 +274,8 @@ public static class SiteGenerator
         {
             try
             {
-                var change = GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
-                    depth + 1, childAncestors, templates, progress, ledger);
+                var change = GenerateArtifactPage(child, outputDir, directoryRoot, config, menuFolders,
+                    depth + 1, childAncestors, templates, footerColumns, progress, ledger);
                 tracker.PageDone(change);
                 // What happened to an artifact's own page is what "new" and "updated" mean for the
                 // artifact: a photo the site had never rendered, or one whose page now reads
@@ -554,6 +553,14 @@ public static class SiteGenerator
     private const char MenuOnlyPrefix = '-';
 
     /// <summary>
+    /// Doubling it takes the menu entry away too: "--Footer" gets its page and nothing else — no
+    /// card, no nav. It is somewhere you only arrive from a link, which is what the footer's own
+    /// pages are. The recommended arrangement is one "--Footer" folder holding all of them rather
+    /// than a marked folder each.
+    /// </summary>
+    private const string UnlistedPrefix = "--";
+
+    /// <summary>
     /// Folders whose name ends in '+' also get a card on the home page, on top of the one in their
     /// parent's listing: "Newspapers+" three levels down is still one click from the front door.
     /// It is the folder-shaped counterpart of an artifact's "home: true".
@@ -611,21 +618,47 @@ public static class SiteGenerator
         }
     }
 
+    // A bare "--" is excluded for the same reason a bare "-" is: a marker needs a name after it,
+    // and without this the folder called "--" would be treated as menu-only while PublicName —
+    // which leaves it alone — kept it addressed at "--".
     private static bool IsMenuOnly(DirectoryTreeItem item) =>
-        item.IsDirectory && item.Name.Length > 1 && item.Name[0] == MenuOnlyPrefix;
+        item.IsDirectory && item.Name.Length > 1 && item.Name[0] == MenuOnlyPrefix
+        && item.Name != UnlistedPrefix;
+
+    /// <summary>
+    /// Kept out of the menu as well as the cards. A superset of <see cref="IsMenuOnly"/>, which
+    /// already answers true for these — so the card filter needs no change for them.
+    /// </summary>
+    private static bool IsUnlisted(DirectoryTreeItem item) =>
+        item.IsDirectory && item.Name.Length > 2 && item.Name.StartsWith(UnlistedPrefix, StringComparison.Ordinal);
 
     private static bool IsHomePromoted(DirectoryTreeItem item) =>
         item.IsDirectory && item.Name.Length > 1 && item.Name[^1] == HomePromotedSuffix;
 
     /// <summary>
-    /// The markers instruct the generator; they are not part of the name. Neither appears in a menu
-    /// label, page title, breadcrumb or URL — "-About" is published as "About", "Newspapers+" as
-    /// "Newspapers". They are independent, so "-Newspapers+" is both and is published as
-    /// "Newspapers". A folder named only "-" or "+" is a name, not a marker, and is left alone.
+    /// The markers instruct the generator; they are not part of the name. None appears in a menu
+    /// label, page title, breadcrumb or URL — "-About" is published as "About", "--Footer" as
+    /// "Footer", "Newspapers+" as "Newspapers". They are independent, so "-Newspapers+" is both and
+    /// is published as "Newspapers". A folder named only "-", "--" or "+" is a name, not a marker,
+    /// and is left alone.
     /// </summary>
+    /// <remarks>
+    /// The double marker has to be tested first: stripping one '-' from "--Footer" would publish it
+    /// at "-Footer", leaving the second dash in every URL and breadcrumb.
+    /// </remarks>
     private static string PublicName(string name)
     {
-        if (name.Length > 1 && name[0] == MenuOnlyPrefix) name = name[1..];
+        if (name.StartsWith(UnlistedPrefix, StringComparison.Ordinal))
+        {
+            // A bare "--" is a name, so it keeps both dashes; stripping one would publish it at "-"
+            // and quietly claim the single-dash marker on the author's behalf.
+            if (name.Length > 2) name = name[2..];
+        }
+        else if (name.Length > 1 && name[0] == MenuOnlyPrefix)
+        {
+            name = name[1..];
+        }
+
         if (name.Length > 1 && name[^1] == HomePromotedSuffix) name = name[..^1];
         return name;
     }
@@ -710,6 +743,285 @@ public static class SiteGenerator
             }
         }
     }
+
+    /// <summary>One row of the footer, resolved to something a template can print.</summary>
+    /// <param name="Absolute">
+    /// Whether <paramref name="Href"/> stands on its own. Everything else is root-relative and gets
+    /// the page's own <c>prefix</c>, which differs by depth — so the distinction has to survive to
+    /// the template rather than being baked in here.
+    /// </param>
+    /// <param name="NewTab">
+    /// Separate from <paramref name="Absolute"/> because a mailto: is also absolute but hands off to
+    /// a mail client — opening a tab for it just leaves an empty one behind.
+    /// </param>
+    private sealed record FooterLink(
+        string Href, bool Absolute, bool NewTab,
+        string Icon, string IconColor, string IconBackground,
+        string Title, string Note);
+
+    /// <summary>The most columns a footer can have — past this the row stops reading as columns.</summary>
+    private const int MaxFooterColumns = 4;
+
+    private static readonly Regex IconNamePattern = new(@"^bi-[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The house colours of the brand glyphs, and the fill their cut-out wants.
+    /// </summary>
+    /// <remarks>
+    /// A brand mark has one right answer and everybody knows what it is, so <c>icon: bi-youtube</c>
+    /// on its own produces it rather than a monochrome badge with the footer showing through the
+    /// play triangle — which is the one result nobody wants and the easiest to get by accident.
+    /// Setting either colour on the row turns this off completely, so an author who wants the mark
+    /// to match the rest of the column says so and gets exactly that.
+    /// </remarks>
+    private static readonly IReadOnlyDictionary<string, (string Color, string Background)> BrandColors =
+        new Dictionary<string, (string, string)>(StringComparer.Ordinal)
+        {
+            { "bi-youtube",   ("#ff0000", "#ffffff") },
+            { "bi-facebook",  ("#1877f2", "#ffffff") },
+            { "bi-instagram", ("#e4405f", "#ffffff") },
+            { "bi-linkedin",  ("#0a66c2", "#ffffff") },
+            { "bi-twitter",   ("#1da1f2", "#ffffff") },
+            { "bi-twitter-x", ("#000000", "#ffffff") },
+            { "bi-github",    ("#181717", "#ffffff") },
+            { "bi-mastodon",  ("#6364ff", "#ffffff") },
+            { "bi-tiktok",    ("#000000", "#ffffff") },
+            { "bi-whatsapp",  ("#25d366", "#ffffff") },
+            { "bi-telegram",  ("#26a5e4", "#ffffff") },
+            { "bi-pinterest", ("#bd081c", "#ffffff") },
+            { "bi-reddit",    ("#ff4500", "#ffffff") },
+            { "bi-vimeo",     ("#1ab7ea", "#ffffff") },
+            { "bi-twitch",    ("#9146ff", "#ffffff") },
+            { "bi-discord",   ("#5865f2", "#ffffff") },
+            { "bi-spotify",   ("#1db954", "#ffffff") },
+            { "bi-threads",   ("#000000", "#ffffff") },
+            { "bi-bluesky",   ("#0285ff", "#ffffff") },
+            { "bi-slack",     ("#4a154b", "#ffffff") },
+            { "bi-medium",    ("#000000", "#ffffff") },
+        };
+    // The lengths CSS actually has: #rgb, #rgba, #rrggbb, #rrggbbaa. A flat 3-to-8 range also let
+    // through #12345, which is not a colour at all and which IsDarkColor could not read either.
+    private static readonly Regex HexColorPattern =
+        new(@"^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The configured footer rows, grouped into columns and resolved to hrefs. Empty columns close
+    /// up, so numbering the columns 1 and 3 gives two columns rather than a gap.
+    /// </summary>
+    private static List<List<FooterLink>> BuildFooterColumns(
+        Dir2SiteModel config, string directoryRoot, DirectoryTreeItem root, ConcurrentBag<string> warnings)
+    {
+        if (config.FooterItems.Count == 0) return [];
+
+        var targets = BuildLinkTargets(root, directoryRoot);
+        var columns = new SortedDictionary<int, List<FooterLink>>();
+
+        foreach (var item in config.FooterItems)
+        {
+            var title = item.Title ?? string.Empty;
+            var (href, absolute, newTab) = ResolveFooterLink(item, title, targets, warnings);
+
+            // A row whose link doesn't resolve still appears, as plain text. Dropping it made a
+            // typo look like the row had never been written, which is the hardest kind of mistake
+            // to find — the warning says what went wrong, and the gap in the footer says where.
+            href ??= string.Empty;
+
+            var column = Math.Clamp(item.Column, 1, MaxFooterColumns);
+            if (column != item.Column)
+                warnings.Add($"Footer item \"{title}\" asks for column {item.Column}, which isn't between 1 and {MaxFooterColumns}, so it went in column {column}.");
+
+            if (!columns.TryGetValue(column, out var rows)) columns[column] = rows = [];
+
+            var icon = SanitizeIcon(item.Icon, title, warnings);
+            var color = SanitizeColor(item.IconColor, "iconColor", title, warnings);
+            var background = SanitizeColor(item.IconBackground, "iconBackground", title, warnings);
+
+            // Only when the row says nothing about colour at all: naming either one is the author
+            // taking charge of how the mark looks, and half a brand's colours is nobody's intent.
+            if (color.Length == 0 && background.Length == 0 && BrandColors.TryGetValue(icon, out var brand))
+                (color, background) = brand;
+
+            rows.Add(new FooterLink(
+                href, absolute, newTab,
+                icon, color, background,
+                title,
+                item.Note ?? string.Empty));
+        }
+
+        return [.. columns.Values];
+    }
+
+    /// <summary>
+    /// Where a footer row points, and whether that href stands alone. Null href means the row can't
+    /// be published and has already been warned about.
+    /// </summary>
+    private static (string? Href, bool Absolute, bool NewTab) ResolveFooterLink(
+        FooterItem item, string title, IReadOnlyDictionary<string, string?> targets, ConcurrentBag<string> warnings)
+    {
+        var link = (item.Link ?? string.Empty).Trim();
+        if (link.Length == 0)
+        {
+            warnings.Add($"Footer item \"{title}\" has no link, so it is shown without a link.");
+            return (null, false, false);
+        }
+
+        // Off-site: taken as written. The site knows nothing about where it goes.
+        if (link.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+            link.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            return (link, true, true);
+
+        // Also absolute, but it hands off to a mail client rather than loading a page.
+        if (link.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))
+            return (link, true, false);
+
+        // A page dir2site didn't generate. Root-relative, so it still takes the page's prefix.
+        if (link[0] == '/') return (link.TrimStart('/'), false, false);
+
+        var key = link.Replace('\\', '/').TrimStart('.', '/');
+        if (!targets.TryGetValue(key, out var href))
+        {
+            warnings.Add($"Footer item \"{title}\" points at {link}, which isn't in the project, so it is shown without a link.");
+            return (null, false, false);
+        }
+
+        if (href == null)
+        {
+            warnings.Add($"Footer item \"{title}\" points at {link}, which is a video and has no page of its own, so it is shown without a link.");
+            return (null, false, false);
+        }
+
+        return (href, false, false);
+    }
+
+    /// <summary>
+    /// Every project path that can be linked to, mapped to where it publishes. Built by the same
+    /// rules the pages themselves are — a folder shown as its single artifact resolves to the
+    /// folder's own address — so a footer link and the page it names can't disagree.
+    /// </summary>
+    private static Dictionary<string, string?> BuildLinkTargets(DirectoryTreeItem root, string directoryRoot)
+    {
+        // Case-insensitive because a project path typed by hand is not a filesystem lookup, and the
+        // filesystems this runs on mostly aren't either.
+        var map = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        Walk(root, isRoot: true);
+        return map;
+
+        void Walk(DirectoryTreeItem node, bool isRoot)
+        {
+            // The site root always keeps its own home page, so its children are never promoted to it.
+            var sole = isRoot ? null : SoleArtifact(node);
+
+            foreach (var child in node.Children)
+            {
+                var key = Path.GetRelativePath(directoryRoot, child.FullPath).Replace('\\', '/');
+
+                if (child.IsDirectory)
+                {
+                    map[key] = FolderHref(child, directoryRoot);
+                    Walk(child, isRoot: false);
+                }
+                else if (child.Artifact != null)
+                {
+                    // A video plays inline on its collection page and has nowhere to link to.
+                    map[key] = child.Artifact.Type == ArtifactType.Video
+                        ? null
+                        : ReferenceEquals(child, sole)
+                            ? FolderHref(node, directoryRoot)
+                            : ArtifactHref(child, directoryRoot);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// A Bootstrap Icons class name, or empty. Every other icon class in the site comes from
+    /// <see cref="TypeIcon"/> and is emitted unescaped on that basis; this one is written by hand in
+    /// yaml and lands in a class attribute, so it has to be checked rather than trusted.
+    /// </summary>
+    private static string SanitizeIcon(string? icon, string title, ConcurrentBag<string> warnings)
+    {
+        var name = (icon ?? string.Empty).Trim();
+        if (name.Length == 0) return string.Empty;
+
+        // "envelope" and "bi-envelope" both mean the same thing to whoever wrote it.
+        if (!name.StartsWith("bi-", StringComparison.Ordinal)) name = "bi-" + name;
+        if (IconNamePattern.IsMatch(name)) return name;
+
+        warnings.Add($"Footer item \"{title}\" has an icon of \"{icon}\", which is not a Bootstrap Icons name, so it was left off.");
+        return string.Empty;
+    }
+
+    /// <summary>A hex colour, or empty. Stricter than the icon check because it lands in a style attribute.</summary>
+    private static string SanitizeColor(string? color, string setting, string title, ConcurrentBag<string> warnings)
+    {
+        var value = (color ?? string.Empty).Trim();
+        if (value.Length == 0) return string.Empty;
+        if (HexColorPattern.IsMatch(value)) return value;
+
+        warnings.Add($"Footer item \"{title}\" has a {setting} of \"{color}\", which is not a hex colour like #ff0000, so it was left off.");
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Whether the footer band needs light text on it. The navbar settles this with an explicit
+    /// setting; the footer takes a colour instead, so it has to work the answer out.
+    /// </summary>
+    private static bool IsDarkColor(string hex)
+    {
+        var value = hex.TrimStart('#');
+        // Shorthand doubles each digit; the alpha one expands to eight, whose first six are the
+        // colour. Opacity doesn't change which way the text has to go, so it is ignored either way.
+        if (value.Length is 3 or 4)
+            value = string.Concat(value.Select(c => new string(c, 2)));
+        if (value.Length < 6 ||
+            !int.TryParse(value[..2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r) ||
+            !int.TryParse(value.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g) ||
+            !int.TryParse(value.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
+            return true;   // The default primary colour is dark, so dark is the safer guess.
+
+        // Rec. 601 luma — enough to answer "does this want white text on it".
+        return (0.299 * r) + (0.587 * g) + (0.114 * b) < 140;
+    }
+
+    /// <summary>
+    /// The <c>site</c> object every template gets. One builder because a page and an artifact page
+    /// have to agree about what the site is; they used to hold two copies of this list.
+    /// </summary>
+    private static ScriptObject BuildSiteObject(Dir2SiteModel config, List<List<FooterLink>> footerColumns)
+    {
+        var footerColor = string.IsNullOrWhiteSpace(config.FooterColor)
+            ? config.PrimaryColor
+            : config.FooterColor;
+
+        var siteObj = new ScriptObject();
+        siteObj.SetValue("title", config.Title, readOnly: true);
+        siteObj.SetValue("footer", config.Footer, readOnly: true);
+        siteObj.SetValue("logo", config.Logo, readOnly: true);
+        siteObj.SetValue("primary_color", config.PrimaryColor, readOnly: true);
+        siteObj.SetValue("secondary_color", config.SecondaryColor, readOnly: true);
+        siteObj.SetValue("background_color", config.BackgroundColor, readOnly: true);
+        siteObj.SetValue("footer_color", footerColor, readOnly: true);
+        siteObj.SetValue("footer_dark", IsDarkColor(footerColor), readOnly: true);
+        siteObj.SetValue("navbar_dark", config.NavbarDark, readOnly: true);
+        siteObj.SetValue("url", config.SiteUrl.TrimEnd('/'), readOnly: true);
+        siteObj.SetValue("footer_columns", ToScriptColumns(footerColumns), readOnly: true);
+        return siteObj;
+    }
+
+    private static List<object> ToScriptColumns(List<List<FooterLink>> columns) =>
+        [.. columns.Select(column => (object)column.Select(link =>
+        {
+            var obj = new ScriptObject();
+            obj.SetValue("href", link.Href, readOnly: true);
+            obj.SetValue("absolute", link.Absolute, readOnly: true);
+            obj.SetValue("new_tab", link.NewTab, readOnly: true);
+            obj.SetValue("icon", link.Icon, readOnly: true);
+            obj.SetValue("icon_color", link.IconColor, readOnly: true);
+            obj.SetValue("icon_background", link.IconBackground, readOnly: true);
+            obj.SetValue("title", link.Title, readOnly: true);
+            obj.SetValue("note", link.Note, readOnly: true);
+            return (object)obj;
+        }).ToList())];
 
     private static string FolderHref(DirectoryTreeItem folder, string directoryRoot) =>
         $"{PublicRelativePath(Path.GetRelativePath(directoryRoot, folder.FullPath))}/";
@@ -1004,10 +1316,11 @@ public static class SiteGenerator
         string parentOutputDir,
         string directoryRoot,
         Dir2SiteModel config,
-        IList<DirectoryTreeItem> topLevelFolders,
+        IList<DirectoryTreeItem> menuFolders,
         int depth,
         IList<string> ancestorNames,
         TemplateSet templates,
+        List<List<FooterLink>> footerColumns,
         IProgress<string>? progress,
         SiteLedger ledger,
         bool atFolderIndex = false)
@@ -1031,17 +1344,9 @@ public static class SiteGenerator
 
         var prefix = RelativePrefix(depth);
 
-        var siteObj = new ScriptObject();
-        siteObj.SetValue("title", config.Title, readOnly: true);
-        siteObj.SetValue("footer", config.Footer, readOnly: true);
-        siteObj.SetValue("logo", config.Logo, readOnly: true);
-        siteObj.SetValue("primary_color", config.PrimaryColor, readOnly: true);
-        siteObj.SetValue("secondary_color", config.SecondaryColor, readOnly: true);
-        siteObj.SetValue("background_color", config.BackgroundColor, readOnly: true);
-        siteObj.SetValue("navbar_dark", config.NavbarDark, readOnly: true);
-        siteObj.SetValue("url", config.SiteUrl.TrimEnd('/'), readOnly: true);
+        var siteObj = BuildSiteObject(config, footerColumns);
 
-        var navFolders = topLevelFolders
+        var navFolders = menuFolders
             .Select(f =>
             {
                 var obj = new ScriptObject();
@@ -1257,11 +1562,10 @@ public static class SiteGenerator
         string siteRoot, Dir2SiteModel config, AvaloniaTemplateLoader loader,
         SiteLedger ledger, IProgress<string>? progress)
     {
-        var siteObj = new ScriptObject();
-        siteObj.SetValue("primary_color",   config.PrimaryColor,   readOnly: true);
-        siteObj.SetValue("secondary_color", config.SecondaryColor, readOnly: true);
-        siteObj.SetValue("background_color",config.BackgroundColor, readOnly: true);
-        siteObj.SetValue("navbar_dark",     config.NavbarDark,     readOnly: true);
+        // The stylesheet needs the colours, not the footer's rows — but it does need the footer
+        // colour and whether that colour is dark, so it goes through the same builder as the pages
+        // rather than keeping a third hand-maintained copy of what "site" means.
+        var siteObj = BuildSiteObject(config, []);
 
         var globals = new ScriptObject();
         globals.SetValue("site", siteObj, readOnly: true);

@@ -133,4 +133,100 @@ public class UnknownYamlKeyTests : IDisposable
 
         Assert.Contains(warnings, w => w.Contains("grandparent_cover"));
     }
+
+    // dir2site.yaml went through a plain deserialize and had no check at all, so a misspelled site
+    // setting was as silent as a misspelled artifact key used to be.
+
+    private List<string> ConfigWarnings(string yaml)
+    {
+        var path = Path.Combine(_root, "dir2site.yaml");
+        File.WriteAllText(path, yaml);
+
+        var warnings = new List<string>();
+        YamlParser.ReportUnknownConfigKeys(yaml, path, warnings);
+        return warnings;
+    }
+
+    [Fact]
+    public void AMisspelledSiteSettingIsReported()
+    {
+        var warnings = ConfigWarnings("title: My Site\nprimaryColour: '#333333'\n");
+
+        Assert.Contains(warnings, w => w.Contains("primaryColour"));
+    }
+
+    [Fact]
+    public void EverySiteSettingSpelledRightSaysNothing()
+    {
+        var warnings = ConfigWarnings(
+            """
+            title: My Site
+            footer: © 2026
+            logo: ''
+            primaryColor: '#333333'
+            secondaryColor: '#666666'
+            backgroundColor: '#ffffff'
+            footerColor: '#101c32'
+            navbarDark: true
+            siteUrl: https://example.test
+            pdfResizeEnabled: true
+            pdfMaxWidth: 1600
+            pdfQuality: 80
+            footerItems: []
+            """);
+
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void AMisspelledKeyInsideAFooterItemIsReported()
+    {
+        var warnings = ConfigWarnings(
+            """
+            title: My Site
+            footerItems:
+              - column: 1
+                iconColour: '#ff0000'
+                title: Example Contact
+                link: -Info/About.md
+            """);
+
+        Assert.Contains(warnings, w => w.Contains("iconColour") && w.Contains("footer item setting"));
+    }
+
+    [Fact]
+    public void AFooterItemSpelledRightSaysNothing()
+    {
+        var warnings = ConfigWarnings(
+            """
+            title: My Site
+            footerItems:
+              - column: 1
+                icon: bi-youtube
+                iconColor: '#ff0000'
+                iconBackground: '#ffffff'
+                title: Example External Link
+                link: https://example.test/channel
+                note: 12,000+ views
+            """);
+
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void ADeployBlockIsNotMistakenForAMisspelling()
+    {
+        // It is a setting dir2site knows; its own dialog writes what is inside it.
+        var warnings = ConfigWarnings(
+            """
+            title: My Site
+            deploy:
+              active: default
+              targets:
+                - name: default
+                  host: example.test
+            """);
+
+        Assert.Empty(warnings);
+    }
 }

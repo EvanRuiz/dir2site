@@ -245,8 +245,8 @@
 
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Label Width="140">Footer</Label>
-                                    <TextBox Text="{Binding Dir2SiteConfig.Footer}" Width="260"
-                                             ToolTip.Tip="Shown at the bottom of every page. HTML is allowed, so you can include a link."/>
+                                    <Button Content="Edit Footer…" Command="{Binding ConfigureFooterCommand}"
+                                            ToolTip.Tip="The footer's columns of links, the closing line under them, and the color of the band."/>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Spacing="8">

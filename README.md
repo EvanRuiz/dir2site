@@ -19,7 +19,8 @@ Dir2Site is a open-source cross-platform desktop application that walks your loc
 - **Markdown articles** — render `.md` files as clean web pages
 - **Videos** — drop in a YouTube `.url` shortcut; plays inline on the collection page
 - **Collection pages** — browsable index pages for every subdirectory
-- **Customizable branding** — site title, footer (HTML allowed, so it can hold a link), primary/secondary colors, custom logo, dark or light navbar
+- **Customizable branding** — site title, primary/secondary colors, custom logo, dark or light navbar
+- **Multi-column footer** — columns of icon-and-label links, edited in the app and stored in `dir2site.yaml`
 - **YAML configuration** — Site settings are editable in the app; per-artifact metadata lives in a YAML sidecar you edit in any text editor, and the app shows you what it holds.
 - **Built-in preview server** — one click to serve and open in your browser, no external tools needed
 - **One-click generation** — static HTML output written directly alongside your files
@@ -169,6 +170,30 @@ Documents/            shown in the menu and as a card
 The hyphen is an instruction to the generator, not part of the name: `-About` is published at
 `/About/` and shows as "About" everywhere a visitor can see.
 
+### Footer-only sections (`--`-folders)
+
+Double the hyphen and the menu entry goes too: a `--`-folder gets its page and nothing else — no
+card, no nav. Use it for the pages nobody browses to and everybody expects to find at the bottom of
+the page: privacy, terms, credits.
+
+The recommended arrangement is one `--Footer/` folder holding all of them, rather than a marked
+folder each:
+
+```
+--Footer/Privacy.md      published at /Footer/Privacy/, linked from the footer
+--Footer/Use.md          published at /Footer/Use/
+--Footer/Credits.md      published at /Footer/Credits/
+```
+
+Nothing enforces that shape — the marker works on any folder — but it keeps the project root
+readable and puts the footer's pages where someone looking for them would look. `--Footer/` itself
+still publishes a collection page at `/Footer/` listing them, which nothing links to and which is
+out of both the menu and the cards.
+
+Both hyphens are stripped, so `--Footer` is published at `/Footer/`. As with the other markers, two
+folders that would publish to the same address are reported by Generate Site rather than one
+quietly overwriting the other.
+
 ### Folders featured on the home page (`+`-folders)
 
 A folder whose name ends in a plus (e.g. `Newspapers+`) also gets a card on the home page, however
@@ -222,6 +247,80 @@ text after the closing `^^^` is the caption. A `:::figure-right … :::` contain
 work — the `^^^` / `:::` forms are preferred as they need no inline styles and render consistently.
 
 See **[Writing Markdown articles](docs/writing-articles.md)** for the full reference.
+
+## The footer
+
+Every page ends with the same footer. Out of the box that is one line — the **Footer text** field in
+Site Settings, which allows HTML so it can hold a link — but it can also carry columns of links,
+edited with the **Footer…** button beside it and stored in `dir2site.yaml`:
+
+```yaml
+footerColor: "#101c32"
+footerItems:
+  - column: 1
+    icon: bi-youtube
+    iconColor: "#ff0000"
+    iconBackground: "#ffffff"
+    title: Watch on YouTube
+    link: https://example.com/channel
+    note: 12,000+ views
+  - column: 2
+    icon: bi-info-circle
+    title: About
+    link: -About/Our Story.md
+  - column: 3
+    icon: bi-lock
+    title: Privacy
+    link: --Footer/Privacy.md
+```
+
+Rows sharing a `column` are stacked together and columns run left to right, in the order the rows
+are written. An empty column number closes up rather than leaving a gap, so numbering 1 and 3 gives
+two columns.
+
+**`link`** takes one of three forms, told apart by how it starts:
+
+| Written as | Means |
+| --- | --- |
+| `https://…`, `http://…`, `mailto:…` | an address off the site; opens in a new tab |
+| `/privacy/` | a path within the site, for a page dir2site didn't generate |
+| `-About/Our Story.md` | a file or folder in the project, resolved to wherever it publishes |
+
+The third form is the one to reach for: it follows the artifact, so a page published at a folder's
+own address because it is the only thing in that folder is still linked correctly. A link naming
+something that isn't in the project is reported by Generate Site and left out of the footer.
+
+**`icon`** is a [Bootstrap Icons](https://icons.getbootstrap.com/) name, with or without its `bi-`
+prefix, and `iconColor` tints it.
+
+**Brand icons colour themselves.** `icon: bi-youtube` alone renders the real mark — red, with a
+white play triangle — and the same goes for Facebook, Instagram, LinkedIn, Mastodon, GitHub, Bluesky
+and the rest of Bootstrap's brand set. You don't have to know a brand's hex code, and you can't
+accidentally ship a logo that looks wrong.
+
+Naming either colour yourself turns that off, so a mark that should match the rest of the column
+rather than shout is one line:
+
+```yaml
+  - icon: bi-youtube
+    iconColor: "#999999"    # deliberately muted; no brand fill applied
+```
+
+**`iconBackground`** is what makes the above work, and is there if you need it directly. Bootstrap's
+brand icons are a single shape with the inner symbol cut out — `bi-youtube` is a rounded rectangle
+whose play triangle is a *hole* — so on a dark footer that triangle would show the band colour.
+`iconBackground` fills the cut-out, and the glyph itself masks everything around it. Ordinary
+single-colour icons don't need it.
+
+**`note`** is a caption line under the link — a maintainer's name, a view count. It is plain text;
+`footer:` remains the one field that takes HTML, which is where the copyright line with its `<br>`
+belongs.
+
+**`footerColor`** is the band's background, defaulting to the primary colour so the footer matches
+the navbar. Text and link colours follow from it: a dark colour gets light text, a light one dark.
+
+Pages that only belong in the footer want a [`--`-folder](#footer-only-sections---folders), which
+keeps them out of the menu as well as the cards.
 
 ## PDFs
 
