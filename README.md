@@ -150,7 +150,8 @@ approximated in the card thumbnail:
 ^^^ Albert Einstein, c. 1947
 ```
 
-Use `.figure-right`, `.figure-left`, or `.figure-center`; `{width=…}` sets the image width, and the
+Use `.figure-right`, `.figure-left`, or `.figure-center`; `{width=…}` sets the image width — which
+is honoured as written, where a figure without one is capped at 45% of the column — and the
 text after the closing `^^^` is the caption. A `:::figure-right … :::` container and raw HTML also
 work — the `^^^` / `:::` forms are preferred as they need no inline styles and render consistently.
 
