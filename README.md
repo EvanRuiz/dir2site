@@ -31,6 +31,11 @@ Dir2Site is a open-source cross-platform desktop application that walks your loc
 3. Click **Generate Site** — the static site is written to a `_site/` subfolder inside your project folder
 4. Click **▶ Start** to launch the preview server, then open it in your browser
 
+If you have deleted or renamed something since the last run, generating finds the pages and images
+it left behind in `_site` and asks whether to remove them. Leaving them means they stay on your
+published site. Files starting with a dot — a hand-placed `.htaccess`, a `.well-known/` folder —
+are never touched, since dir2site didn't put them there.
+
 ## Artifact settings
 
 Every artifact — photo, PDF, article, video — has a YAML file beside it holding its settings.
@@ -236,7 +241,7 @@ publishOriginal: true
 
 The source file is copied into the site next to the artifact's page, and the page gains a
 **Download PDF** link. With `publishOriginal: false` — the default — no copy is made and no link
-appears.
+appears; if the file had already been published, the next generate offers to take it back down.
 
 ## Videos
 

@@ -159,7 +159,7 @@ public partial class MainWindowViewModel : ViewModelBase
             ? $"1 yaml file ({Path.GetFileName(updatedYamls[0])})"
             : $"{updatedYamls.Count:N0} yaml files";
         AppendWarning(
-            $"Added the settings they were missing to {subject}. " +
+            $"Added the settings that were missing to {subject}. " +
             "Values you had already written are unchanged.");
     }
 
@@ -511,25 +511,41 @@ public partial class MainWindowViewModel : ViewModelBase
         var sink = new Progress<GenerateProgress>(OnGenerateProgress);
         var tracker = new GenerateProgressTracker(sink);
 
-        // Re-scan from disk so any YAML edits since last load are picked up
-        tracker.Report("Scanning for changes...");
-        var updatedYamls = new List<string>();
-        var freshRoot = await Task.Run(() =>
+        (string Summary, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings,
+            IReadOnlyList<string> Orphans) result;
+        try
         {
-            var files     = new List<string>();
-            var artifacts = new List<string>();
-            return DirectoryTraverser.BuildTree(DirectoryRoot!, files, artifacts, tracker, updatedYamls);
-        });
-        ReportUpdatedYamls(updatedYamls);
+            // Re-scan from disk so any YAML edits since last load are picked up
+            tracker.Report("Scanning for changes...");
+            var updatedYamls = new List<string>();
+            var freshRoot = await Task.Run(() =>
+            {
+                var files     = new List<string>();
+                var artifacts = new List<string>();
+                return DirectoryTraverser.BuildTree(DirectoryRoot!, files, artifacts, tracker, updatedYamls);
+            });
+            ReportUpdatedYamls(updatedYamls);
 
-        // Generate previews first so site settings (PDF resize/quality) affect output
-        tracker.Report("Generating previews...");
-        var root = freshRoot;
-        await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, tracker));
+            // Generate previews first so site settings (PDF resize/quality) affect output
+            tracker.Report("Generating previews...");
+            var root = freshRoot;
+            await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, tracker));
 
-        tracker.Report("Generating site...");
-        var result = await Task.Run(() =>
-            SiteGenerator.Generate(DirectoryRoot, root, config, tracker));
+            tracker.Report("Generating site...");
+            result = await Task.Run(() =>
+                SiteGenerator.Generate(DirectoryRoot, root, config, tracker));
+        }
+        catch (Exception ex)
+        {
+            // Whatever went wrong, the app has to come back. IsLoading gates every button on the
+            // window, so an escaping exception left it stuck on with nothing said — indisting-
+            // uishable from a hang, and the scan and preview stages both touch every file in the
+            // project, which is where a locked or unreadable one shows up.
+            IsLoading = false;
+            StatusText = "Generate failed";
+            AppendError(ex.Message);
+            return;
+        }
 
         IsLoading = false;
         StatusText = result.Summary;
@@ -540,6 +556,10 @@ public partial class MainWindowViewModel : ViewModelBase
             AppendError(string.Join("\n", result.Errors));
         if (result.Warnings.Count > 0)
             AppendWarning(string.Join("\n", result.Warnings));
+
+        if (result.Orphans.Count > 0)
+            await HandleOrphanFiles(Path.Combine(DirectoryRoot, "_site"), result.Orphans);
+
         StartServerCommand.NotifyCanExecuteChanged();
         QuickSyncCommand.NotifyCanExecuteChanged();
         VerifyAndRepairCommand.NotifyCanExecuteChanged();
@@ -547,6 +567,47 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private bool CanGenerateSite() =>
         DirectoryRoot != null && DirItems.Count > 0 && Dir2SiteConfig != null && !IsLoading;
+
+    /// <summary>
+    /// Offers to take away what the generate found in _site but had no reason to put there. Asked
+    /// rather than done, because removing files is the user's call — but only asked when there is
+    /// something to ask about: a generate that changes nothing finds nothing.
+    /// </summary>
+    private async Task HandleOrphanFiles(string siteRoot, IReadOnlyList<string> orphans)
+    {
+        if (TopLevel is not Window owner) return;
+
+        var dialog = new OrphanFilesView(orphans);
+        var toRemove = await dialog.ShowDialog<IReadOnlyList<string>?>(owner);
+        if (toRemove == null || toRemove.Count == 0)
+        {
+            // Saying nothing here would read as though the dialog had done something.
+            StatusText = $"Site generated → _site/ — kept {orphans.Count} leftover file(s)";
+            return;
+        }
+
+        // Deleting tens of thousands of files takes seconds even on a fast disk, and longer on a
+        // network or cloud-synced folder. Without the busy flag and a running count the window sat
+        // there looking finished, still showing the line from the generate that preceded it.
+        IsLoading = true;
+        var progress = new Progress<string>(message => StatusText = message);
+        try
+        {
+            var result = await Task.Run(() => SiteGenerator.RemoveOrphans(siteRoot, toRemove, progress));
+            StatusText = $"Site generated → _site/ — removed {result.Removed} file(s)";
+            if (result.Errors.Count > 0)
+                AppendError(string.Join("\n", result.Errors));
+        }
+        catch (Exception ex)
+        {
+            StatusText = "Removing files failed";
+            AppendError(ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
 
     // ---- SFTP deploy --------------------------------------------------------
 

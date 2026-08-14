@@ -4,18 +4,21 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:vm="using:dir2site.SftpSync.Ui"
+        xmlns:vm="using:dir2site.ViewModels"
         mc:Ignorable="d" d:DesignWidth="520" d:DesignHeight="460"
-        x:Class="dir2site.SftpSync.Ui.StaleFilesView"
-        x:DataType="vm:StaleFilesViewModel"
+        x:Class="dir2site.Views.OrphanFilesView"
+        x:DataType="vm:OrphanFilesViewModel"
         Width="520" Height="460"
         WindowStartupLocation="CenterOwner"
-        Title="Stale Remote Files">
+        Title="Files No Longer in Your Site">
 
     <DockPanel Margin="16">
 
+        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,4"
+                   FontWeight="SemiBold" Text="{Binding Headline}"/>
+
         <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"
-                   Text="These files exist on the server but not in your local site. Select any you want to delete from the server, or choose Ignore to leave them untouched."/>
+                   Text="An earlier generate made them from content you have since deleted or renamed. Keeping them means they stay on your published site."/>
 
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
             <Button Content="Select All" Command="{Binding SelectAllCommand}"/>
@@ -24,15 +27,15 @@
 
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
                     Spacing="8" Margin="0,12,0,0">
-            <Button Content="Delete Selected" Command="{Binding DeleteSelectedCommand}"
+            <Button Content="Remove Selected" Command="{Binding RemoveSelectedCommand}"
                     Background="#C0392B" Foreground="White"/>
-            <Button Content="Ignore" Command="{Binding IgnoreCommand}"/>
+            <Button Content="Keep Them" Command="{Binding KeepCommand}"/>
         </StackPanel>
 
         <!-- ListBox, not ItemsControl in a ScrollViewer: only a control with its own viewport can
-             virtualise, and this list is as long as the server has files the site no longer has —
-             tens of thousands after a big rename. Realising a checkbox for each freezes the app
-             for a minute before the dialog appears. -->
+             virtualise, and a take-down after a big rename can list tens of thousands of files.
+             Realising a checkbox for every one of them freezes the app for a minute before the
+             dialog even appears. -->
         <Border BorderBrush="#444" BorderThickness="1" CornerRadius="4">
             <ListBox ItemsSource="{Binding Items}" SelectionMode="Toggle" Background="Transparent">
                 <ListBox.ItemsPanel>
@@ -41,7 +44,7 @@
                     </ItemsPanelTemplate>
                 </ListBox.ItemsPanel>
                 <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:StaleFileItem">
+                    <DataTemplate x:DataType="vm:OrphanFileItem">
                         <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Path}"
                                   Margin="6,2" FontFamily="Courier New"/>
                     </DataTemplate>

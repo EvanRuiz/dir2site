@@ -364,16 +364,17 @@ public static class SftpSyncService
                 lock (errors) errors.Add($"Delete '{rel}': {ex.Message}");
             }
 
-            progress?.Report(new SyncProgress(
-                SyncPhase.Deleting, "Deleting",
-                Interlocked.Increment(ref done), relPaths.Count, rel));
+            Report(progress, SyncPhase.Deleting, "Deleting",
+                Interlocked.Increment(ref done), relPaths.Count, rel);
         });
 
         // Sequential, on the one connection still open: pruning walks up the tree deleting parents
         // as they empty, and two workers doing that on overlapping paths would race.
-        PruneEmptyDirs(client, touchedDirs.Keys, remoteRoot, errors);
+        PruneEmptyDirs(client, touchedDirs.Keys, remoteRoot, errors, progress, ct);
 
-        // Rewrite the manifest to match what remains locally.
+        // Rewrite the manifest to match what remains locally. Announced because on a big site the
+        // local walk and the upload are several silent seconds after the bar has filled.
+        progress?.Report(new SyncProgress(SyncPhase.WritingManifest, "Updating the file list"));
         var local = SyncManifestBuilder.BuildLocal(siteRoot);
         WriteManifest(client, ManifestRemotePath(profile), local, errors);
 
@@ -528,9 +529,8 @@ public static class SftpSyncService
 
             // Counted on completion, not on start: with several in flight, the index a worker
             // happens to be holding is not "how far through are we".
-            progress?.Report(new SyncProgress(
-                SyncPhase.Uploading, "Uploading",
-                Interlocked.Increment(ref done), toUpload.Count, rel));
+            Report(progress, SyncPhase.Uploading, "Uploading",
+                Interlocked.Increment(ref done), toUpload.Count, rel);
         });
 
         return errors;
@@ -734,30 +734,100 @@ public static class SftpSyncService
         return idx < 0 ? manifestPath : manifestPath[(idx + 1)..];
     }
 
-    private static void PruneEmptyDirs(SftpClient client, IEnumerable<string> dirs, string remoteRoot, List<string> errors)
+    /// <summary>
+    /// Removes directories left empty by a delete, deepest first.
+    /// </summary>
+    /// <remarks>
+    /// Every candidate is visited exactly once. Walking up from each deleted file's parent
+    /// separately looks equivalent and is not: siblings share ancestors, so a folder of 50,000
+    /// pages re-listed its parent 50,000 times, and <c>ListDirectory</c> pulls the whole listing
+    /// before <c>Any</c> can short-circuit. That is quadratic in the number of deletions, on one
+    /// connection, with nothing reported — which is what a large take-down spent its time in,
+    /// looking to the user like a finished progress bar attached to a hung app.
+    ///
+    /// Collecting the ancestors up front is what makes one visit enough: deepest-first then
+    /// guarantees a directory is only reached after everything inside it has been dealt with, so
+    /// what it holds at that moment is final.
+    /// </remarks>
+    private static void PruneEmptyDirs(
+        SftpClient client, IEnumerable<string> dirs, string remoteRoot, List<string> errors,
+        IProgress<SyncProgress>? progress = null, CancellationToken ct = default)
     {
-        // Walk deepest-first so a parent can empty after its child is removed.
-        foreach (var dir in dirs.OrderByDescending(d => d.Length))
+        var ordered = PruneCandidates(dirs, remoteRoot);
+        var done = 0;
+        foreach (var dir in ordered)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                if (TryExists(client, dir) &&
+                    !client.ListDirectory(dir).Any(f => f.Name is not ("." or "..")))
+                {
+                    client.DeleteDirectory(dir);
+                }
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Prune '{dir}': {ex.Message}");
+            }
+
+            Report(progress, SyncPhase.Deleting, "Tidying up empty folders",
+                ++done, ordered.Count, dir);
+        }
+    }
+
+    /// <summary>
+    /// Every directory a prune should look at — the ones a delete touched plus their ancestors up
+    /// to (but not including) the remote root — each appearing exactly once, deepest first.
+    /// </summary>
+    /// <remarks>
+    /// The dedupe is the whole point, and the ordering is what makes it safe. Siblings share
+    /// ancestors, so walking up from each touched directory independently visits a shared parent
+    /// once per sibling: 50,000 pages under one folder listed that folder 50,000 times. Emitting
+    /// each directory once, with every child of it earlier in the list, means a single look
+    /// settles it.
+    /// </remarks>
+    internal static List<string> PruneCandidates(IEnumerable<string> dirs, string remoteRoot)
+    {
+        var candidates = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var dir in dirs)
         {
             var current = dir;
+            // Stops early on an ancestor already collected — that ancestor's own chain is
+            // therefore already in the set, so there is nothing above it left to add.
             while (!string.IsNullOrEmpty(current) &&
                    current.Length > remoteRoot.Length &&
-                   current.StartsWith(remoteRoot, StringComparison.Ordinal))
+                   current.StartsWith(remoteRoot, StringComparison.Ordinal) &&
+                   candidates.Add(current))
             {
-                try
-                {
-                    if (!TryExists(client, current)) break;
-                    if (client.ListDirectory(current).Any(f => f.Name is not ("." or ".."))) break;
-                    client.DeleteDirectory(current);
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Prune '{current}': {ex.Message}");
-                    break;
-                }
                 current = ParentOf(current);
             }
         }
+
+        return [.. candidates.OrderByDescending(d => d.Length)];
+    }
+
+    /// <summary>How many progress reports a counted phase is allowed, however many items it has.</summary>
+    private const int ReportSteps = 200;
+
+    /// <summary>
+    /// Posts a counted progress report, but not one per item. <see cref="Progress{T}"/> marshals
+    /// every report onto the UI thread, so a 50,000-file phase queues 50,000 posts and the
+    /// dispatcher is still working through them after the transfer itself has finished — the app
+    /// stays unresponsive with the bar sitting at 100%. Two hundred updates is more than a
+    /// progress bar can show anyway.
+    /// </summary>
+    private static void Report(
+        IProgress<SyncProgress>? progress, SyncPhase phase, string message,
+        int index, int total, string? currentFile)
+    {
+        if (progress == null) return;
+
+        // The last one always goes, so the bar finishes and the final filename is the real one.
+        var step = total <= ReportSteps ? 1 : total / ReportSteps;
+        if (index != total && index % step != 0) return;
+
+        progress.Report(new SyncProgress(phase, message, index, total, currentFile));
     }
 
     private static void EnsureDir(SftpClient client, string dir, ConcurrentDictionary<string, byte> known)
