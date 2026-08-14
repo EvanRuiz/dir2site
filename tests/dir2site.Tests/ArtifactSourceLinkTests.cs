@@ -42,7 +42,7 @@ public class ArtifactSourceLinkTests : IDisposable
              """);
     }
 
-    private void Generate()
+    private IReadOnlyList<string> Generate()
     {
         var tree = DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>());
         var result = SiteGenerator.Generate(_root, tree, new Dir2SiteModel
@@ -53,6 +53,7 @@ public class ArtifactSourceLinkTests : IDisposable
             SecondaryColor = "#AA3311",
         });
         Assert.Empty(result.Errors);
+        return result.Warnings;
     }
 
     private string ArtifactPage(string stem) =>
@@ -154,6 +155,28 @@ public class ArtifactSourceLinkTests : IDisposable
         var page = ArtifactPage("Apple");
         Assert.DoesNotContain("javascript:", page);
         Assert.DoesNotContain("artifact-link", page);
+    }
+
+    /// A dropped url is the same shape of problem as a misspelled key: written in good faith, with
+    /// nothing on the page to show for it. `ftp:` is the case that isn't an attack — an archivist's
+    /// perfectly reasonable address that this site won't publish.
+    [AvaloniaFact]
+    public void AUrlTheSiteWillNotPublishIsReported()
+    {
+        MakePhoto("Apple.jpg", "url: ftp://archive.example.org/record\nurl-text: The record");
+
+        var warnings = Generate();
+
+        Assert.Contains(warnings, w => w.Contains("Apple.jpg") && w.Contains("url"));
+        Assert.DoesNotContain("artifact-link", ArtifactPage("Apple"));
+    }
+
+    [AvaloniaFact]
+    public void AGoodUrlIsNotReported()
+    {
+        MakePhoto("Apple.jpg", "url: https://example.org/apple\nurl-text: See the original");
+
+        Assert.DoesNotContain(Generate(), w => w.Contains("url"));
     }
 
     [AvaloniaFact]

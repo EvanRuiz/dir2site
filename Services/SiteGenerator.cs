@@ -513,6 +513,17 @@ public static class SiteGenerator
     {
         foreach (var error in node.YamlErrors) errors.Add(error);
         foreach (var warning in node.YamlWarnings) warnings.Add(warning);
+
+        // A url we won't publish is the same shape of problem as a misspelled key: written in good
+        // faith, and then nothing on the page to show for it. Saying so beats leaving the owner to
+        // wonder where their link went.
+        if (node.Artifact?.Url is { Length: > 0 } url && LinkableUrl(url).Length == 0)
+        {
+            warnings.Add(
+                $"{Path.GetFileName(node.FullPath)}: url is not an address the site will link to " +
+                "(http, https, mailto or somewhere within the site), so no link was published.");
+        }
+
         foreach (var child in node.Children) ReportYamlNotes(child, errors, warnings);
     }
 

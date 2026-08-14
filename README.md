@@ -89,7 +89,8 @@ no link. See [Adding videos](docs/adding-videos.md).
 
 An address is published only if it's one a browser would follow to another page — `http`, `https`,
 `mailto` or somewhere within your own site. Anything else is left off, rather than turned into a
-link that runs when clicked.
+link that runs when clicked, and generating says which file it was so a perfectly innocent `ftp://`
+doesn't just quietly vanish.
 
 ## Markdown articles
 

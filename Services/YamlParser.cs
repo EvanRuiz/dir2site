@@ -114,7 +114,11 @@ public static class YamlParser
                 if (parse(yaml) is { } artifact)
                 {
                     ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), warnings);
-                    if (!scaffolded) EnsureDefaultKeys(yamlPath, yaml, artifact, warnings, updatedYamls);
+                    // The file says what it is, and the model that parsed it agrees.
+                    if (!scaffolded)
+                        EnsureDefaultKeys(
+                            yamlPath, yaml, artifact.Type.ToString().ToLowerInvariant(),
+                            warnings, updatedYamls);
                     return artifact;
                 }
             }
@@ -130,8 +134,13 @@ public static class YamlParser
                 {
                     ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), warnings);
                     // The files with no type: token at all are the oldest in a project, and so the
-                    // likeliest to predate a setting. Backfilling them is the point, not an edge.
-                    if (!scaffolded) EnsureDefaultKeys(yamlPath, yaml, artifact, warnings, updatedYamls);
+                    // likeliest to predate a setting. Backfilling them is the point, not an edge —
+                    // but nothing here resolved a type, so go on the extension rather than on
+                    // Artifact.Type, which at this point is the enum's zero and not a finding.
+                    if (!scaffolded)
+                        EnsureDefaultKeys(
+                            yamlPath, yaml, TypeFromExtension(filePath, artifact),
+                            warnings, updatedYamls);
                     return artifact;
                 }
             }
@@ -206,15 +215,10 @@ public static class YamlParser
     private static void EnsureDefaultKeys(
         string yamlPath,
         string yaml,
-        Artifact artifact,
+        string artifactType,
         List<string>? warnings,
         IList<string>? updatedYamls)
     {
-        // The resolved type rather than the yaml's own token: the token may be missing entirely, or
-        // spelled "Photo", and DefaultKeys would then fall through to the bare shared set and leave
-        // the type's own settings out of the very file that needed them.
-        var artifactType = artifact.Type.ToString().ToLowerInvariant();
-
         Dictionary<object, object>? doc;
         try { doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml); }
         catch { return; }
@@ -252,6 +256,18 @@ public static class YamlParser
                 $"({string.Join(", ", missing.Select(kv => kv.Key))}) — {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// What to hold a yaml to when its own <c>type:</c> didn't decide. Every model matches an
+    /// untyped document — the deserializer ignores what it doesn't recognise — so the one that
+    /// happened to be tried first tells you nothing, and <see cref="Artifact.Type"/> is then the
+    /// enum's zero value rather than a determination. The extension is the evidence the scaffolder
+    /// would have used to write the file, so it is the evidence for filling it in.
+    /// </summary>
+    private static string TypeFromExtension(string filePath, Artifact artifact) =>
+        ExtensionToType.TryGetValue(Path.GetExtension(filePath), out var byExtension)
+            ? byExtension
+            : artifact.Type.ToString().ToLowerInvariant();
 
     // Reflected once per model — the same handful of types are parsed for every file in a project.
     private static readonly ConcurrentDictionary<Type, HashSet<string>> DeclaredKeysByType = new();
