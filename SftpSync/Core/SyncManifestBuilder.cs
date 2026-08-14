@@ -27,9 +27,10 @@ public static class SyncManifestBuilder
         {
             var rel = Path.GetRelativePath(siteRoot, full).Replace(Path.DirectorySeparatorChar, '/');
 
-            // _site is generated, but it is never cleaned, so anything that landed in it once —
-            // .DS_Store, a stray .claude/ — stays until someone deletes it by hand. Refusing to
-            // publish known clutter is cheaper than noticing it on a live server.
+            // Generating offers to remove what it didn't put there, but deliberately not
+            // dot-entries — it doesn't delete what it didn't create — so .DS_Store and a stray
+            // .claude/ stay until someone clears them by hand. Refusing to publish known clutter
+            // is cheaper than noticing it on a live server.
             if (PublishIgnore.ShouldExclude(rel)) continue;
 
             var info = new FileInfo(full);

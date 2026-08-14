@@ -540,6 +540,10 @@ public partial class MainWindowViewModel : ViewModelBase
             AppendError(string.Join("\n", result.Errors));
         if (result.Warnings.Count > 0)
             AppendWarning(string.Join("\n", result.Warnings));
+
+        if (result.Orphans.Count > 0)
+            await HandleOrphanFiles(Path.Combine(DirectoryRoot, "_site"), result.Orphans);
+
         StartServerCommand.NotifyCanExecuteChanged();
         QuickSyncCommand.NotifyCanExecuteChanged();
         VerifyAndRepairCommand.NotifyCanExecuteChanged();
@@ -547,6 +551,30 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private bool CanGenerateSite() =>
         DirectoryRoot != null && DirItems.Count > 0 && Dir2SiteConfig != null && !IsLoading;
+
+    /// <summary>
+    /// Offers to take away what the generate found in _site but had no reason to put there. Asked
+    /// rather than done, because removing files is the user's call — but only asked when there is
+    /// something to ask about: a generate that changes nothing finds nothing.
+    /// </summary>
+    private async Task HandleOrphanFiles(string siteRoot, IReadOnlyList<string> orphans)
+    {
+        if (TopLevel is not Window owner) return;
+
+        var dialog = new OrphanFilesView(orphans);
+        var toRemove = await dialog.ShowDialog<IReadOnlyList<string>?>(owner);
+        if (toRemove == null || toRemove.Count == 0)
+        {
+            // Saying nothing here would read as though the dialog had done something.
+            StatusText = $"Site generated → _site/ — kept {orphans.Count} leftover file(s)";
+            return;
+        }
+
+        var result = await Task.Run(() => SiteGenerator.RemoveOrphans(siteRoot, toRemove));
+        StatusText = $"Site generated → _site/ — removed {result.Removed} file(s)";
+        if (result.Errors.Count > 0)
+            AppendError(string.Join("\n", result.Errors));
+    }
 
     // ---- SFTP deploy --------------------------------------------------------
 

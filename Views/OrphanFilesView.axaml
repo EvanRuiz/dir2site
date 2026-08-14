@@ -1,0 +1,48 @@
+<!-- SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:dir2site.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="520" d:DesignHeight="460"
+        x:Class="dir2site.Views.OrphanFilesView"
+        x:DataType="vm:OrphanFilesViewModel"
+        Width="520" Height="460"
+        WindowStartupLocation="CenterOwner"
+        Title="Files No Longer in Your Site">
+
+    <DockPanel Margin="16">
+
+        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,4"
+                   FontWeight="SemiBold" Text="{Binding Headline}"/>
+
+        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"
+                   Text="An earlier generate made them from content you have since deleted or renamed. Keeping them means they stay on your published site."/>
+
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+            <Button Content="Select All" Command="{Binding SelectAllCommand}"/>
+            <Button Content="Deselect All" Command="{Binding DeselectAllCommand}"/>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="8" Margin="0,12,0,0">
+            <Button Content="Remove Selected" Command="{Binding RemoveSelectedCommand}"
+                    Background="#C0392B" Foreground="White"/>
+            <Button Content="Keep Them" Command="{Binding KeepCommand}"/>
+        </StackPanel>
+
+        <Border BorderBrush="#444" BorderThickness="1" CornerRadius="4">
+            <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding Items}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:OrphanFileItem">
+                            <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Path}"
+                                      Margin="6,2" FontFamily="Courier New"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
+</Window>

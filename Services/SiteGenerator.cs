@@ -24,9 +24,12 @@ public static class SiteGenerator
     /// What happened, what failed, and what merely didn't do anything. Warnings are kept apart
     /// from errors because a misspelled setting or two folders competing for one address leave a
     /// site that generated perfectly well — reporting them as errors would make every typo read
-    /// like a failed build.
+    /// like a failed build. Orphans are files the site no longer has any reason to contain; they
+    /// are reported rather than deleted, because generating happens off the UI thread and taking
+    /// files away is the user's call.
     /// </returns>
-    public static (string Summary, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings) Generate(
+    public static (string Summary, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings,
+        IReadOnlyList<string> Orphans) Generate(
         string directoryRoot,
         DirectoryTreeItem rootItem,
         Dir2SiteModel config,
@@ -39,6 +42,7 @@ public static class SiteGenerator
 
         var siteRoot = Path.Combine(directoryRoot, "_site");
         Directory.CreateDirectory(siteRoot);
+        var ledger = new SiteLedger(siteRoot);
 
         var topLevelFolders = rootItem.Children
             .Where(c => c.IsDirectory)
@@ -48,13 +52,13 @@ public static class SiteGenerator
         // A fixed handful of files that ship with the app rather than with the project, so they're
         // one step rather than a counted stage.
         progress.Report("Copying framework assets...");
-        CopyBootstrapAssets(siteRoot, progress);
-        CopyBootstrapIconsAssets(siteRoot, progress);
-        CopyOpenSeaDragonAssets(siteRoot, progress);
-        CopyBookReaderAssets(siteRoot, progress);
+        CopyBootstrapAssets(siteRoot, ledger, progress);
+        CopyBootstrapIconsAssets(siteRoot, ledger, progress);
+        CopyOpenSeaDragonAssets(siteRoot, ledger, progress);
+        CopyBookReaderAssets(siteRoot, ledger, progress);
 
         var loader = new AvaloniaTemplateLoader();
-        CopySiteAssets(siteRoot, config, loader, progress);
+        CopySiteAssets(siteRoot, config, loader, ledger, progress);
         var templates = new TemplateSet(loader);
 
         var errors = new ConcurrentBag<string>();
@@ -63,28 +67,26 @@ public static class SiteGenerator
         tracker.SetPageTotal(CountPages(rootItem));
         var homePromotions = CollectHomePromotions(rootItem, directoryRoot);
         GeneratePage(rootItem, siteRoot, directoryRoot, config, topLevelFolders, 0,
-            [], templates, progress, errors, warnings, tracker, homePromotions);
+            [], templates, progress, errors, warnings, tracker, homePromotions, ledger);
 
         var copyJobs = new List<CopyJob>();
-        var stalePaths = new List<string>();
-        CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs, stalePaths);
+        CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs);
         CollectUnderscoreFolderCopyJobs(directoryRoot, directoryRoot, siteRoot, copyJobs);
         CollectLogoCopyJob(directoryRoot, siteRoot, config.Logo, copyJobs);
-
-        // Before copying, so a file that is both stale and about to be re-copied can't be deleted
-        // after the copy that replaced it.
-        foreach (var path in stalePaths)
-        {
-            try { File.Delete(path); } catch (Exception ex) { errors.Add($"{Path.GetFileName(path)}: {ex.Message}"); }
-        }
 
         tracker.SetFileTotal(copyJobs.Count);
         foreach (var job in copyJobs)
         {
-            tracker.FileDone(CopyFileIfNewer(job.Src, job.Dest, progress, job.Label));
+            tracker.FileDone(CopyFileIfNewer(job.Src, job.Dest, ledger, progress, job.Label));
         }
 
-        return ("Site generated → _site/", [.. errors], [.. warnings]);
+        // Last, so that everything this run meant to put in the site has been registered.
+        var orphans = FindOrphans(ledger);
+
+        var summary = orphans.Count == 0
+            ? "Site generated → _site/"
+            : $"Site generated → _site/ — {orphans.Count} file(s) no longer part of the site";
+        return (summary, [.. errors], [.. warnings], orphans);
     }
 
     /// <summary>
@@ -119,7 +121,8 @@ public static class SiteGenerator
         ConcurrentBag<string> errors,
         ConcurrentBag<string> warnings,
         GenerateProgressTracker tracker,
-        IReadOnlyList<HomePromotion> homePromotions)
+        IReadOnlyList<HomePromotion> homePromotions,
+        SiteLedger ledger)
     {
         // The site root always gets a home page, however little is in it.
         if (depth > 0 && SoleArtifact(node) is { } soleArtifact)
@@ -127,7 +130,7 @@ public static class SiteGenerator
             try
             {
                 var soleChange = GenerateArtifactPage(soleArtifact, outputDir, directoryRoot, config,
-                    topLevelFolders, depth, ancestorNames, templates, progress, atFolderIndex: true);
+                    topLevelFolders, depth, ancestorNames, templates, progress, ledger, atFolderIndex: true);
                 tracker.PageDone(soleChange);
                 tracker.ArtifactChanged(soleChange);
             }
@@ -148,6 +151,12 @@ public static class SiteGenerator
             : [.. ancestorNames, PublicName(node.Name)];
 
         var indexHtmlPath = Path.Combine(outputDir, "index.html");
+
+        // Registered before the render rather than after it. The ledger records what this run
+        // means the site to contain, not what it managed to write — so a page whose render throws
+        // keeps the copy already on disk instead of being swept away, which would turn a reported
+        // error into quiet data loss.
+        ledger.Keep(indexHtmlPath);
 
         progress.Report($"Generating {label}...");
 
@@ -216,7 +225,7 @@ public static class SiteGenerator
         context.PushGlobal(globals);
 
         var html = templates.Collection.Render(context);
-        tracker.PageDone(WriteIfChanged(indexHtmlPath, html, Encoding.UTF8));
+        tracker.PageDone(WriteIfChanged(indexHtmlPath, html, ledger, Encoding.UTF8));
 
         ReportPublicNameCollisions(node, warnings);
 
@@ -224,7 +233,8 @@ public static class SiteGenerator
         {
             var childOutputDir = Path.Combine(outputDir, PublicName(child.Name));
             GeneratePage(child, childOutputDir, directoryRoot, config, topLevelFolders,
-                depth + 1, childAncestors, templates, progress, errors, warnings, tracker, homePromotions);
+                depth + 1, childAncestors, templates, progress, errors, warnings, tracker,
+                homePromotions, ledger);
         }
 
         // Videos play inline on this page, so they get no page of their own — generating one would
@@ -237,7 +247,7 @@ public static class SiteGenerator
             try
             {
                 var change = GenerateArtifactPage(child, outputDir, directoryRoot, config, topLevelFolders,
-                    depth + 1, childAncestors, templates, progress);
+                    depth + 1, childAncestors, templates, progress, ledger);
                 tracker.PageDone(change);
                 // What happened to an artifact's own page is what "new" and "updated" mean for the
                 // artifact: a photo the site had never rendered, or one whose page now reads
@@ -266,8 +276,10 @@ public static class SiteGenerator
     /// <see cref="Change.Updated"/> when it had one and the render differs, and
     /// <see cref="Change.None"/> when the output is identical.
     /// </returns>
-    private static Change WriteIfChanged(string path, string content, Encoding? encoding = null)
+    private static Change WriteIfChanged(string path, string content, SiteLedger ledger, Encoding? encoding = null)
     {
+        ledger.Keep(path);
+
         var existed = File.Exists(path);
         if (existed)
         {
@@ -671,16 +683,137 @@ public static class SiteGenerator
     /// <summary>One file to place in _site. Collected up front so the copy stage knows its total.</summary>
     private sealed record CopyJob(string Src, string Dest, string Label);
 
+    /// <summary>
+    /// Every path this run intends <c>_site</c> to contain. Recorded inside the three primitives
+    /// that write there — <see cref="WriteIfChanged"/>, <see cref="CopyFileIfNewer"/> and
+    /// <see cref="CopyEmbeddedIfStale"/> — before each one's "already current, nothing to do"
+    /// early return, because a file left alone for being up to date is still a file the site
+    /// wants. Registering at the call sites instead would put the safety of a destructive pass in
+    /// the hands of whoever adds the next call.
+    /// </summary>
+    private sealed class SiteLedger(string siteRoot)
+    {
+        // Case-insensitively, always, on every platform. The two mistakes aren't symmetric: on a
+        // case-folding filesystem an overwritten file keeps its original spelling, so comparing
+        // exactly would put live pages on the orphan list. Comparing loosely on a case-sensitive
+        // one only means a rename that changes nothing but case leaves its old copy behind, which
+        // is what generating did with everything until now. Err towards keeping.
+        private readonly ConcurrentDictionary<string, byte> _kept = new(StringComparer.OrdinalIgnoreCase);
+
+        public string Root { get; } = Path.GetFullPath(siteRoot);
+
+        public void Keep(string path) => _kept[Path.GetFullPath(path)] = 0;
+
+        public bool Contains(string fullPath) => _kept.ContainsKey(fullPath);
+    }
+
+    /// <summary>
+    /// Files sitting in <c>_site</c> that this run never asked for — what a deleted or renamed
+    /// source leaves behind. Returned as site-relative paths with forward slashes, sorted, ready
+    /// to show someone.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately without a "that's too many, something must have gone wrong" cut-off: the site
+    /// is regenerable from the source folder, nothing here was put in <c>_site</c> by anyone but
+    /// the generator, and the user confirms before any of it goes. A threshold would eventually
+    /// refuse a perfectly real "I deleted most of my site" run.
+    /// </remarks>
+    private static IReadOnlyList<string> FindOrphans(SiteLedger ledger)
+    {
+        List<string> files;
+        try { files = [.. Directory.EnumerateFiles(ledger.Root, "*", SearchOption.AllDirectories)]; }
+        catch { return []; }
+
+        var orphans = new List<string>();
+        foreach (var file in files)
+        {
+            if (ledger.Contains(Path.GetFullPath(file))) continue;
+            var rel = Path.GetRelativePath(ledger.Root, file);
+            if (IsProtected(rel)) continue;
+            orphans.Add(rel.Replace(Path.DirectorySeparatorChar, '/'));
+        }
+
+        orphans.Sort(StringComparer.Ordinal);
+        return orphans;
+    }
+
+    /// <summary>
+    /// Whether a site-relative path is something dir2site should never take away. The generator
+    /// writes no dot-entries into <c>_site</c>, so anything with a dot-segment got there from a
+    /// person or a server — a hand-placed <c>.htaccess</c>, a <c>.well-known/</c> challenge — and
+    /// dir2site doesn't delete what it didn't create. The deploy already applies this same rule to
+    /// the far end, in <c>SyncManifestBuilder.MayBeDeleted</c>, and the two halves agree on
+    /// purpose: a protected <c>.htaccess</c> stays in the local manifest, so it is never offered
+    /// up as stale on the server either.
+    /// </summary>
+    private static bool IsProtected(string relativePath) =>
+        relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Any(segment => segment.StartsWith('.'));
+
+    /// <summary>
+    /// Deletes files reported by a previous <see cref="Generate"/>, then any directory their going
+    /// left empty. Takes site-relative paths — the same ones <c>Generate</c> handed out.
+    /// </summary>
+    /// <returns>How many files went, and anything that refused to.</returns>
+    public static (int Removed, IReadOnlyList<string> Errors) RemoveOrphans(
+        string siteRoot, IReadOnlyList<string> relativePaths)
+    {
+        var root = Path.GetFullPath(siteRoot);
+        var removed = 0;
+        var errors = new List<string>();
+
+        foreach (var rel in relativePaths)
+        {
+            // Belt and braces: these come back from Generate, but this is a public entry point and
+            // the one thing it must never do is delete outside the site.
+            if (IsProtected(rel)) continue;
+            var full = Path.GetFullPath(Path.Combine(root, rel));
+            if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) continue;
+
+            try
+            {
+                File.Delete(full);
+                removed++;
+            }
+            catch (Exception ex)
+            {
+                // One locked file — the preview server holding it open on Windows, say — shouldn't
+                // stop the rest going. It gets reported, and offered again next generate.
+                errors.Add($"{rel}: {ex.Message}");
+            }
+        }
+
+        RemoveEmptyDirectories(root, root);
+        return (removed, errors);
+    }
+
+    // Depth-first so a folder emptied only by its children going still gets swept — this is what
+    // takes _site/Photographs/1890s/ away once the pages inside it are gone. The site root itself
+    // stays. Failures are ignored: a directory that won't go is harmless, and one holding nothing
+    // but a protected dot-file is correctly not empty.
+    private static void RemoveEmptyDirectories(string dir, string root)
+    {
+        IEnumerable<string> children;
+        try { children = [.. Directory.EnumerateDirectories(dir)]; }
+        catch { return; }
+
+        foreach (var child in children)
+            RemoveEmptyDirectories(child, root);
+
+        if (string.Equals(dir, root, StringComparison.Ordinal)) return;
+
+        try
+        {
+            if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                Directory.Delete(dir);
+        }
+        catch { /* benign */ }
+    }
+
     // Walks the tree one directory at a time. Each artifact's previews live in .dir2site/{stem}/
     // so they are self-contained — copy the whole subfolder straight into the artifact's output dir.
-    /// <param name="stale">
-    /// Files that must not be in the site any more. Generation is otherwise additive — nothing
-    /// prunes <c>_site</c> — which for <c>publishOriginal</c> would mean turning the flag back off
-    /// left the PDF published and reachable, quietly contradicting the default it was turned off
-    /// to restore.
-    /// </param>
     private static void CollectFolderPreviewCopyJobs(
-        DirectoryTreeItem node, string directoryRoot, string siteRoot, List<CopyJob> jobs, List<string> stale)
+        DirectoryTreeItem node, string directoryRoot, string siteRoot, List<CopyJob> jobs)
     {
         var folderRel = Path.GetRelativePath(directoryRoot, node.FullPath);
 
@@ -695,10 +828,10 @@ public static class SiteGenerator
             // `publishOriginal: true` puts the source PDF itself in the site, next to the page
             // images, so the artifact page can offer it for download. It is the source file rather
             // than a generated one, so it doesn't depend on previews having been generated.
+            // Turning the flag back off takes the PDF down again by simply not asking for it: an
+            // already-published copy then belongs to no one and the sweep offers it up.
             if (child.Artifact is Pdf { PublishOriginal: true })
                 jobs.Add(new CopyJob(child.FullPath, Path.Combine(destDir, child.Name), child.Name));
-            else if (child.Artifact is Pdf)
-                stale.Add(Path.Combine(destDir, child.Name));
 
             var stemDir = Path.Combine(node.FullPath, ".dir2site", stem);
             if (!Directory.Exists(stemDir)) continue;
@@ -711,7 +844,7 @@ public static class SiteGenerator
         }
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
-            CollectFolderPreviewCopyJobs(child, directoryRoot, siteRoot, jobs, stale);
+            CollectFolderPreviewCopyJobs(child, directoryRoot, siteRoot, jobs);
     }
 
     // Copies every "_"-prefixed folder (e.g. _media) verbatim into _site at its relative path, so
@@ -764,6 +897,7 @@ public static class SiteGenerator
         IList<string> ancestorNames,
         TemplateSet templates,
         IProgress<string>? progress,
+        SiteLedger ledger,
         bool atFolderIndex = false)
     {
         var artifact = item.Artifact!;
@@ -776,6 +910,10 @@ public static class SiteGenerator
         Directory.CreateDirectory(outputDir);
 
         var indexHtmlPath = Path.Combine(outputDir, "index.html");
+
+        // Before the render, not after: a page whose render throws is caught by the caller and
+        // reported, and the copy already in the site should survive that rather than be swept.
+        ledger.Keep(indexHtmlPath);
 
         progress?.Report($"Generating {stem}/index.html...");
 
@@ -890,7 +1028,7 @@ public static class SiteGenerator
         context.PushGlobal(globals);
 
         var html = templates.Artifact(templateName).Render(context);
-        return WriteIfChanged(indexHtmlPath, html, Encoding.UTF8);
+        return WriteIfChanged(indexHtmlPath, html, ledger, Encoding.UTF8);
     }
 
     private static string GetOgImageRootRelative(Artifact artifact, string directoryRoot, string stem)
@@ -954,7 +1092,7 @@ public static class SiteGenerator
         }
     }
 
-    private static void CopyOpenSeaDragonAssets(string siteRoot, IProgress<string>? progress)
+    private static void CopyOpenSeaDragonAssets(string siteRoot, SiteLedger ledger, IProgress<string>? progress)
     {
         const string baseUri = "avares://dir2site/Assets/js/openseadragon-bin-6.0.2/";
         var destBase = Path.Combine(siteRoot, "js", "openseadragon");
@@ -962,34 +1100,36 @@ public static class SiteGenerator
         CopyEmbeddedFile(
             $"{baseUri}openseadragon.min.js",
             Path.Combine(destBase, "openseadragon.min.js"),
-            progress);
+            ledger, progress);
         CopyEmbeddedFile(
             $"{baseUri}openseadragon.min.js.map",
             Path.Combine(destBase, "openseadragon.min.js.map"),
-            progress);
+            ledger, progress);
 
-        CopyEmbeddedDirectory($"{baseUri}images/", Path.Combine(destBase, "images"), progress);
+        CopyEmbeddedDirectory($"{baseUri}images/", Path.Combine(destBase, "images"), ledger, progress);
     }
 
-    private static void CopyBookReaderAssets(string siteRoot, IProgress<string>? progress)
+    private static void CopyBookReaderAssets(string siteRoot, SiteLedger ledger, IProgress<string>? progress)
     {
         const string baseUri = "avares://dir2site/Assets/js/bookreader-5.0.0-111/BookReader/";
         var destBase = Path.Combine(siteRoot, "js", "bookreader");
 
         foreach (var file in new[] { "BookReader.js", "BookReader.css", "jquery-3.js" })
         {
-            CopyEmbeddedFile($"{baseUri}{file}", Path.Combine(destBase, file), progress);
+            CopyEmbeddedFile($"{baseUri}{file}", Path.Combine(destBase, file), ledger, progress);
         }
 
-        CopyEmbeddedDirectory($"{baseUri}images/", Path.Combine(destBase, "images"), progress);
+        CopyEmbeddedDirectory($"{baseUri}images/", Path.Combine(destBase, "images"), ledger, progress);
     }
 
-    private static void CopyEmbeddedFile(string avaloniaUri, string dest, IProgress<string>? progress) =>
-        CopyEmbeddedIfStale(avaloniaUri, dest, progress);
+    private static void CopyEmbeddedFile(
+        string avaloniaUri, string dest, SiteLedger ledger, IProgress<string>? progress) =>
+        CopyEmbeddedIfStale(avaloniaUri, dest, ledger, progress);
 
     private static void CopyEmbeddedDirectory(
         string avaloniaBaseUri,
         string destDir,
+        SiteLedger ledger,
         IProgress<string>? progress)
     {
         var baseUri = new Uri(avaloniaBaseUri.TrimEnd('/') + "/");
@@ -997,11 +1137,13 @@ public static class SiteGenerator
         foreach (var assetUri in assets)
         {
             var dest = Path.Combine(destDir, Path.GetFileName(assetUri.LocalPath));
-            CopyEmbeddedIfStale(assetUri.ToString(), dest, progress);
+            CopyEmbeddedIfStale(assetUri.ToString(), dest, ledger, progress);
         }
     }
 
-    private static void CopySiteAssets(string siteRoot, Dir2SiteModel config, AvaloniaTemplateLoader loader, IProgress<string>? progress)
+    private static void CopySiteAssets(
+        string siteRoot, Dir2SiteModel config, AvaloniaTemplateLoader loader,
+        SiteLedger ledger, IProgress<string>? progress)
     {
         var siteObj = new ScriptObject();
         siteObj.SetValue("primary_color",   config.PrimaryColor,   readOnly: true);
@@ -1017,19 +1159,19 @@ public static class SiteGenerator
 
         var template = Template.Parse(loader.LoadByName("site-css"), "site-css.html");
         var css = template.Render(context);
-        WriteIfChanged(Path.Combine(siteRoot, "css", "site.css"), css);
+        WriteIfChanged(Path.Combine(siteRoot, "css", "site.css"), css, ledger);
 
         var jsTemplate = Template.Parse(loader.LoadByName("site-js"), "site-js.html");
         var js = jsTemplate.Render(context);
-        WriteIfChanged(Path.Combine(siteRoot, "js", "site.js"), js);
+        WriteIfChanged(Path.Combine(siteRoot, "js", "site.js"), js, ledger);
 
         // Written unconditionally, like every other asset; only pages with a video reference it.
         var videoTemplate = Template.Parse(loader.LoadByName("video-js"), "video-js.html");
         var videoJs = videoTemplate.Render(context);
-        WriteIfChanged(Path.Combine(siteRoot, "js", "video.js"), videoJs);
+        WriteIfChanged(Path.Combine(siteRoot, "js", "video.js"), videoJs, ledger);
     }
 
-    private static void CopyBootstrapAssets(string siteRoot, IProgress<string>? progress)
+    private static void CopyBootstrapAssets(string siteRoot, SiteLedger ledger, IProgress<string>? progress)
     {
         var files = new[]
         {
@@ -1040,10 +1182,10 @@ public static class SiteGenerator
         };
 
         foreach (var (uri, dest) in files)
-            CopyEmbeddedIfStale(uri, dest, progress);
+            CopyEmbeddedIfStale(uri, dest, ledger, progress);
     }
 
-    private static void CopyBootstrapIconsAssets(string siteRoot, IProgress<string>? progress)
+    private static void CopyBootstrapIconsAssets(string siteRoot, SiteLedger ledger, IProgress<string>? progress)
     {
         const string baseUri = "avares://dir2site/Assets/icons/bootstrap-icons-1.13.1/font/";
         var destBase = Path.Combine(siteRoot, "js", "bootstrap-icons");
@@ -1052,17 +1194,20 @@ public static class SiteGenerator
         CopyEmbeddedFile(
             $"{baseUri}bootstrap-icons.css",
             Path.Combine(destBase, "bootstrap-icons.css"),
-            progress);
+            ledger, progress);
 
-        CopyEmbeddedDirectory($"{baseUri}fonts/", Path.Combine(destBase, "fonts"), progress);
+        CopyEmbeddedDirectory($"{baseUri}fonts/", Path.Combine(destBase, "fonts"), ledger, progress);
     }
 
     /// <returns>
     /// New when the site had no such file, Updated when it had a stale one, None when it was
     /// already current and nothing was copied.
     /// </returns>
-    private static Change CopyFileIfNewer(string src, string dest, IProgress<string>? progress, string? label = null)
+    private static Change CopyFileIfNewer(
+        string src, string dest, SiteLedger ledger, IProgress<string>? progress, string? label = null)
     {
+        ledger.Keep(dest);
+
         var existed = File.Exists(dest);
         if (existed && File.GetLastWriteTimeUtc(dest) >= File.GetLastWriteTimeUtc(src)) return Change.None;
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
@@ -1081,8 +1226,11 @@ public static class SiteGenerator
         return DateTime.UtcNow;
     }
 
-    private static void CopyEmbeddedIfStale(string avaloniaUri, string dest, IProgress<string>? progress)
+    private static void CopyEmbeddedIfStale(
+        string avaloniaUri, string dest, SiteLedger ledger, IProgress<string>? progress)
     {
+        ledger.Keep(dest);
+
         if (File.Exists(dest) && File.GetLastWriteTimeUtc(dest) >= _assemblyTime) return;
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         progress?.Report($"Copying {Path.GetFileName(dest)}...");
