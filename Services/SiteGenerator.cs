@@ -901,7 +901,7 @@ public static class SiteGenerator
 
             try
             {
-                foreach (var file in Directory.EnumerateFiles(stemDir, "*", SearchOption.AllDirectories))
+                foreach (var file in SourceListing.FilesRecursive(stemDir))
                 {
                     var fileRel = Path.GetRelativePath(stemDir, file);
                     jobs.Add(new CopyJob(file, Path.Combine(destDir, fileRel), fileRel));
@@ -920,8 +920,8 @@ public static class SiteGenerator
     private static void CollectUnderscoreFolderCopyJobs(
         string current, string directoryRoot, string siteRoot, List<CopyJob> jobs, SiteLedger ledger)
     {
-        IEnumerable<string> dirs;
-        try { dirs = Directory.EnumerateDirectories(current); }
+        List<string> dirs;
+        try { dirs = SourceListing.Directories(current); }
         catch { ledger.MarkIncomplete(); return; }
 
         foreach (var dir in dirs)
@@ -939,7 +939,7 @@ public static class SiteGenerator
                 // run no longer knows the whole picture.
                 try
                 {
-                    foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                    foreach (var file in SourceListing.FilesRecursive(dir))
                     {
                         var fileRel = Path.GetRelativePath(dir, file);
                         jobs.Add(new CopyJob(file, Path.Combine(destRoot, fileRel), Path.Combine(rel, fileRel)));
