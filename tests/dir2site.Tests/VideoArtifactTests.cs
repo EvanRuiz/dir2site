@@ -263,6 +263,22 @@ public class VideoArtifactTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void AUrlWithNoTextStillLinks()
+    {
+        // The shortcut's own address stays opt-in, but a url typed into the yaml is a link asked
+        // for — the same rule the artifact pages follow.
+        var folder = MakeFolder("Videos");
+        MakeVideo(folder, "Talk.url", "https://youtu.be/AbCdEfGhIjK",
+            extra: "url: https://example.org/talks/2026");
+
+        Generate();
+        var page = ReadPage("Videos");
+
+        Assert.Contains("video-source-link", page);
+        Assert.Contains("https://example.org/talks/2026", page);
+    }
+
+    [AvaloniaFact]
     public void WithoutUrlTextThereIsNoOutboundLink()
     {
         // Opting in via url-text keeps the card free of a link the site owner didn't ask for.

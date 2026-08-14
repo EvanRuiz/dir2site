@@ -105,7 +105,7 @@ public static class YamlParser
                 if (parse(yaml) is { } artifact)
                 {
                     ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), warnings);
-                    if (!scaffolded) EnsureDefaultKeys(yamlPath, yaml, token);
+                    if (!scaffolded) EnsureDefaultKeys(yamlPath, yaml, artifact, warnings);
                     return artifact;
                 }
             }
@@ -120,6 +120,9 @@ public static class YamlParser
                 if (attempt(yaml) is { } artifact)
                 {
                     ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), warnings);
+                    // The files with no type: token at all are the oldest in a project, and so the
+                    // likeliest to predate a setting. Backfilling them is the point, not an edge.
+                    if (!scaffolded) EnsureDefaultKeys(yamlPath, yaml, artifact, warnings);
                     return artifact;
                 }
             }
@@ -184,9 +187,20 @@ public static class YamlParser
     /// the file and losing the comments this whole path exists to protect. For the same reason a
     /// document the editor cannot load is left alone entirely: this is housekeeping, and no missing
     /// key is worth a comment.
+    ///
+    /// A successful backfill is deliberately silent. It is additive, idempotent and preserves the
+    /// file, so saying so once per artifact would bury the warnings that mean something under a
+    /// notice about nothing having gone wrong. A failed one is not silent: a project on read-only
+    /// media would otherwise never gain the keys and never say why.
     /// </remarks>
-    private static void EnsureDefaultKeys(string yamlPath, string yaml, string artifactType)
+    private static void EnsureDefaultKeys(
+        string yamlPath, string yaml, Artifact artifact, List<string>? warnings)
     {
+        // The resolved type rather than the yaml's own token: the token may be missing entirely, or
+        // spelled "Photo", and DefaultKeys would then fall through to the bare shared set and leave
+        // the type's own settings out of the very file that needed them.
+        var artifactType = artifact.Type.ToString().ToLowerInvariant();
+
         Dictionary<object, object>? doc;
         try { doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml); }
         catch { return; }
@@ -210,8 +224,15 @@ public static class YamlParser
 
         if (!editor.IsModified) return;
 
+        // The artifact itself parsed fine, so this is a warning rather than an error — but the file
+        // keeps coming up short on every scan, and a person should be able to find out why.
         try { File.WriteAllText(yamlPath, editor.Text); }
-        catch { /* read-only media, a file open elsewhere: the artifact still parsed fine. */ }
+        catch (Exception ex)
+        {
+            warnings?.Add(
+                $"{Path.GetFileName(yamlPath)}: could not add the settings it is missing " +
+                $"({string.Join(", ", missing.Select(kv => kv.Key))}) — {ex.Message}");
+        }
     }
 
     // Reflected once per model — the same handful of types are parsed for every file in a project.
@@ -479,6 +500,11 @@ public static class YamlParser
     /// editor will overwrite; <c>cover</c> is the legacy spelling of <c>parent-cover</c>, which the
     /// docs already say not to reach for.
     /// </summary>
+    /// <remarks>
+    /// Read only by the test that holds <see cref="DefaultKeys"/> and the models to each other. It
+    /// lives here rather than there because it is the policy itself — the list of what a yaml is
+    /// not for — and the test only checks that the code keeps to it.
+    /// </remarks>
     internal static readonly IReadOnlySet<string> ToolOwnedKeys = new HashSet<string>(StringComparer.Ordinal)
     {
         "type", "id", "preview", "previewLarge", "image", "original", "tile", "overlays", "cover",
@@ -502,7 +528,8 @@ public static class YamlParser
     /// </remarks>
     internal static IReadOnlyList<KeyValuePair<string, string>> DefaultKeys(string artifactType)
     {
-        var head = artifactType switch
+        // The parser matches type tokens case-insensitively, so "Photo" is a photo everywhere else.
+        var head = artifactType.ToLowerInvariant() switch
         {
             "photo" or "deepzoom" => new[] { "credit", "photographer" },
             "pdf"                 => ["credit", "author", "publishOriginal"],
@@ -517,9 +544,15 @@ public static class YamlParser
 
     // Blank is the right default for anything the site owner writes in prose; the flags need a
     // value, because a bare "home:" reads as null rather than false.
+    //
+    // parent-cover is the exception, and stays blank: it is bool? precisely so that absent and
+    // false are different answers, with absent letting a pre-rename project's "cover: true" still
+    // decide (see Artifact.IsParentCover). Writing false would answer, on the owner's behalf and
+    // without telling them, a question their file had deliberately left open — and take away the
+    // folder picture they chose.
     private static string DefaultValue(string key) => key switch
     {
-        "home" or "parent-cover" or "grandparent-cover" or "publishOriginal" => "false",
+        "home" or "grandparent-cover" or "publishOriginal" => "false",
         _ => "",
     };
 

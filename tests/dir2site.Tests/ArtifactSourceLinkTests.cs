@@ -143,6 +143,28 @@ public class ArtifactSourceLinkTests : IDisposable
         Assert.Contains("Bell &amp; Co", page);
     }
 
+    /// Escaping keeps the value inside the attribute; it says nothing about what following the link
+    /// would run. A yaml is hand-authored, but a link that executes is not something to publish.
+    [AvaloniaFact]
+    public void ASchemeWeWouldNotFollowIsNotPublishedAsALink()
+    {
+        MakePhoto("Apple.jpg", "url: \"javascript:alert(1)\"\nurl-text: Tap here");
+        Generate();
+
+        var page = ArtifactPage("Apple");
+        Assert.DoesNotContain("javascript:", page);
+        Assert.DoesNotContain("artifact-link", page);
+    }
+
+    [AvaloniaFact]
+    public void AnAddressWithinTheSiteIsStillALink()
+    {
+        MakePhoto("Apple.jpg", "url: ../Elsewhere/\nurl-text: The other one");
+        Generate();
+
+        Assert.Contains("href=\"../Elsewhere/\"", ArtifactPage("Apple"));
+    }
+
     [AvaloniaFact]
     public void APdfPageCarriesTheLinkToo()
     {

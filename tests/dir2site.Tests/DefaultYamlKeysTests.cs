@@ -203,6 +203,48 @@ public class DefaultYamlKeysTests : IDisposable
         Assert.Equal(writtenAt, File.GetLastWriteTimeUtc(path + ".yaml"));
     }
 
+    /// <summary>
+    /// The one key where blank and false are different answers. <c>parent-cover</c> is nullable so
+    /// that a pre-rename project's <c>cover: true</c> still decides; writing false would take the
+    /// folder picture away from a file that never asked to give it up.
+    /// </summary>
+    [Fact]
+    public void TheBackfillLeavesALegacyCoverStillChoosing()
+    {
+        var path = Path.Combine(_root, "Apple.jpg");
+        File.WriteAllText(path, "not really a jpeg");
+        File.WriteAllText(path + ".yaml", "type: photo\ncaption: Apple\ncover: true\n");
+
+        var errors = new List<string>();
+        Assert.NotNull(YamlParser.TryParseYamlMeta(path, errors, new List<string>()));
+
+        // Read back from the file the backfill left, which is what the next scan sees.
+        var artifact = YamlParser.TryParseYamlMeta(path, errors, new List<string>());
+        Assert.Empty(errors);
+        Assert.True(artifact!.IsParentCover);
+        Assert.Null(artifact.ParentCover);
+    }
+
+    /// The type token is matched case-insensitively everywhere else, so a file that parses as a
+    /// photo has to be backfilled as one.
+    [Fact]
+    public void AMixedCaseTypeStillGetsItsOwnSettings()
+    {
+        var yaml = ParseAndReadYaml("Apple.jpg", "type: Photo\ncaption: Apple\n");
+
+        Assert.Contains("photographer", KeysOf(yaml));
+    }
+
+    /// A yaml old enough to have no type: at all is the likeliest to be missing settings.
+    [Fact]
+    public void AYamlWithNoTypeIsBackfilledToo()
+    {
+        var yaml = ParseAndReadYaml("Apple.jpg", "caption: Apple\ncredit: A. Nother\n");
+
+        Assert.Contains("home", KeysOf(yaml));
+        Assert.Contains("url", KeysOf(yaml));
+    }
+
     [Fact]
     public void ABackfillOnlyAddsKeysThatTypeActuallyHas()
     {

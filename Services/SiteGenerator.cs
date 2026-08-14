@@ -365,13 +365,41 @@ public static class SiteGenerator
         // A video's link out is the shortcut's own target, unless the yaml names somewhere better
         // to send people — the talk's page rather than the upload, say. Everywhere else `url` is a
         // link on the artifact's page; a video has no page, so here it lands on the card.
+        var chosenUrl = video == null ? "" : LinkableUrl(item.Artifact?.Url);
         obj.SetValue(
             "video_url",
-            video == null ? "" : item.Artifact?.Url is { Length: > 0 } chosen ? chosen : video.SourceUrl ?? "",
+            video == null ? "" : chosenUrl.Length > 0 ? chosenUrl : video.SourceUrl ?? "",
             readOnly: true);
-        obj.SetValue("url_text", video != null ? item.Artifact?.UrlText ?? "" : "", readOnly: true);
+        // The shortcut's own address stays opt-in — the player already offers YouTube's — but a url
+        // the owner typed reads as a link they want, so it falls back to itself for the text the
+        // same way an artifact page does.
+        obj.SetValue(
+            "url_text",
+            video == null ? "" : item.Artifact?.UrlText is { Length: > 0 } text ? text : chosenUrl,
+            readOnly: true);
         obj.SetValue("credit", item.Artifact?.Credit ?? "", readOnly: true);
         return obj;
+    }
+
+    /// <summary>
+    /// An artifact's <c>url</c>, or blank if it isn't something we are willing to put behind an
+    /// anchor. Escaping keeps a value inside the attribute but says nothing about what happens when
+    /// it is followed, and <c>javascript:</c> in a yaml would otherwise become a live link in the
+    /// published site. A relative address has no scheme to judge and is left alone.
+    /// </summary>
+    private static string LinkableUrl(string? url)
+    {
+        if (url is not { Length: > 0 }) return "";
+
+        var scheme = url.AsSpan(0, url.IndexOfAny([':', '/', '?', '#']) is var i && i > 0 ? i : 0);
+        if (scheme.Length == 0) return url;  // relative: no scheme to object to
+        if (url[scheme.Length] != ':') return url;
+
+        return scheme.ToString().ToLowerInvariant() switch
+        {
+            "http" or "https" or "mailto" => url,
+            _ => "",
+        };
     }
 
     // Human-friendly label shown on cards and artifact pages in the generated site.
@@ -782,7 +810,7 @@ public static class SiteGenerator
         // Blank link text falls back to the address itself, so a url the site owner typed is never
         // silently dropped. Both keys are always set: the artifact templates share this object and
         // Scriban reads members per template, so a missing one is an error rather than a blank.
-        var url = artifact.Url ?? "";
+        var url = LinkableUrl(artifact.Url);
         artifactObj.SetValue("url", url, readOnly: true);
         artifactObj.SetValue(
             "url_text",
