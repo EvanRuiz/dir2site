@@ -159,7 +159,7 @@ public partial class MainWindowViewModel : ViewModelBase
             ? $"1 yaml file ({Path.GetFileName(updatedYamls[0])})"
             : $"{updatedYamls.Count:N0} yaml files";
         AppendWarning(
-            $"Added the settings they were missing to {subject}. " +
+            $"Added the settings that were missing to {subject}. " +
             "Values you had already written are unchanged.");
     }
 

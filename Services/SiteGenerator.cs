@@ -70,18 +70,31 @@ public static class SiteGenerator
             [], templates, progress, errors, warnings, tracker, homePromotions, ledger);
 
         var copyJobs = new List<CopyJob>();
-        CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs);
-        CollectUnderscoreFolderCopyJobs(directoryRoot, directoryRoot, siteRoot, copyJobs);
+        CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs, ledger);
+        CollectUnderscoreFolderCopyJobs(directoryRoot, directoryRoot, siteRoot, copyJobs, ledger);
         CollectLogoCopyJob(directoryRoot, siteRoot, config.Logo, copyJobs);
 
         tracker.SetFileTotal(copyJobs.Count);
         foreach (var job in copyJobs)
         {
-            tracker.FileDone(CopyFileIfNewer(job.Src, job.Dest, ledger, progress, job.Label));
+            tracker.FileDone(CopyFileIfDifferent(job.Src, job.Dest, ledger, progress, job.Label));
         }
 
-        // Last, so that everything this run meant to put in the site has been registered.
-        var orphans = FindOrphans(ledger);
+        // Last, so that everything this run meant to put in the site has been registered. A run
+        // that couldn't read part of the project offers nothing: it can't tell a folder that was
+        // emptied from one it simply never saw, and guessing wrong here deletes the user's site.
+        IReadOnlyList<string> orphans = [];
+        if (ledger.IsIncomplete)
+        {
+            warnings.Add(
+                "Part of the project folder could not be read, so nothing was offered for removal " +
+                "this time. Files left over from deleted content are still in _site — generate " +
+                "again once the folder is readable.");
+        }
+        else
+        {
+            orphans = FindOrphans(ledger);
+        }
 
         var summary = orphans.Count == 0
             ? "Site generated → _site/"
@@ -685,7 +698,7 @@ public static class SiteGenerator
 
     /// <summary>
     /// Every path this run intends <c>_site</c> to contain. Recorded inside the three primitives
-    /// that write there — <see cref="WriteIfChanged"/>, <see cref="CopyFileIfNewer"/> and
+    /// that write there — <see cref="WriteIfChanged"/>, <see cref="CopyFileIfDifferent"/> and
     /// <see cref="CopyEmbeddedIfStale"/> — before each one's "already current, nothing to do"
     /// early return, because a file left alone for being up to date is still a file the site
     /// wants. Registering at the call sites instead would put the safety of a destructive pass in
@@ -705,6 +718,23 @@ public static class SiteGenerator
         public void Keep(string path) => _kept[Path.GetFullPath(path)] = 0;
 
         public bool Contains(string fullPath) => _kept.ContainsKey(fullPath);
+
+        /// <summary>
+        /// Set when a source folder could not be read, so this run never learned what was in it.
+        /// </summary>
+        /// <remarks>
+        /// The ledger's meaning is "everything the site should contain", and the sweep reads
+        /// anything missing from it as deletable. A folder that couldn't be listed contributes
+        /// nothing, which is indistinguishable from a folder the user emptied — so an unreadable
+        /// <c>_media</c> would have offered every static include in the site for deletion, and the
+        /// deploy would then have taken them off the server as stale. A cloud-synced project with
+        /// dehydrated files, a network share that blinks, or a scanner holding a handle is enough.
+        /// One unreadable directory therefore takes the whole report off the table: the sweep can
+        /// only speak for a run that saw everything.
+        /// </remarks>
+        public bool IsIncomplete { get; private set; }
+
+        public void MarkIncomplete() => IsIncomplete = true;
     }
 
     /// <summary>
@@ -764,11 +794,25 @@ public static class SiteGenerator
 
         foreach (var rel in relativePaths)
         {
-            // Belt and braces: these come back from Generate, but this is a public entry point and
-            // the one thing it must never do is delete outside the site.
-            if (IsProtected(rel)) continue;
+            // Belt and braces: these come back from Generate, which has already filtered both of
+            // these out. But this is a public entry point and the one thing it must never do is
+            // delete outside the site — and a refusal says so rather than reporting "removed 0"
+            // and offering the same file again next time with no explanation.
+            //
+            // Containment first: "..", being a dot-segment, would otherwise be turned away as a
+            // dot-file, which is true but not the thing worth saying about a path escaping _site.
             var full = Path.GetFullPath(Path.Combine(root, rel));
-            if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add($"{rel}: not removed — it resolves outside _site.");
+                continue;
+            }
+
+            if (IsProtected(rel))
+            {
+                errors.Add($"{rel}: not removed — dir2site doesn't delete dot-files it didn't create.");
+                continue;
+            }
 
             try
             {
@@ -813,7 +857,7 @@ public static class SiteGenerator
     // Walks the tree one directory at a time. Each artifact's previews live in .dir2site/{stem}/
     // so they are self-contained — copy the whole subfolder straight into the artifact's output dir.
     private static void CollectFolderPreviewCopyJobs(
-        DirectoryTreeItem node, string directoryRoot, string siteRoot, List<CopyJob> jobs)
+        DirectoryTreeItem node, string directoryRoot, string siteRoot, List<CopyJob> jobs, SiteLedger ledger)
     {
         var folderRel = Path.GetRelativePath(directoryRoot, node.FullPath);
 
@@ -834,27 +878,35 @@ public static class SiteGenerator
                 jobs.Add(new CopyJob(child.FullPath, Path.Combine(destDir, child.Name), child.Name));
 
             var stemDir = Path.Combine(node.FullPath, ".dir2site", stem);
+            // No previews folder is a real answer — a video has none — so it isn't treated as a
+            // gap. One that exists but won't be read is a gap, and must not be read as "these
+            // previews are gone" while the pages still point at them.
             if (!Directory.Exists(stemDir)) continue;
 
-            foreach (var file in Directory.EnumerateFiles(stemDir, "*", SearchOption.AllDirectories))
+            try
             {
-                var fileRel = Path.GetRelativePath(stemDir, file);
-                jobs.Add(new CopyJob(file, Path.Combine(destDir, fileRel), fileRel));
+                foreach (var file in Directory.EnumerateFiles(stemDir, "*", SearchOption.AllDirectories))
+                {
+                    var fileRel = Path.GetRelativePath(stemDir, file);
+                    jobs.Add(new CopyJob(file, Path.Combine(destDir, fileRel), fileRel));
+                }
             }
+            catch { ledger.MarkIncomplete(); }
         }
 
         foreach (var child in node.Children.Where(c => c.IsDirectory))
-            CollectFolderPreviewCopyJobs(child, directoryRoot, siteRoot, jobs);
+            CollectFolderPreviewCopyJobs(child, directoryRoot, siteRoot, jobs, ledger);
     }
 
     // Copies every "_"-prefixed folder (e.g. _media) verbatim into _site at its relative path, so
     // markdown articles can reference static includes. _site itself and "."-prefixed folders
     // (.git, .dir2site, …) are skipped. Underscore folders are not scanned as artifacts.
-    private static void CollectUnderscoreFolderCopyJobs(string current, string directoryRoot, string siteRoot, List<CopyJob> jobs)
+    private static void CollectUnderscoreFolderCopyJobs(
+        string current, string directoryRoot, string siteRoot, List<CopyJob> jobs, SiteLedger ledger)
     {
         IEnumerable<string> dirs;
         try { dirs = Directory.EnumerateDirectories(current); }
-        catch { return; }
+        catch { ledger.MarkIncomplete(); return; }
 
         foreach (var dir in dirs)
         {
@@ -866,15 +918,22 @@ public static class SiteGenerator
             {
                 var rel = Path.GetRelativePath(directoryRoot, dir);
                 var destRoot = Path.Combine(siteRoot, PublicRelativePath(rel));
-                foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                // Enumerating can fail part-way through, which would leave the rest of the folder
+                // unregistered and so up for deletion — the jobs already added are kept, but the
+                // run no longer knows the whole picture.
+                try
                 {
-                    var fileRel = Path.GetRelativePath(dir, file);
-                    jobs.Add(new CopyJob(file, Path.Combine(destRoot, fileRel), Path.Combine(rel, fileRel)));
+                    foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                    {
+                        var fileRel = Path.GetRelativePath(dir, file);
+                        jobs.Add(new CopyJob(file, Path.Combine(destRoot, fileRel), Path.Combine(rel, fileRel)));
+                    }
                 }
+                catch { ledger.MarkIncomplete(); }
                 continue; // don't descend further — the whole subtree was copied
             }
 
-            CollectUnderscoreFolderCopyJobs(dir, directoryRoot, siteRoot, jobs);
+            CollectUnderscoreFolderCopyJobs(dir, directoryRoot, siteRoot, jobs, ledger);
         }
     }
 
@@ -1203,17 +1262,48 @@ public static class SiteGenerator
     /// New when the site had no such file, Updated when it had a stale one, None when it was
     /// already current and nothing was copied.
     /// </returns>
-    private static Change CopyFileIfNewer(
+    private static Change CopyFileIfDifferent(
         string src, string dest, SiteLedger ledger, IProgress<string>? progress, string? label = null)
     {
         ledger.Keep(dest);
 
         var existed = File.Exists(dest);
-        if (existed && File.GetLastWriteTimeUtc(dest) >= File.GetLastWriteTimeUtc(src)) return Change.None;
+        if (existed && SameFile(src, dest)) return Change.None;
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         progress?.Report($"Copying {label ?? Path.GetFileName(dest)}...");
         File.Copy(src, dest, overwrite: true);
         return existed ? Change.Updated : Change.New;
+    }
+
+    /// <summary>
+    /// Whether the site's copy already matches the source, by size and modified time.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately "the same" rather than "not older". These copies mirror a source file —
+    /// <c>_media</c> most of all — and a mirror reproduces what is there. Asking whether the source
+    /// was <i>newer</i> silently kept the old copy whenever a file was replaced by one carrying an
+    /// earlier timestamp: restoring from a backup, copying off another drive or a camera,
+    /// <c>rsync -t</c>, checking out an older revision. The site then published the stale copy
+    /// indefinitely, and because the server agreed with <c>_site</c>, Verify and Repair saw nothing
+    /// wrong either. Size-and-mtime is the same test the deploy diff uses, so the two agree.
+    ///
+    /// <see cref="File.Copy(string,string,bool)"/> carries the source's modified time across, so a
+    /// file that was copied stays equal on the next run and is left alone — which is what keeps an
+    /// unchanged site off the upload queue.
+    /// </remarks>
+    private static bool SameFile(string src, string dest)
+    {
+        try
+        {
+            var s = new FileInfo(src);
+            var d = new FileInfo(dest);
+            return s.Length == d.Length && s.LastWriteTimeUtc == d.LastWriteTimeUtc;
+        }
+        catch
+        {
+            // Unreadable for any reason — copy rather than assume it's current.
+            return false;
+        }
     }
 
     private static readonly DateTime _assemblyTime = GetAssemblyTime();
