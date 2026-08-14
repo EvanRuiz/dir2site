@@ -70,7 +70,7 @@ public class FooterSettingsViewTests : IDisposable
         Dispatcher.UIThread.RunJobs();
 
         var button = window.GetVisualDescendants().OfType<Button>()
-            .First(b => (b.Content as string) == "Footer…");
+            .First(b => (b.Content as string) == "Edit Footer…");
         Assert.True(button.IsEffectivelyEnabled);
     }
 
@@ -88,6 +88,96 @@ public class FooterSettingsViewTests : IDisposable
         var boxes = view.GetVisualDescendants().OfType<TextBox>().ToList();
         Assert.Contains(boxes, b => b.Text == "Example About");
         Assert.Contains(boxes, b => b.Text == "--Footer/Privacy.md");
+    }
+
+    [AvaloniaFact]
+    public void TheFooterColourPlaceholderIsTheColourAnEmptyBoxActuallyGives()
+    {
+        var config = new Dir2SiteModel { PrimaryColor = "#223355", FooterColor = string.Empty };
+        var (view, vm) = Show(config);
+
+        // The generator falls back to PrimaryColor, so anything else here is the dialog claiming a
+        // default the site does not have.
+        Assert.Equal("#223355", vm.FooterColorPlaceholder);
+
+        var box = view.GetVisualDescendants().OfType<TextBox>()
+            .First(b => b.Watermark == "#223355");
+        Assert.True(string.IsNullOrEmpty(box.Text));
+    }
+
+    [AvaloniaFact]
+    public void TheIconColourBoxesClaimNoDefaultOfTheirOwn()
+    {
+        var (view, _) = Show(ConfigWith(
+            new FooterItem { Title = "Row", Icon = "bi-youtube", Link = "https://example.test/a" }));
+
+        // Empty means "inherit, or the brand's own colour" — never a fixed red or white, so a
+        // placeholder naming one would be describing behaviour that doesn't exist.
+        var watermarks = view.GetVisualDescendants().OfType<TextBox>()
+            .Select(b => b.Watermark)
+            .ToList();
+        Assert.DoesNotContain("#ff0000", watermarks);
+        Assert.DoesNotContain("#ffffff", watermarks);
+    }
+
+    [AvaloniaFact]
+    public void TheClosingLineIsEditedHereAndKeptVerbatim()
+    {
+        // It moved out of Site Settings into this dialog, so this is now the only way to reach it —
+        // and it must not be trimmed or escaped on the way, being the one field that is raw HTML.
+        var config = new Dir2SiteModel { Footer = "&copy; 2026<br>Everyone" };
+        var (view, vm) = Show(config);
+
+        Assert.Equal("&copy; 2026<br>Everyone", vm.FooterText);
+
+        var box = view.GetVisualDescendants().OfType<TextBox>()
+            .First(b => b.Text == "&copy; 2026<br>Everyone");
+        Assert.NotNull(box);
+
+        vm.FooterText = "  &copy; 2027 <b>Everyone</b>  ";
+        vm.SaveCommand.Execute(null);
+        Assert.Equal("  &copy; 2027 <b>Everyone</b>  ", vm.FooterText);
+    }
+
+    [AvaloniaFact]
+    public void TheLinkButtonsPutTheRowOnTheFormTheyName()
+    {
+        var (_, vm) = Show(ConfigWith(new FooterItem { Title = "Row", Link = string.Empty }));
+        vm.SelectedItem = vm.Items[0];
+
+        vm.SetWebLinkCommand.Execute(null);
+        Assert.Equal("https://", vm.Items[0].Link);
+
+        vm.SetMailtoLinkCommand.Execute(null);
+        Assert.Equal("mailto:", vm.Items[0].Link);
+    }
+
+    [AvaloniaFact]
+    public void SwitchingLinkFormKeepsWhatWasTypedRatherThanStackingSchemes()
+    {
+        var (_, vm) = Show(ConfigWith(
+            new FooterItem { Title = "Row", Link = "https://example.test/channel" }));
+        vm.SelectedItem = vm.Items[0];
+
+        vm.SetMailtoLinkCommand.Execute(null);
+        Assert.Equal("mailto:example.test/channel", vm.Items[0].Link);
+
+        vm.SetWebLinkCommand.Execute(null);
+        Assert.Equal("https://example.test/channel", vm.Items[0].Link);
+    }
+
+    [AvaloniaFact]
+    public void TheLinkButtonsNeedARowToActOn()
+    {
+        var (_, vm) = Show(ConfigWith(new FooterItem { Title = "Row", Link = "/a/" }));
+
+        vm.SelectedItem = null;
+        Assert.False(vm.SetWebLinkCommand.CanExecute(null));
+        Assert.False(vm.SetMailtoLinkCommand.CanExecute(null));
+
+        vm.SelectedItem = vm.Items[0];
+        Assert.True(vm.SetWebLinkCommand.CanExecute(null));
+        Assert.True(vm.SetMailtoLinkCommand.CanExecute(null));
     }
 
     [AvaloniaFact]

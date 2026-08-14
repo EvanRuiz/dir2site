@@ -68,11 +68,19 @@ public partial class FooterSettingsViewModel : ViewModelBase
     /// <summary>The rows being edited. Order within a column is the order shown.</summary>
     public ObservableCollection<FooterItemRow> Items { get; } = [];
 
+    /// <summary>
+    /// What an empty <see cref="FooterColor"/> actually produces, shown as the box's placeholder.
+    /// A fixed example there claimed a default the site does not have.
+    /// </summary>
+    public string FooterColorPlaceholder { get; }
+
     public FooterSettingsViewModel(Window window, string projectRoot, Dir2SiteModel config)
     {
         _window = window;
         _projectRoot = projectRoot;
+        _footerText = config.Footer;
         _footerColor = config.FooterColor;
+        FooterColorPlaceholder = config.PrimaryColor;
 
         // Copies, so Cancel really cancels — the config keeps its own list until Save.
         foreach (var item in config.FooterItems) Items.Add(FooterItemRow.From(item));
@@ -80,7 +88,13 @@ public partial class FooterSettingsViewModel : ViewModelBase
         _selectedItem = Items.FirstOrDefault();
     }
 
-    /// <summary>Empty follows the primary colour, which is what an unconfigured project wants.</summary>
+    /// <summary>
+    /// The closing line under the columns, usually the copyright. The one footer field that is
+    /// written to the page as raw HTML, so it can hold a link or a line break.
+    /// </summary>
+    [ObservableProperty] private string _footerText;
+
+    /// <summary>Empty follows the primary color, which is what an unconfigured project wants.</summary>
     [ObservableProperty] private string _footerColor;
 
     [ObservableProperty] private FooterItemRow? _selectedItem;
@@ -91,6 +105,8 @@ public partial class FooterSettingsViewModel : ViewModelBase
         MoveDownCommand.NotifyCanExecuteChanged();
         RemoveItemCommand.NotifyCanExecuteChanged();
         ChooseLinkCommand.NotifyCanExecuteChanged();
+        SetWebLinkCommand.NotifyCanExecuteChanged();
+        SetMailtoLinkCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -135,6 +151,43 @@ public partial class FooterSettingsViewModel : ViewModelBase
     private bool CanMoveDown() => SelectedItem != null && Items.IndexOf(SelectedItem) < Items.Count - 1;
 
     /// <summary>
+    /// Puts the row on the web-address branch, keeping whatever address was already typed.
+    /// </summary>
+    /// <remarks>
+    /// The three link forms are told apart by how the string starts, which is a rule you have to
+    /// know before the box helps you. These two buttons and the artifact picker are that rule made
+    /// visible: one per form, so the shape is chosen rather than remembered.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private void SetWebLink()
+    {
+        if (SelectedItem is not { } row) return;
+        row.Link = "https://" + WithoutScheme(row.Link);
+        Status = "Type the rest of the address after https://";
+    }
+
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private void SetMailtoLink()
+    {
+        if (SelectedItem is not { } row) return;
+        row.Link = "mailto:" + WithoutScheme(row.Link);
+        Status = "Type the address after mailto:";
+    }
+
+    // What was typed, with any scheme this dialog might have put there taken back off, so switching
+    // between the two doesn't stack them up as "https://mailto:someone@example.org".
+    private static string WithoutScheme(string link)
+    {
+        var rest = (link ?? string.Empty).Trim();
+        foreach (var scheme in (string[])["https://", "http://", "mailto:"])
+        {
+            if (rest.StartsWith(scheme, StringComparison.OrdinalIgnoreCase))
+                return rest[scheme.Length..];
+        }
+        return rest.TrimStart('/');
+    }
+
+    /// <summary>
     /// Picks the artifact a row points at, and stores it the way the yaml wants it: a path relative
     /// to the project, so the file stays portable between machines.
     /// </summary>
@@ -170,6 +223,7 @@ public partial class FooterSettingsViewModel : ViewModelBase
     [RelayCommand]
     private void Save() =>
         _window.Close(new FooterSettingsResult(
+            FooterText,
             FooterColor.Trim(),
             [.. Items.Select(row => row.ToItem())]));
 
@@ -178,4 +232,5 @@ public partial class FooterSettingsViewModel : ViewModelBase
 }
 
 /// <summary>What the dialog hands back. Null instead means the user cancelled.</summary>
-public sealed record FooterSettingsResult(string FooterColor, IReadOnlyList<FooterItem> Items);
+public sealed record FooterSettingsResult(
+    string FooterText, string FooterColor, IReadOnlyList<FooterItem> Items);

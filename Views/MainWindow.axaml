@@ -244,11 +244,9 @@
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Label Width="140">Footer text</Label>
-                                    <TextBox Text="{Binding Dir2SiteConfig.Footer}" Width="180"
-                                             ToolTip.Tip="The line under the footer columns — usually the copyright. HTML is allowed, so you can include a link."/>
-                                    <Button Content="Footer…" Command="{Binding ConfigureFooterCommand}"
-                                            ToolTip.Tip="Edit the footer's columns of links, and the colour of the footer band."/>
+                                    <Label Width="140">Footer</Label>
+                                    <Button Content="Edit Footer…" Command="{Binding ConfigureFooterCommand}"
+                                            ToolTip.Tip="The footer's columns of links, the closing line under them, and the color of the band."/>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Spacing="8">

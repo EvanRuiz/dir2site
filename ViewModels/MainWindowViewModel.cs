@@ -631,6 +631,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var dialog = new FooterSettingsView(DirectoryRoot, Dir2SiteConfig);
         if (await dialog.ShowDialog<FooterSettingsResult?>(owner) is not { } result) return;
 
+        Dir2SiteConfig.Footer = result.FooterText;
         Dir2SiteConfig.FooterColor = result.FooterColor;
         Dir2SiteConfig.FooterItems = [.. result.Items];
 
