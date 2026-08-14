@@ -514,6 +514,100 @@ public class SiteGeneratorTests : IDisposable
     }
 
     /// <summary>
+    /// A folder the generator could not read is not a folder whose contents have gone — but it
+    /// contributes nothing to the ledger either way, so without this the sweep reads the two as the
+    /// same thing and offers a live site for deletion. A cloud-synced project with dehydrated
+    /// files, a network share that blinks, or a scanner holding a handle is enough to trigger it,
+    /// and none of those leaves a trace the user could act on.
+    /// </summary>
+    /// <remarks>
+    /// Unix only: it needs a directory that exists and refuses to be listed, and there is no
+    /// portable way to arrange that. <see cref="AvaloniaFact"/> can't carry SkippableFact's runtime
+    /// skip, hence the early return rather than a proper skip.
+    /// </remarks>
+    [AvaloniaFact]
+    public void AnUnreadableFolder_TakesTheWholeRemovalOfferOffTheTable()
+    {
+        if (OperatingSystem.IsWindows()) return;
+
+        var articles = MakeFolder("Articles");
+        MakeArtifact(articles, "Letter.jpg", "A Letter");
+        MakeArtifact(articles, "Memo.jpg", "A Memo");
+        var media = MakeFolder("Articles", "_media");
+        File.WriteAllText(Path.Combine(media, "figure.webp"), "not really a webp");
+
+        Assert.Empty(Generate(Config()).Orphans);
+        Assert.True(File.Exists(SitePath("Articles", "_media", "figure.webp")));
+
+        File.SetUnixFileMode(articles, UnixFileMode.None);
+        try
+        {
+            var result = Generate(Config());
+
+            // Nothing offered, and the reason said out loud — the alternative was silently
+            // proposing to delete every static include the articles still point at.
+            Assert.Empty(result.Orphans);
+            Assert.Contains(result.Warnings, w => w.Contains("could not be read"));
+        }
+        finally
+        {
+            File.SetUnixFileMode(articles,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        Assert.True(File.Exists(SitePath("Articles", "_media", "figure.webp")));
+    }
+
+    /// <summary>
+    /// _media mirrors the project folder, and a mirror copies what is there rather than only what
+    /// is newer. Anything that swaps a file in while keeping its original timestamp — restoring a
+    /// backup, copying off another drive or a camera, `rsync -t`, checking out an older revision —
+    /// otherwise left the old copy in the site indefinitely, published, with no error. The server
+    /// then agreed with _site, so Verify and Repair saw nothing wrong either.
+    /// </summary>
+    [AvaloniaFact]
+    public void AReplacedFileWithAnOlderTimestamp_StillReachesTheSite()
+    {
+        var documents = MakeFolder("Documents");
+        MakeArtifact(documents, "Letter.jpg", "A Letter");
+        MakeArtifact(documents, "Memo.jpg", "A Memo");
+        var media = MakeFolder("_media");
+        var figure = Path.Combine(media, "figure.webp");
+        File.WriteAllText(figure, "ORIGINAL");
+
+        Generate(Config());
+        Assert.Equal("ORIGINAL", File.ReadAllText(SitePath("_media", "figure.webp")));
+
+        File.WriteAllText(figure, "REPLACED");
+        File.SetLastWriteTimeUtc(figure, new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        Generate(Config());
+
+        Assert.Equal("REPLACED", File.ReadAllText(SitePath("_media", "figure.webp")));
+    }
+
+    [AvaloniaFact]
+    public void RemoveOrphans_SaysWhyWhenItRefusesAPath()
+    {
+        var documents = MakeFolder("Documents");
+        MakeArtifact(documents, "Letter.jpg", "A Letter");
+        MakeArtifact(documents, "Memo.jpg", "A Memo");
+        Generate(Config());
+
+        File.WriteAllText(Path.Combine(_root, "PRECIOUS.txt"), "not part of the site");
+
+        var result = SiteGenerator.RemoveOrphans(SitePath(),
+            ["../PRECIOUS.txt", "Photographs/../../PRECIOUS.txt", ".htaccess"]);
+
+        // A refusal that reports nothing looks exactly like "removed 0" and offers the same file
+        // again next time, with nothing to explain why.
+        Assert.Equal(0, result.Removed);
+        Assert.Equal(3, result.Errors.Count);
+        Assert.Contains(result.Errors, e => e.Contains("outside _site"));
+        Assert.Contains(result.Errors, e => e.Contains("dot-files"));
+        Assert.True(File.Exists(Path.Combine(_root, "PRECIOUS.txt")));
+    }
+
+    /// <summary>
     /// The sweep works inside _site and nowhere else. Everything it deletes has a twin in the
     /// project folder — _media/logo.png is copied to _site/_media/logo.png — so a sweep that
     /// wandered up out of _site would be deleting the user's originals, not generated copies.
