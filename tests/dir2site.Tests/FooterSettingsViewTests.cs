@@ -292,6 +292,48 @@ public class FooterSettingsViewTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void CompleteRowsHaveNothingToWarnAbout()
+    {
+        var (_, vm) = Show(ConfigWith(
+            new FooterItem { Title = "Fine", Link = "https://example.test/a" }));
+
+        Assert.Equal(string.Empty, vm.IncompleteSummary());
+    }
+
+    [AvaloniaFact]
+    public void AnUnfinishedRowIsCountedForTheQuestionAskedAtSave()
+    {
+        var (_, vm) = Show(ConfigWith(
+            new FooterItem { Title = "Fine", Link = "https://example.test/a" }));
+
+        // A new row is blank the moment it is added, which is why this is asked at Save rather
+        // than watched while typing — a live warning would be complaining about work in progress.
+        vm.AddItemCommand.Execute(null);
+
+        var summary = vm.IncompleteSummary();
+        Assert.Contains("1 row has no link", summary);
+        Assert.Contains("1 row has no title", summary);
+
+        vm.Items[1].Title = "Second";
+        vm.Items[1].Link = "https://example.test/b";
+        Assert.Equal(string.Empty, vm.IncompleteSummary());
+    }
+
+    [AvaloniaFact]
+    public void TheCountsReadAsSentencesForOneRowAndForSeveral()
+    {
+        var (_, vm) = Show(ConfigWith(
+            new FooterItem { Title = "A" },
+            new FooterItem { Title = "B" },
+            new FooterItem { Link = "https://example.test/c" }));
+
+        var summary = vm.IncompleteSummary();
+        Assert.Contains("2 rows have no link", summary);
+        Assert.Contains("1 row has no title", summary);
+        Assert.Contains(" and ", summary);
+    }
+
+    [AvaloniaFact]
     public void TheLinkButtonsPutTheRowOnTheFormTheyName()
     {
         var (_, vm) = Show(ConfigWith(new FooterItem { Title = "Row", Link = string.Empty }));

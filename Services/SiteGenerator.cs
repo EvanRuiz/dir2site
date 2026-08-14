@@ -820,7 +820,11 @@ public static class SiteGenerator
         {
             var title = item.Title ?? string.Empty;
             var (href, absolute, newTab) = ResolveFooterLink(item, title, targets, warnings);
-            if (href == null) continue;
+
+            // A row whose link doesn't resolve still appears, as plain text. Dropping it made a
+            // typo look like the row had never been written, which is the hardest kind of mistake
+            // to find — the warning says what went wrong, and the gap in the footer says where.
+            href ??= string.Empty;
 
             var column = Math.Clamp(item.Column, 1, MaxFooterColumns);
             if (column != item.Column)
@@ -857,7 +861,7 @@ public static class SiteGenerator
         var link = (item.Link ?? string.Empty).Trim();
         if (link.Length == 0)
         {
-            warnings.Add($"Footer item \"{title}\" has no link, so it was left out of the footer.");
+            warnings.Add($"Footer item \"{title}\" has no link, so it is shown without a link.");
             return (null, false, false);
         }
 
@@ -876,13 +880,13 @@ public static class SiteGenerator
         var key = link.Replace('\\', '/').TrimStart('.', '/');
         if (!targets.TryGetValue(key, out var href))
         {
-            warnings.Add($"Footer item \"{title}\" points at {link}, which isn't in the project, so it was left out of the footer.");
+            warnings.Add($"Footer item \"{title}\" points at {link}, which isn't in the project, so it is shown without a link.");
             return (null, false, false);
         }
 
         if (href == null)
         {
-            warnings.Add($"Footer item \"{title}\" points at {link}, which is a video and has no page of its own, so it was left out of the footer.");
+            warnings.Add($"Footer item \"{title}\" points at {link}, which is a video and has no page of its own, so it is shown without a link.");
             return (null, false, false);
         }
 
