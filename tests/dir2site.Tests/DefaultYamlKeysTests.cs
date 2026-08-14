@@ -245,6 +245,24 @@ public class DefaultYamlKeysTests : IDisposable
         Assert.Contains("url", KeysOf(yaml));
     }
 
+    /// <summary>
+    /// Every model matches an untyped document, so the one that happened to parse it says nothing
+    /// and <c>Artifact.Type</c> is the enum's zero — a photo. Writing a photo's settings into a
+    /// PDF's yaml would be guessing on the owner's behalf, in their own file. The extension is what
+    /// the scaffolder would have gone on, and it is right here.
+    /// </summary>
+    [Theory]
+    [InlineData("Report.pdf", "author", "photographer")]
+    [InlineData("Notes.md", "credit", "photographer")]
+    [InlineData("Apple.jpg", "photographer", "author")]
+    public void AnUntypedYamlIsBackfilledByItsExtension(string fileName, string expected, string notExpected)
+    {
+        var keys = KeysOf(ParseAndReadYaml(fileName, "caption: A thing\n"));
+
+        Assert.Contains(expected, keys);
+        Assert.DoesNotContain(notExpected, keys);
+    }
+
     [Fact]
     public void ABackfillOnlyAddsKeysThatTypeActuallyHas()
     {
