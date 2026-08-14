@@ -90,6 +90,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartServerCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConfigureSftpCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConfigureFooterCommand))]
     [NotifyCanExecuteChangedFor(nameof(QuickSyncCommand))]
     [NotifyCanExecuteChangedFor(nameof(VerifyAndRepairCommand))]
     private string? _directoryRoot;
@@ -341,6 +342,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GenerateSiteCommand))]
     [NotifyCanExecuteChangedFor(nameof(ChooseLogoCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConfigureFooterCommand))]
     private Dir2SiteModel? _dir2SiteConfig;
     
     partial void OnDirectoryRootChanged(string? value)

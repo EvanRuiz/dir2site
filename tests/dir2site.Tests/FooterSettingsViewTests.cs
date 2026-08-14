@@ -45,6 +45,35 @@ public class FooterSettingsViewTests : IDisposable
         FooterItems = [.. items],
     };
 
+    /// <summary>
+    /// The button that opens all of the above. Its command depends on two properties, and a
+    /// RelayCommand only re-tests that when something tells it to — so without both
+    /// NotifyCanExecuteChangedFor attributes the button is evaluated once at construction, when a
+    /// project is not open yet, and stays greyed out for the whole session however much is loaded.
+    /// Every other test here drives the view model directly and so cannot see that.
+    /// </summary>
+    [AvaloniaFact]
+    public void TheFooterButtonBecomesUsableOnceAProjectIsOpen()
+    {
+        // The window opens before a project is chosen, so the button is bound while its command
+        // says no. Asserting on CanExecute would prove nothing — that calls the predicate and is
+        // always current. What was broken is the button, which keeps the answer it was last given
+        // until a CanExecuteChanged tells it otherwise.
+        var vm = new MainWindowViewModel();
+        var window = new MainWindow { DataContext = vm };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        // Chosen afterwards, in the order the app sets them: the folder, then the config read from it.
+        vm.DirectoryRoot = _project;
+        vm.Dir2SiteConfig = new Dir2SiteModel { Title = "Test" };
+        Dispatcher.UIThread.RunJobs();
+
+        var button = window.GetVisualDescendants().OfType<Button>()
+            .First(b => (b.Content as string) == "Footer…");
+        Assert.True(button.IsEffectivelyEnabled);
+    }
+
     [AvaloniaFact]
     public void TheDialogOpensAndShowsTheConfiguredRows()
     {
