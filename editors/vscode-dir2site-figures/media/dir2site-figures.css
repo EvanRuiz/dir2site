@@ -7,10 +7,14 @@
    Colours come from VS Code theme variables rather than the site's fixed values, so captions stay
    readable in dark themes; everything else is copied as-is. */
 
-/* Bare images carrying the class, with no ^^^ wrapper. */
+/* Bare images carrying the class, with no ^^^ wrapper. Nothing boxes these in, so the 45% guard
+   lives here — and an authored width replaces it, as it does on the figure. The wrapped forms
+   escape it through the higher-specificity rules below. */
 img.figure-right  { float: right; margin: 0.3em 0 1.2em 1.6em; }
 img.figure-left   { float: left;  margin: 0.3em 1.6em 1.2em 0; }
 img.figure-center { display: block; margin: 1.4em auto; }
+img.figure-right, img.figure-left { max-width: 45%; }
+img.figure-right[width], img.figure-left[width] { max-width: 100%; }
 
 /* The ^^^ form puts the class on the <img>, because that is where the author writes
    {.figure-right} — but floating the image leaves the <figcaption> as a full-width block starting
@@ -18,22 +22,31 @@ img.figure-center { display: block; margin: 1.4em auto; }
    <figure> is the shape the :::figure-* container already uses and gets right: the image and its
    caption stack inside a box that is itself pulled aside.
 
-   fit-content is what keeps an authored {width=220} honest: the box is sized by the image's own
-   width rather than spanning whatever is available, so the caption sits under a picture that is
-   still the width the author asked for. max-width stays as the runaway guard. */
+   fit-content sizes the box by the image rather than by whatever space is available, so the caption
+   sits under a picture rather than beside it; 45% is the runaway guard for a figure that states no
+   width of its own. */
 figure { width: fit-content; max-width: 100%; margin: 1.4em 0; text-align: center; }
 figure:has(img.figure-right)  { float: right; max-width: 45%; margin: 0.3em 0 1.2em 1.6em; }
 figure:has(img.figure-left)   { float: left;  max-width: 45%; margin: 0.3em 1.6em 1.2em 0; }
 figure:has(img.figure-center) { margin: 1.4em auto; }
+/* An authored {width=420} is a statement about what the reader should see, so it outranks that
+   guard and is bounded only by the column — which still narrows the picture on a small screen.
+   Must stay after the rules above: equal specificity, so order is what decides. */
+figure:has(img[width]) { max-width: 100%; }
 figure img.figure-right,
 figure img.figure-left,
-figure img.figure-center { float: none; margin: 0; }
+figure img.figure-center { float: none; margin: 0; max-width: 100%; }
 figure p { margin: 0; }
 
-/* Container form, for :::figure-right … ::: */
-.figure-right  { float: right; max-width: 45%; margin: 0.3em 0 1.2em 1.6em; text-align: center; }
-.figure-left   { float: left;  max-width: 45%; margin: 0.3em 1.6em 1.2em 0; text-align: center; }
-.figure-center { display: block; margin: 1.4em auto; text-align: center; }
+/* Container form, for :::figure-right … :::
+   :not(img) keeps these off an image carrying the same class — the ^^^ form puts it there, and
+   without this the picture was clamped to 45% of a figure already clamped to 45% of the column. */
+:not(img).figure-right  { float: right; max-width: 45%; margin: 0.3em 0 1.2em 1.6em; text-align: center; }
+:not(img).figure-left   { float: left;  max-width: 45%; margin: 0.3em 1.6em 1.2em 0; text-align: center; }
+:not(img).figure-center { display: block; margin: 1.4em auto; text-align: center; }
+/* An authored width wins here too, as it does on the <figure>. */
+:not(img).figure-right:has(img[width]),
+:not(img).figure-left:has(img[width]) { max-width: 100%; }
 
 .figure-right img,
 .figure-left img,
@@ -55,7 +68,13 @@ figure figcaption {
   margin: 0.4em 0 0;
 }
 
-/* Zero width with a 100% minimum takes the caption out of the figure's intrinsic sizing while
-   still filling it: without this a caption longer than the picture widens the whole box, and the
-   image's authored width no longer describes what the reader sees. */
-figure figcaption { width: 0; min-width: 100%; }
+/* Zero width with a 100% minimum takes the caption out of the box's intrinsic sizing while still
+   filling it: without this a caption longer than the picture widens the whole box, and the image's
+   authored width no longer describes what the reader sees.
+
+   The container form needs it too, where the caption is a plain <p> rather than a <figcaption>:
+   :only-child excludes a container holding nothing but its picture, whose one paragraph is the
+   image's, not a caption. */
+figure figcaption,
+:not(img).figure-right > p:last-child:not(:only-child),
+:not(img).figure-left  > p:last-child:not(:only-child) { width: 0; min-width: 100%; }

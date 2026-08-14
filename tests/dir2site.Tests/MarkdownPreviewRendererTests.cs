@@ -72,4 +72,42 @@ public class MarkdownPreviewRendererTests : IDisposable
     {
         Assert.Null(MarkdownPreviewRenderer.RenderArticlePng(Path.Combine(_dir, "missing.md")));
     }
+
+    /// Writes a plain PNG for a figure to point at.
+    private string WriteImage(int w, int h)
+    {
+        var dir = Path.Combine(_dir, "_media");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "p.png");
+
+        using var bmp = new SKBitmap(w, h);
+        using (var canvas = new SKCanvas(bmp)) canvas.Clear(new SKColor(0x8A, 0x6D, 0x5A));
+        using var data = SKImage.FromBitmap(bmp).Encode(SKEncodedImageFormat.Png, 95);
+        File.WriteAllBytes(path, data.ToArray());
+        return path;
+    }
+
+    /// <summary>
+    /// An authored figure width is honoured as a fraction of the site's column, so a wide one can
+    /// ask for more room than the card has. The text then has to go below the figure: laid out
+    /// beside it, the band is narrower than a single word, and the wrapper always places at least
+    /// one word per line — so the body copy was drawn straight through the right margin.
+    /// </summary>
+    [AvaloniaFact]
+    public void AFigureTooWideToWrapBeside_DoesNotPushTextIntoTheMargin()
+    {
+        WriteImage(1200, 900);
+        var png = MarkdownPreviewRenderer.RenderArticlePng(WriteArticle(
+            "# Title\n\n^^^\n![](_media/p.png){.figure-left width=820}\n^^^ Caption\n\n"
+            + string.Join(" ", new string[60].Select(_ => "body copy that has to fit somewhere"))));
+
+        Assert.NotNull(png);
+        using var bmp = SKBitmap.Decode(png);
+
+        // Pad is 44, so everything from x = width - 44 rightwards is margin and stays white.
+        for (var x = bmp.Width - 44; x < bmp.Width; x++)
+            for (var y = 0; y < bmp.Height; y++)
+                Assert.True(bmp.GetPixel(x, y) == SKColors.White,
+                    $"Ink at ({x}, {y}) — content is being drawn into the right margin.");
+    }
 }
