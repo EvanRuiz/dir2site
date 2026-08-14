@@ -46,7 +46,7 @@ so what's in the file is always the whole menu.
 | `url` | An external source or reference to link out to | blank |
 | `url-text` | The words of that link; blank uses the address itself | blank |
 | `home` | Also show this artifact on the home page — see [below](#featuring-an-item-on-the-home-page-home-true) | `false` |
-| `parent-cover` | Make this the picture for its folder's card — see [below](#choosing-a-folders-picture-parent-cover-grandparent-cover) | `false` |
+| `parent-cover` | Make this the picture for its folder's card — see [below](#choosing-a-folders-picture-parent-cover-grandparent-cover) | blank |
 | `grandparent-cover` | The same, one level further up | `false` |
 
 Some types add their own: `photographer` on a photo, `author` and `publishOriginal` on a PDF,
@@ -77,10 +77,14 @@ text — filling in only the address never means no link at all.
 
 Cards don't carry the link; the card's one job is to take you to the artifact.
 
-Videos are the exception, as they are for most things: a video has no page of its own, so its link
-sits on the card, and a blank `url` there means the `.url` shortcut's own address rather than no
-link — `url-text` is what decides whether the link appears at all. See
-[Adding videos](docs/adding-videos.md).
+Videos differ in where the link goes, not in how it works: a video has no page of its own, so its
+link sits on the card. A blank `url` there means the `.url` shortcut's own address, which stays
+opt-in — the player already offers YouTube's — so a video with neither `url` nor `url-text` carries
+no link. See [Adding videos](docs/adding-videos.md).
+
+An address is published only if it's one a browser would follow to another page — `http`, `https`,
+`mailto` or somewhere within your own site. Anything else is left off, rather than turned into a
+link that runs when clicked.
 
 ## Markdown articles
 

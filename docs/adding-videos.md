@@ -48,8 +48,9 @@ Cards carry no outbound link by default — the player already offers YouTube's 
 
 This is the one place `url-text` works without a `url` beside it: a video's address comes from the
 shortcut, so there is nothing for you to type. Fill in `url` anyway and the link goes there instead
-— the talk's own page rather than the upload, say. And because a video has no page of its own, its
-link sits on the card, where every other artifact's sits under the credit line on its page.
+— the talk's own page rather than the upload, say — and it needs no `url-text`, taking the address
+as its own words like every other artifact does. Because a video has no page of its own, the link
+sits on the card, where every other artifact's sits under the credit line on its page.
 
 Edit the caption and credit in the app or directly in the YAML, exactly as for any other artifact.
 
