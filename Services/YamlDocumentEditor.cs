@@ -307,13 +307,20 @@ public sealed class YamlDocumentEditor
     }
 
     /// <summary>Accepts an edit only if the result still parses, so a bad splice can't reach disk.</summary>
+    /// <remarks>
+    /// Exactly one document, not merely a first one that looks right. Appending to a file that ends
+    /// with an explicit "..." marker starts a second document, which the deserializer refuses
+    /// outright — so the file parsed before the edit and not after, and the artifact vanished from
+    /// the site. A file that genuinely holds two documents is one we cannot append to at all:
+    /// the key would land in the document nothing reads, and be missing again on the next scan.
+    /// </remarks>
     private bool TryCommit(string candidate)
     {
         try
         {
             var stream = new YamlStream();
             stream.Load(new StringReader(candidate));
-            if (stream.Documents.Count == 0 || stream.Documents[0].RootNode is not YamlMappingNode)
+            if (stream.Documents.Count != 1 || stream.Documents[0].RootNode is not YamlMappingNode)
                 return false;
         }
         catch

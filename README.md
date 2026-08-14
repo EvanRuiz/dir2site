@@ -38,6 +38,11 @@ Dir2Site writes one the first time it sees the file, listing every setting that 
 accepts, blank or at its default. A yaml written before a setting existed gains it on the next scan,
 so what's in the file is always the whole menu.
 
+That last part means the app adds lines to files you already had — the first scan after an upgrade
+will show up as a diff across your project. It only ever *adds* settings, blank, at the end of the
+file; values you wrote, your comments and your key order are left exactly as they were, and the app
+says how many files it touched when the scan finishes.
+
 | Setting | What it does | Default |
 |---|---|---|
 | `caption` | The title on the card and the page | the filename, tidied up |
