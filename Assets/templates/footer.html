@@ -1,3 +1,48 @@
-  {{## Deliberately unescaped: the footer is written by the site owner in their own dir2site.yaml,
-      the same trust level as an artifact's markdown body, and a footer nearly always wants a link. ##}}
-  <footer class="container my-3 text-muted small">{{ site.footer }}</footer>
+  <footer class="site-footer{{ if site.footer_columns.size > 0 }} has-columns{{ end }} py-4">
+    <div class="container">
+      {{- if site.footer_columns.size > 0 }}
+      <nav class="row row-cols-1 row-cols-sm-2 row-cols-lg-{{ site.footer_columns.size }} g-4" aria-label="Footer">
+        {{- for column in site.footer_columns }}
+        <div class="col">
+          <ul class="list-unstyled mb-0">
+            {{- for item in column }}
+            <li class="mb-3">
+              {{## Escaped like every other authored field: the scheme is checked before a link is
+                  called absolute, but the rest of it is whatever was typed, and a quote in a pasted
+                  URL would otherwise close the attribute and turn the tail into markup. ##}}
+              {{- if item.href != "" }}
+              <a class="footer-link d-flex align-items-center gap-2" href="{{ if item.absolute }}{{ item.href | html.escape }}{{ else }}{{ prefix }}{{ item.href | html.escape }}{{ end }}"{{ if item.new_tab }} target="_blank" rel="noopener noreferrer"{{ end }}>
+                {{- if item.icon != "" }}
+                <span class="footer-icon{{ if item.icon_background != "" }} footer-icon-knockout{{ end }}"{{ if item.icon_background != "" }} style="--knockout:{{ item.icon_background }}"{{ end }}><i class="bi {{ item.icon }} fs-5"{{ if item.icon_color != "" }} style="color:{{ item.icon_color }}"{{ end }} aria-hidden="true"></i></span>
+                {{- end }}
+                <span>{{ item.title | html.escape }}</span>
+              </a>
+              {{- else }}
+              {{## No link resolved, so the row is text rather than a dead anchor — it still says
+                  what was meant, and generating said why it doesn't go anywhere. ##}}
+              <span class="footer-link footer-link-unlinked d-flex align-items-center gap-2">
+                {{- if item.icon != "" }}
+                <span class="footer-icon{{ if item.icon_background != "" }} footer-icon-knockout{{ end }}"{{ if item.icon_background != "" }} style="--knockout:{{ item.icon_background }}"{{ end }}><i class="bi {{ item.icon }} fs-5"{{ if item.icon_color != "" }} style="color:{{ item.icon_color }}"{{ end }} aria-hidden="true"></i></span>
+                {{- end }}
+                <span>{{ item.title | html.escape }}</span>
+              </span>
+              {{- end }}
+              {{- if item.note != "" }}
+              <p class="footer-note small mb-0">{{ item.note | html.escape }}</p>
+              {{- end }}
+            </li>
+            {{- end }}
+          </ul>
+        </div>
+        {{- end }}
+      </nav>
+      {{- end }}
+      {{## Deliberately unescaped: the footer is written by the site owner in their own dir2site.yaml,
+          the same trust level as an artifact's markdown body, and a footer nearly always wants a link.
+          Every other footer field is escaped — this one stays raw because it is where the copyright
+          line with its <br> lives. ##}}
+      {{- if site.footer != "" }}
+      <div class="footer-bar small text-center{{ if site.footer_columns.size > 0 }} mt-4 pt-3 border-top{{ end }}">{{ site.footer }}</div>
+      {{- end }}
+    </div>
+  </footer>

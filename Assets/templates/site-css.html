@@ -8,6 +8,11 @@ html {
 body {
   background-color: {{ site.background_color }};
   padding-top: 106px;
+  /* A column so the footer's auto top margin can take up the slack on a short page. Bootstrap's
+     border-box sizing keeps the padding above inside the 100vh, so this adds no scrollbar. */
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 /* Header */
@@ -185,6 +190,57 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 /* Only ever between the credit and the link, so it carries its own spacing rather than relying on
    whitespace the template would have to be careful about. */
 .artifact-meta-sep { margin: 0 0.4rem; opacity: 0.6; }
+
+/* Footer */
+
+/* Pushed to the bottom of short pages, so a page with little on it doesn't leave a band of white
+   underneath its footer. The body is the flex column that makes the auto margin mean anything. */
+.site-footer { margin-top: auto; }
+
+/* The band belongs to a footer with columns in it. A lone closing line reads better as a quiet
+   line under the page than as a coloured strip with one sentence marooned in it — which is what
+   every project that never configured a footer would otherwise get. */
+.site-footer.has-columns { background-color: {{ site.footer_color }}; }
+
+.site-footer.has-columns,
+.site-footer.has-columns .footer-link { color: {{ if site.footer_dark }}rgba(255, 255, 255, 0.72){{ else }}#555555{{ end }}; }
+.site-footer .footer-link { text-decoration: none; }
+.site-footer.has-columns .footer-link:hover { color: {{ if site.footer_dark }}#ffffff{{ else }}#000000{{ end }}; }
+
+/* No band behind it, so it takes the page's own muted grey rather than a colour chosen to sit on
+   the footer colour. */
+.site-footer:not(.has-columns) .footer-bar { color: #6c757d; }
+
+/* A row whose link didn't resolve: still there, still legible, but plainly not a link. */
+.site-footer .footer-link-unlinked { cursor: default; opacity: 0.75; }
+
+/* Indented to sit under the link's text rather than under its icon, which is where the eye expects
+   a caption to start. Matches the icon's width plus the flex gap. */
+.footer-note {
+  color: {{ if site.footer_dark }}rgba(255, 255, 255, 0.5){{ else }}#777777{{ end }};
+  padding-left: 1.75rem;
+}
+.site-footer:not(.has-columns) .footer-note { color: #6c757d; }
+
+/* line-height:1 and the block glyph are what make the inset below mean anything: without them the
+   wrapper is as tall as the text line rather than as tall as the glyph, and a percentage inset is
+   measured against the wrong box — which showed as the patch spilling out under a round mark. */
+.footer-icon { position: relative; display: inline-flex; isolation: isolate; line-height: 1; }
+.footer-icon > .bi { display: block; line-height: 1; }
+
+/* Bootstrap's brand glyphs are one shape with the inner symbol cut out, so on a dark band that
+   cut-out shows the band and a YouTube mark comes out with a navy triangle instead of a white one.
+   This patch sits behind the glyph and the glyph's own ink masks it: everything except the cut-out
+   is painted over. That is why it can be a plain inset rectangle — it never has to follow the
+   glyph's rounded corners, only stay inside them and cover the hole, which is also why it survives
+   any font size. 22% clears the cut-out on the brand glyphs while staying inside the mark. */
+.footer-icon-knockout::before {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  background: var(--knockout);
+  z-index: -1;
+}
 
 /* Markdown artifact */
 

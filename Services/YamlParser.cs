@@ -180,11 +180,52 @@ public static class YamlParser
             .Where(k => !string.IsNullOrEmpty(k) && !declared.Contains(k))
             .ToList();
 
+        WarnUnknown(warnings, yamlPath, "setting", unknown);
+    }
+
+    /// <summary>
+    /// The same service for <c>dir2site.yaml</c>, which had none: the site config went through a
+    /// plain deserialize, so a misspelled <c>primaryColour</c> was as silent as a misspelled
+    /// artifact key used to be.
+    /// </summary>
+    /// <remarks>
+    /// Descends one level into <c>footerItems</c>, where the misspellings will mostly be — it is the
+    /// one setting that is a list of hand-written records rather than a single value. <c>deploy:</c>
+    /// is left to its own dialog, which writes it.
+    /// </remarks>
+    public static void ReportUnknownConfigKeys(string yaml, string configPath, List<string>? warnings)
+    {
+        if (warnings == null) return;
+
+        ReportUnknownKeys(yaml, configPath, typeof(Dir2SiteModel), warnings);
+
+        Dictionary<object, object>? doc;
+        try { doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml); }
+        catch { return; }
+
+        var rows = doc?.FirstOrDefault(e => e.Key?.ToString() == "footerItems").Value;
+        if (rows is not IEnumerable<object> items) return;
+
+        var declared = DeclaredKeys(typeof(FooterItem));
+        var unknown = items
+            .OfType<IDictionary<object, object>>()
+            .SelectMany(row => row.Keys.Select(k => k?.ToString()))
+            .Where(k => !string.IsNullOrEmpty(k) && !declared.Contains(k))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        WarnUnknown(warnings, configPath, "footer item setting", unknown);
+    }
+
+    // One phrasing for both, so a footer item's typo reads like every other yaml warning.
+    private static void WarnUnknown(
+        List<string> warnings, string yamlPath, string noun, List<string?> unknown)
+    {
         if (unknown.Count == 0) return;
 
         var (subject, tail) = unknown.Count == 1
-            ? ("is not a setting", "it")
-            : ("are not settings", "them");
+            ? ($"is not a {noun}", "it")
+            : ($"are not {noun}s", "them");
         warnings.Add(
             $"{Path.GetFileName(yamlPath)}: {string.Join(", ", unknown)} {subject} dir2site knows, so nothing was done with {tail}.");
     }
@@ -436,7 +477,25 @@ public static class YamlParser
             return;
         }
 
-        File.WriteAllText(configPath, SerializeToYaml(config));
+        File.WriteAllText(configPath, CreateFromScratch(config));
+    }
+
+    /// <summary>
+    /// A whole config written fresh, then put through the same footer-block step a surgical save
+    /// would apply.
+    /// </summary>
+    /// <remarks>
+    /// Without the second step the two write paths disagree about an empty footer: the serializer
+    /// emits <c>footerItems: []</c> while <see cref="ApplyFooterItems"/> removes the key, so saving
+    /// an unchanged config twice produced two different files. Running both paths through the same
+    /// step makes that agreement structural rather than something to keep in step by hand.
+    /// </remarks>
+    private static string CreateFromScratch(Dir2SiteModel config)
+    {
+        var text = SerializeToYaml(config);
+        return YamlDocumentEditor.TryLoad(text) is { } editor && ApplyFooterItems(editor, config)
+            ? editor.Text
+            : text;
     }
 
     // Ordered as the model declares them, which is also the order a freshly created file uses,
@@ -448,11 +507,21 @@ public static class YamlParser
         editor.Set("primaryColor", c.PrimaryColor) &&
         editor.Set("secondaryColor", c.SecondaryColor) &&
         editor.Set("backgroundColor", c.BackgroundColor) &&
+        editor.Set("footerColor", c.FooterColor) &&
         editor.Set("navbarDark", c.NavbarDark) &&
         editor.Set("siteUrl", c.SiteUrl) &&
         editor.Set("pdfResizeEnabled", c.PdfResizeEnabled) &&
         editor.Set("pdfMaxWidth", c.PdfMaxWidth) &&
-        editor.Set("pdfQuality", c.PdfQuality);
+        editor.Set("pdfQuality", c.PdfQuality) &&
+        ApplyFooterItems(editor, c);
+
+    // A sequence, so Set — which splices a scalar onto one line — can't carry it. SetBlock rewrites
+    // the whole block from app-owned data, the same trade deploy: already makes. Removing the key
+    // when the list is empty keeps a project that never configured a footer free of an empty one.
+    private static bool ApplyFooterItems(YamlDocumentEditor editor, Dir2SiteModel c) =>
+        c.FooterItems.Count == 0
+            ? editor.RemoveKey("footerItems")
+            : editor.SetBlock("footerItems", SerializeToYaml(c.FooterItems));
 
     public static T DeserializeAs<T>(string yaml) where T : new() =>
         Deserializer.Deserialize<T>(yaml);
