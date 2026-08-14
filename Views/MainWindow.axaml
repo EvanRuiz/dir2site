@@ -118,6 +118,24 @@
             </StackPanel>
         </Border>
 
+        <!-- The VS Code extension, once it's installed, updates like the app does — below the app's
+             own banners, because updating dir2site is the more important of the two. Before it is
+             installed there is nothing to update, and the offer is a button in the deploy row. -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource SystemAccentColor}"
+                Padding="10,6"
+                IsVisible="{Binding VsCodeExtensionUpdateAvailable}">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="{Binding VsCodeExtensionVersion, StringFormat='VS Code figures extension update available: v{0}'}"
+                           FontSize="12"
+                           Foreground="White"
+                           VerticalAlignment="Center"/>
+                <Button Content="Update Extension" Classes="banner"
+                        Command="{Binding InstallVsCodeExtensionCommand}"
+                        FontSize="11" Padding="8,3"/>
+            </StackPanel>
+        </Border>
+
         <!-- Error banner -->
         <Border DockPanel.Dock="Top"
                 Background="#C0392B"
@@ -365,6 +383,7 @@
                                 <Button DockPanel.Dock="Right"
                                         Content="Install VS Code Extension"
                                         Command="{Binding InstallVsCodeExtensionCommand}"
+                                        IsVisible="{Binding CanInstallVsCodeExtension}"
                                         ToolTip.Tip="Adds ^^^ figure preview to VS Code's Markdown preview"
                                         FontSize="11" Padding="6,3"/>
                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">

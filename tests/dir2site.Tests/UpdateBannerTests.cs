@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -53,6 +54,32 @@ public class UpdateBannerTests
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(Button(window, "Restart & Install").IsEffectivelyVisible);
+    }
+
+    /// <summary>
+    /// The VS Code extension updates through the same banners as the app, and only when there is
+    /// something to update — see VsCodeExtensionDetectionTests for what decides that.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task TheExtensionUpdateBannerFollowsItsFlag()
+    {
+        var (window, vm) = Show();
+
+        // The startup scan reads the real machine; let it land before asserting on the flag.
+        await vm.VsCodeExtensionStateReady;
+        Dispatcher.UIThread.RunJobs();
+
+        vm.VsCodeExtensionUpdateAvailable = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(Button(window, "Update Extension").IsEffectivelyVisible);
+
+        // The banner names the version on offer, as the app's own banners do.
+        Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(),
+            t => t.Text != null && t.Text.Contains($"extension update available: v{vm.VsCodeExtensionVersion}"));
+
+        vm.VsCodeExtensionUpdateAvailable = false;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(Button(window, "Update Extension").IsEffectivelyVisible);
     }
 
     [AvaloniaFact]
