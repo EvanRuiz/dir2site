@@ -5,12 +5,18 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:dir2site.ViewModels"
+        xmlns:svc="using:dir2site.Services"
+        xmlns:conv="using:dir2site.Converters"
                 mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="560"
         x:Class="dir2site.Views.FooterSettingsView"
         x:DataType="vm:FooterSettingsViewModel"
-        Width="800" Height="620" MinWidth="640" MinHeight="420" CanResize="True"
+        Width="1080" Height="640" MinWidth="820" MinHeight="440" CanResize="True"
         WindowStartupLocation="CenterOwner"
         Title="Footer Settings">
+
+    <Window.Resources>
+        <conv:IconGlyphConverter x:Key="IconGlyph"/>
+    </Window.Resources>
 
     <Window.Styles>
         <Style Selector="Grid.row">
@@ -70,7 +76,6 @@
             <Grid Classes="row" ColumnDefinitions="140,*">
                 <Label Grid.Column="0">Closing line</Label>
                 <TextBox Grid.Column="1" Text="{Binding FooterText}"
-                         Watermark="&#169; 2026 Everyone"
                          ToolTip.Tip="The line under the columns, usually the copyright. HTML is allowed here, so it can hold a link or a line break."/>
             </Grid>
 
@@ -78,9 +83,6 @@
                 <Label Grid.Column="0">Footer color</Label>
                 <TextBox Grid.Column="1" Text="{Binding FooterColor}"
                          Watermark="{Binding FooterColorPlaceholder}"/>
-                <TextBlock Grid.Column="2" Classes="hint" VerticalAlignment="Center"
-                           Margin="8,0,0,0" FontSize="12"
-                           Text="Empty follows the primary color, shown grayed in the box."/>
             </Grid>
         </StackPanel>
 
@@ -91,13 +93,13 @@
                     Command="{Binding RemoveItemCommand}"/>
             <Separator/>
             <TextBlock Classes="hint" FontSize="11" Text="Link to…"/>
-            <Button Content="Choose linked artifact…" HorizontalAlignment="Stretch"
+            <Button Content="Artifact…" HorizontalAlignment="Stretch"
                     Command="{Binding ChooseLinkCommand}"
                     ToolTip.Tip="Pick a file or folder in this project; its path is stored relative to the project folder, and resolves to wherever that artifact publishes."/>
-            <Button Content="Set web link" HorizontalAlignment="Stretch"
+            <Button Content="Web Page" HorizontalAlignment="Stretch"
                     Command="{Binding SetWebLinkCommand}"
                     ToolTip.Tip="An address off this site. Opens in a new tab."/>
-            <Button Content="Set mailto" HorizontalAlignment="Stretch"
+            <Button Content="Email" HorizontalAlignment="Stretch"
                     Command="{Binding SetMailtoLinkCommand}"
                     ToolTip.Tip="A mail address. Hands off to the visitor's mail client."/>
             <Separator/>
@@ -121,17 +123,47 @@
                             </StackPanel>
                             <StackPanel Grid.Column="1">
                                 <TextBlock Classes="fieldLabel" Text="Title"/>
-                                <TextBox Text="{Binding Title}" Watermark="Contact"/>
+                                <TextBox Text="{Binding Title}"/>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
                                 <TextBlock Classes="fieldLabel" Text="Link"/>
-                                <TextBox Text="{Binding Link}" Watermark="-Info/About.md"/>
+                                <TextBox Text="{Binding Link}"/>
                             </StackPanel>
                         </Grid>
-                        <Grid ColumnDefinitions="*,*,*,2*" ColumnSpacing="8">
+                        <Grid ColumnDefinitions="290,110,110,*" ColumnSpacing="8">
                             <StackPanel Grid.Column="0">
                                 <TextBlock Classes="fieldLabel" Text="Icon"/>
-                                <TextBox Text="{Binding Icon}" Watermark="bi-envelope"/>
+                                <DockPanel>
+                                <!-- Whatever the box currently names, drawn: the confirmation that
+                                     the name found a mark, without opening the list to check. -->
+                                <TextBlock DockPanel.Dock="Right"
+                                           Text="{Binding Icon, Converter={StaticResource IconGlyph}}"
+                                           FontFamily="avares://dir2site/Assets/icons/bootstrap-icons-1.13.1/app-font#bootstrap-icons"
+                                           FontSize="18" MinWidth="24" Margin="6,0,0,0"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                <!-- Opened on focus as well: MinimumPrefixLength 0 lets an empty
+                                     box match everything, but the list is still only raised by a
+                                     text change, so clicking in showed nothing until you typed. -->
+                                <AutoCompleteBox AttachedToVisualTree="OnIconBoxAttached"
+                                                 Text="{Binding Icon}"
+                                                 ItemsSource="{Binding IconChoices}"
+                                                 ValueMemberBinding="{Binding Name, DataType=svc:IconChoice}"
+                                                 MinimumPrefixLength="0"
+                                                 IsTextCompletionEnabled="False"
+                                                 MaxDropDownHeight="300">
+                                    <AutoCompleteBox.ItemTemplate>
+                                        <DataTemplate x:DataType="svc:IconChoice">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{Binding Glyph}"
+                                                           FontFamily="avares://dir2site/Assets/icons/bootstrap-icons-1.13.1/app-font#bootstrap-icons"
+                                                           FontSize="16" Width="20"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </AutoCompleteBox.ItemTemplate>
+                                </AutoCompleteBox>
+                                </DockPanel>
                             </StackPanel>
                             <StackPanel Grid.Column="1">
                                 <TextBlock Classes="fieldLabel" Text="Icon color"/>
@@ -143,7 +175,7 @@
                             </StackPanel>
                             <StackPanel Grid.Column="3">
                                 <TextBlock Classes="fieldLabel" Text="Note"/>
-                                <TextBox Text="{Binding Note}" Watermark="Maintained by the volunteers"/>
+                                <TextBox Text="{Binding Note}"/>
                             </StackPanel>
                         </Grid>
                     </StackPanel>
