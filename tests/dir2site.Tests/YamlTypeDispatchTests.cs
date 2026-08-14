@@ -107,9 +107,12 @@ public class YamlTypeDispatchTests : IDisposable
         // the "url-text" alias was being turned back into "urlText" and the hyphenated key this
         // field exists to read never matched. Nothing consumed the value, so it stayed hidden until
         // something finally needed to read it.
-        var artifact = Parse("Portrait.jpg", "type: photo\ncaption: A Portrait\nurl-text: See the original\n");
+        var artifact = Parse(
+            "Portrait.jpg",
+            "type: photo\ncaption: A Portrait\nurl: https://example.org/portrait\nurl-text: See the original\n");
 
         Assert.Equal("See the original", artifact!.UrlText);
+        Assert.Equal("https://example.org/portrait", artifact.Url);
     }
 
     [Fact]

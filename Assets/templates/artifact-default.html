@@ -24,7 +24,11 @@
     </div>
     {{ end }}
 
-    {{ if artifact.credit != "" }}<p class="text-muted">{{ artifact.credit | html.escape }}</p>{{ end }}
+    {{~ if artifact.credit != "" || artifact.url != "" }}
+    <p class="text-muted">{{ artifact.credit | html.escape
+      }}{{ if artifact.credit != "" && artifact.url != "" }}<span class="artifact-meta-sep">·</span>{{ end
+      }}{{ include 'artifact-link' }}</p>
+    {{~ end }}
     {{ if artifact.date != "" }}<p class="text-muted small">{{ artifact.date | html.escape }}</p>{{ end }}
   </div>
 

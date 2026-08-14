@@ -15,9 +15,19 @@ public static class DirectoryTraverser
     // The name lists live in PublishIgnore, shared with the SFTP upload so a folder this walk
     // refuses to read can't reach a server by some other route.
 
-    public static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles, IList<string> allArtifacts, IProgress<string>? progress = null)
+    /// <param name="updatedYamls">
+    /// Collects every yaml the walk brought up to the current key set. The app writes to the user's
+    /// files here, so it can say so once when the scan finishes rather than leave them to find out
+    /// from a diff.
+    /// </param>
+    public static DirectoryTreeItem BuildTree(
+        string rootPath,
+        IList<string> allFiles,
+        IList<string> allArtifacts,
+        IProgress<string>? progress = null,
+        IList<string>? updatedYamls = null)
     {
-        return BuildTree(rootPath, allFiles, allArtifacts, rootPath, progress);
+        return BuildTree(rootPath, allFiles, allArtifacts, rootPath, progress, updatedYamls);
     }
 
     /// <summary>
@@ -49,7 +59,7 @@ public static class DirectoryTraverser
     }
 
     // Walks the directory tree and parses YAML. Preview generation is deferred to GeneratePreviews().
-    private static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles, IList<string> allArtifacts, string traversalRoot, IProgress<string>? progress)
+    private static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles, IList<string> allArtifacts, string traversalRoot, IProgress<string>? progress, IList<string>? updatedYamls)
     {
         var node = new DirectoryTreeItem(rootPath);
 
@@ -67,7 +77,7 @@ public static class DirectoryTraverser
                 if (ShouldIgnoreDirectory(dir))
                     continue;
 
-                var child = BuildTree(dir, allFiles, allArtifacts, traversalRoot, progress);
+                var child = BuildTree(dir, allFiles, allArtifacts, traversalRoot, progress, updatedYamls);
                 node.Children.Add(child);
             }
 
@@ -78,7 +88,8 @@ public static class DirectoryTraverser
 
                 var child = new DirectoryTreeItem(file);
 
-                var artifact = YamlParser.TryParseYamlMeta(file, child.YamlErrors, child.YamlWarnings);
+                var artifact = YamlParser.TryParseYamlMeta(
+                    file, child.YamlErrors, child.YamlWarnings, updatedYamls);
                 if (artifact != null)
                 {
                     artifact.RootFolder    = rootPath;

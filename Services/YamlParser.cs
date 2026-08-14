@@ -68,10 +68,22 @@ public static class YamlParser
     /// and a typo shouldn't read like a failed generation. Optional so a caller that only wants the
     /// artifact needn't invent a list.
     /// </param>
-    public static Artifact? TryParseYamlMeta(string filePath, List<string> errors, List<string>? warnings = null)
+    /// <param name="updatedYamls">
+    /// Collects the path of every yaml this call brought up to the current key set, so the caller
+    /// can say once that it happened rather than once per file. Optional: a caller that only wants
+    /// the artifact needn't care that a file was tidied on the way.
+    /// </param>
+    public static Artifact? TryParseYamlMeta(
+        string filePath,
+        List<string> errors,
+        List<string>? warnings = null,
+        IList<string>? updatedYamls = null)
     {
         var yamlPath = FindYamlMeta(filePath);
 
+        // A file we just wrote already carries the current key set; only a pre-existing one can be
+        // behind it.
+        var scaffolded = yamlPath is null;
         if (yamlPath is null)
             yamlPath = CreateDefaultYamlMeta(filePath, errors);
 
@@ -102,6 +114,11 @@ public static class YamlParser
                 if (parse(yaml) is { } artifact)
                 {
                     ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), warnings);
+                    // The file says what it is, and the model that parsed it agrees.
+                    if (!scaffolded)
+                        EnsureDefaultKeys(
+                            yamlPath, yaml, artifact.Type.ToString().ToLowerInvariant(),
+                            warnings, updatedYamls);
                     return artifact;
                 }
             }
@@ -116,6 +133,14 @@ public static class YamlParser
                 if (attempt(yaml) is { } artifact)
                 {
                     ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), warnings);
+                    // The files with no type: token at all are the oldest in a project, and so the
+                    // likeliest to predate a setting. Backfilling them is the point, not an edge —
+                    // but nothing here resolved a type, so go on the extension rather than on
+                    // Artifact.Type, which at this point is the enum's zero and not a finding.
+                    if (!scaffolded)
+                        EnsureDefaultKeys(
+                            yamlPath, yaml, TypeFromExtension(filePath, artifact),
+                            warnings, updatedYamls);
                     return artifact;
                 }
             }
@@ -164,11 +189,91 @@ public static class YamlParser
             $"{Path.GetFileName(yamlPath)}: {string.Join(", ", unknown)} {subject} dir2site knows, so nothing was done with {tail}.");
     }
 
+    /// <summary>
+    /// Brings a yaml written before a feature existed up to the current key set: every key
+    /// <see cref="DefaultKeys"/> lists for this type and the document does not already have is
+    /// appended at its default. A setting is otherwise only discoverable from the docs, which is how
+    /// <c>home</c> and the cover markers went years without appearing in a single file.
+    /// </summary>
+    /// <remarks>
+    /// Only ever adds. Values already on disk are never rewritten and keys are never removed or
+    /// reordered, so a blank the site owner left blank stays that way. Absence is read from the
+    /// document rather than the parsed model, where blank and absent are the same null.
+    ///
+    /// New keys land at the end of the file, because that is where <see cref="YamlDocumentEditor"/>
+    /// can splice without disturbing anything — putting them in template order would mean rewriting
+    /// the file and losing the comments this whole path exists to protect. For the same reason a
+    /// document the editor cannot load is left alone entirely: this is housekeeping, and no missing
+    /// key is worth a comment.
+    ///
+    /// A file that was changed goes into <paramref name="updatedYamls"/> rather than the warnings,
+    /// so the caller can say it once for the whole scan — a line per artifact would bury the
+    /// warnings that mean something under a notice about nothing having gone wrong. A failure is a
+    /// warning in its own right: a project on read-only media would otherwise never gain the keys
+    /// and never say why.
+    /// </remarks>
+    private static void EnsureDefaultKeys(
+        string yamlPath,
+        string yaml,
+        string artifactType,
+        List<string>? warnings,
+        IList<string>? updatedYamls)
+    {
+        Dictionary<object, object>? doc;
+        try { doc = DictDeserializer.Deserialize<Dictionary<object, object>>(yaml); }
+        catch { return; }
+        if (doc == null) return;
+
+        var present = doc.Keys
+            .Select(k => k?.ToString())
+            .Where(k => !string.IsNullOrEmpty(k))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var missing = DefaultKeys(artifactType).Where(kv => !present.Contains(kv.Key)).ToList();
+        if (missing.Count == 0) return;
+
+        var editor = YamlDocumentEditor.TryLoad(yaml);
+        if (editor == null) return;
+
+        foreach (var (key, value) in missing)
+        {
+            if (!editor.AddIfAbsent(key, value)) return;
+        }
+
+        if (!editor.IsModified) return;
+
+        // The artifact itself parsed fine, so this is a warning rather than an error — but the file
+        // keeps coming up short on every scan, and a person should be able to find out why.
+        try
+        {
+            File.WriteAllText(yamlPath, editor.Text);
+            updatedYamls?.Add(yamlPath);
+        }
+        catch (Exception ex)
+        {
+            warnings?.Add(
+                $"{Path.GetFileName(yamlPath)}: could not add the settings it is missing " +
+                $"({string.Join(", ", missing.Select(kv => kv.Key))}) — {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// What to hold a yaml to when its own <c>type:</c> didn't decide. Every model matches an
+    /// untyped document — the deserializer ignores what it doesn't recognise — so the one that
+    /// happened to be tried first tells you nothing, and <see cref="Artifact.Type"/> is then the
+    /// enum's zero value rather than a determination. The extension is the evidence the scaffolder
+    /// would have used to write the file, so it is the evidence for filling it in.
+    /// </summary>
+    private static string TypeFromExtension(string filePath, Artifact artifact) =>
+        ExtensionToType.TryGetValue(Path.GetExtension(filePath), out var byExtension)
+            ? byExtension
+            : artifact.Type.ToString().ToLowerInvariant();
+
     // Reflected once per model — the same handful of types are parsed for every file in a project.
     private static readonly ConcurrentDictionary<Type, HashSet<string>> DeclaredKeysByType = new();
 
     /// <summary>The keys a model accepts, spelled the way the deserializer expects to see them.</summary>
-    private static HashSet<string> DeclaredKeys(Type modelType) =>
+    internal static HashSet<string> DeclaredKeys(Type modelType) =>
         DeclaredKeysByType.GetOrAdd(modelType, static type =>
         {
             var keys = new HashSet<string>(StringComparer.Ordinal);
@@ -423,25 +528,97 @@ public static class YamlParser
         }
     }
 
+    /// <summary>
+    /// Keys the tool writes for itself, and so never scaffolds or backfills. A blank one in a fresh
+    /// file only invites hand-editing a value the generator, the preview pipeline or the overlay
+    /// editor will overwrite; <c>cover</c> is the legacy spelling of <c>parent-cover</c>, which the
+    /// docs already say not to reach for.
+    /// </summary>
+    /// <remarks>
+    /// Read only by the test that holds <see cref="DefaultKeys"/> and the models to each other. It
+    /// lives here rather than there because it is the policy itself — the list of what a yaml is
+    /// not for — and the test only checks that the code keeps to it.
+    /// </remarks>
+    internal static readonly IReadOnlySet<string> ToolOwnedKeys = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "type", "id", "preview", "previewLarge", "image", "original", "tile", "overlays", "cover",
+    };
+
+    // Every artifact carries these, so a photo's yaml advertises the same settings as a PDF's.
+    private static readonly string[] SharedTail =
+        ["date", "url", "url-text", "home", "parent-cover", "grandparent-cover"];
+
+    /// <summary>
+    /// The authored keys a type's yaml should carry, in the order they are written, paired with the
+    /// value a fresh file gets. This is the single source of truth behind both the scaffolder
+    /// (<see cref="BuildTemplate"/>) and the backfill (<see cref="EnsureDefaultKeys"/>) — a setting
+    /// added to a model and listed here shows up in new and existing yaml alike, instead of being a
+    /// feature you can only find in the docs.
+    /// </summary>
+    /// <remarks>
+    /// <c>type:</c> and <c>caption:</c> are deliberately absent: both are derived from the file
+    /// itself rather than defaulted, so <see cref="BuildTemplate"/> writes them and the backfill
+    /// leaves them alone. Tool-owned keys are absent too — see <see cref="ToolOwnedKeys"/>.
+    /// </remarks>
+    internal static IReadOnlyList<KeyValuePair<string, string>> DefaultKeys(string artifactType)
+    {
+        // The parser matches type tokens case-insensitively, so "Photo" is a photo everywhere else.
+        var head = artifactType.ToLowerInvariant() switch
+        {
+            "photo" or "deepzoom" => new[] { "credit", "photographer" },
+            "pdf"                 => ["credit", "author", "publishOriginal"],
+            "video"               => ["credit", "provider", "videoId", "start"],
+            _                     => ["credit"],
+        };
+
+        return head.Concat(SharedTail)
+            .Select(key => new KeyValuePair<string, string>(key, DefaultValue(key)))
+            .ToList();
+    }
+
+    // Blank is the right default for anything the site owner writes in prose; the flags need a
+    // value, because a bare "home:" reads as null rather than false.
+    //
+    // parent-cover is the exception, and stays blank: it is bool? precisely so that absent and
+    // false are different answers, with absent letting a pre-rename project's "cover: true" still
+    // decide (see Artifact.IsParentCover). Writing false would answer, on the owner's behalf and
+    // without telling them, a question their file had deliberately left open — and take away the
+    // folder picture they chose.
+    private static string DefaultValue(string key) => key switch
+    {
+        "home" or "grandparent-cover" or "publishOriginal" => "false",
+        _ => "",
+    };
+
     // The video arm needs the shortcut's target, which the caller has already parsed — re-reading
     // the .url here would just be a second chance to disagree with it.
     private static string BuildTemplate(
         string artifactType,
         string caption,
-        InternetShortcutParser.VideoRef? video = null) => artifactType switch
+        InternetShortcutParser.VideoRef? video = null)
     {
-        "photo"    => $"type: photo\ncaption: {caption}\ncredit:\nphotographer:\n",
-        "deepzoom" => $"type: deepzoom\ncaption: {caption}\ncredit:\nphotographer:\n",
-        "pdf"      => $"type: pdf\ncaption: {caption}\ncredit:\nauthor:\npublishOriginal: false\n",
-        "markdown" => $"type: markdown\ncaption: {caption}\ncredit:\n",
-        // url-text is left blank on purpose: the player carries YouTube's own affordance, so a card
-        // only gets an outbound link when the site owner asks for one by filling this in.
-        "video"    => $"type: video\ncaption: {caption}\ncredit:\nurl-text:\n"
-                      + $"provider: {video?.Provider ?? InternetShortcutParser.YouTube}\n"
-                      + $"videoId: {video?.VideoId}\n"
-                      + $"start:{(video?.Start is { } s ? $" {s}" : "")}\n",
-        _          => $"type: {artifactType}\ncaption: {caption}\ncredit:\n",
-    };
+        // A video's provider and id come from the .url and are rewritten from it on every scan, so
+        // the template starts them off right rather than blank. url-text stays empty on purpose:
+        // the player carries YouTube's own affordance, so a card only gets an outbound link when
+        // the site owner asks for one by filling this in.
+        var seeded = artifactType == "video"
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["provider"] = video?.Provider ?? InternetShortcutParser.YouTube,
+                ["videoId"]  = video?.VideoId ?? "",
+                ["start"]    = video?.Start is { } s ? s.ToString() : "",
+            }
+            : [];
+
+        var sb = new StringBuilder();
+        sb.Append($"type: {artifactType}\ncaption: {caption}\n");
+        foreach (var (key, fallback) in DefaultKeys(artifactType))
+        {
+            var value = seeded.TryGetValue(key, out var seed) ? seed : fallback;
+            sb.Append(value.Length == 0 ? $"{key}:\n" : $"{key}: {value}\n");
+        }
+        return sb.ToString();
+    }
 
     /// <summary>
     /// Drops the provider suffix a browser appends when it saves a video shortcut, so
