@@ -25,10 +25,29 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Padding" Value="8,6"/>
         </Style>
+
+        <!-- A selected row is still being typed into, so the highlight has to sit behind text boxes
+             and their labels rather than take the row over: a light wash, and the text left alone. -->
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#DCEBFF"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#CFE2FF"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter TextBlock">
+            <Setter Property="Foreground" Value="Black"/>
+        </Style>
+
+        <!-- Black rather than a grey: these name the box under them and are already small, and at
+             11px a mid grey is the first thing to go unreadable. -->
         <Style Selector="TextBlock.fieldLabel">
-            <Setter Property="Foreground" Value="#999"/>
+            <Setter Property="Foreground" Value="Black"/>
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Margin" Value="0,0,0,2"/>
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="Foreground" Value="Black"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
     </Window.Styles>
 
@@ -45,15 +64,23 @@
 
         <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,12">
             <TextBlock Text="Footer" FontWeight="Bold" FontSize="14"/>
-            <TextBlock TextWrapping="Wrap" Foreground="#999" FontSize="12"
+            <TextBlock Classes="hint" FontSize="12"
                        Text="Each row is one link in the footer. Rows sharing a column number are stacked together, and columns run left to right. A link can be an artifact in this project, an address starting with https:// or mailto:, or a site path starting with /."/>
 
+            <Grid Classes="row" ColumnDefinitions="140,*">
+                <Label Grid.Column="0">Closing line</Label>
+                <TextBox Grid.Column="1" Text="{Binding FooterText}"
+                         Watermark="&#169; 2026 Everyone"
+                         ToolTip.Tip="The line under the columns, usually the copyright. HTML is allowed here, so it can hold a link or a line break."/>
+            </Grid>
+
             <Grid Classes="row" ColumnDefinitions="140,160,*">
-                <Label Grid.Column="0">Footer colour</Label>
-                <TextBox Grid.Column="1" Text="{Binding FooterColor}" Watermark="#101c32"/>
-                <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="8,0,0,0"
-                           Foreground="#999" FontSize="12"
-                           Text="Leave empty to follow the primary colour."/>
+                <Label Grid.Column="0">Footer color</Label>
+                <TextBox Grid.Column="1" Text="{Binding FooterColor}"
+                         Watermark="{Binding FooterColorPlaceholder}"/>
+                <TextBlock Grid.Column="2" Classes="hint" VerticalAlignment="Center"
+                           Margin="8,0,0,0" FontSize="12"
+                           Text="Empty follows the primary color, shown grayed in the box."/>
             </Grid>
         </StackPanel>
 
@@ -62,16 +89,24 @@
                     Command="{Binding AddItemCommand}"/>
             <Button Content="Remove" HorizontalAlignment="Stretch"
                     Command="{Binding RemoveItemCommand}"/>
-            <Button Content="Choose link…" HorizontalAlignment="Stretch"
+            <Separator/>
+            <TextBlock Classes="hint" FontSize="11" Text="Link to…"/>
+            <Button Content="Choose linked artifact…" HorizontalAlignment="Stretch"
                     Command="{Binding ChooseLinkCommand}"
-                    ToolTip.Tip="Pick a file in this project; its path is stored relative to the project folder."/>
+                    ToolTip.Tip="Pick a file or folder in this project; its path is stored relative to the project folder, and resolves to wherever that artifact publishes."/>
+            <Button Content="Set web link" HorizontalAlignment="Stretch"
+                    Command="{Binding SetWebLinkCommand}"
+                    ToolTip.Tip="An address off this site. Opens in a new tab."/>
+            <Button Content="Set mailto" HorizontalAlignment="Stretch"
+                    Command="{Binding SetMailtoLinkCommand}"
+                    ToolTip.Tip="A mail address. Hands off to the visitor's mail client."/>
             <Separator/>
             <Button Content="Move up" HorizontalAlignment="Stretch"
                     Command="{Binding MoveUpCommand}"/>
             <Button Content="Move down" HorizontalAlignment="Stretch"
                     Command="{Binding MoveDownCommand}"/>
-            <TextBlock TextWrapping="Wrap" Foreground="#999" FontSize="11" Margin="0,8,0,0"
-                       Text="Brand icons like bi-youtube colour themselves. Fill in either colour only to override that."/>
+            <TextBlock Classes="hint" FontSize="11" Margin="0,8,0,0"
+                       Text="Brand icons like bi-youtube color themselves. Fill in either color only to override that."/>
         </StackPanel>
 
         <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}">
@@ -99,12 +134,12 @@
                                 <TextBox Text="{Binding Icon}" Watermark="bi-envelope"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1">
-                                <TextBlock Classes="fieldLabel" Text="Icon colour"/>
-                                <TextBox Text="{Binding IconColor}" Watermark="#ff0000"/>
+                                <TextBlock Classes="fieldLabel" Text="Icon color"/>
+                                <TextBox Text="{Binding IconColor}"/>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
                                 <TextBlock Classes="fieldLabel" Text="Icon fill"/>
-                                <TextBox Text="{Binding IconBackground}" Watermark="#ffffff"/>
+                                <TextBox Text="{Binding IconBackground}"/>
                             </StackPanel>
                             <StackPanel Grid.Column="3">
                                 <TextBlock Classes="fieldLabel" Text="Note"/>
