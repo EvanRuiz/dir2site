@@ -85,6 +85,7 @@ public partial class MainWindowViewModel : ViewModelBase
         // — no project open — would show disabled buttons and no explanation.
         RefreshSyncBlockedReason();
         _ = CheckForUpdatesAsync();
+        VsCodeExtensionStateReady = RefreshVsCodeExtensionState();
     }
 
     [ObservableProperty]
@@ -192,6 +193,40 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _forceFullReupload;
 
+    /// <summary>Show the install button: there is a VS Code here, and it hasn't got the extension.</summary>
+    [ObservableProperty]
+    private bool _canInstallVsCodeExtension;
+
+    /// <summary>Show the update banner: the extension is installed, but older than the one we carry.</summary>
+    [ObservableProperty]
+    private bool _vsCodeExtensionUpdateAvailable;
+
+    /// <summary>The version on offer, for the banner to name.</summary>
+    public string VsCodeExtensionVersion => VsCodeExtensionInstaller.Version;
+
+    /// <summary>
+    /// The startup scan of the extensions folders. Exposed so a test can wait for it to settle
+    /// rather than race it — it looks at the real machine, and what it finds there is nobody's to
+    /// predict.
+    /// </summary>
+    internal Task VsCodeExtensionStateReady { get; }
+
+    /// <summary>
+    /// Decides which of the two extension affordances to show, if either.
+    ///
+    /// Nothing at all when no VS Code can be found or the current version is already installed —
+    /// the button used to be permanent furniture offering people something they had.
+    /// </summary>
+    private async Task RefreshVsCodeExtensionState()
+    {
+        var state = await VsCodeExtensionInstaller.DetectAsync();
+
+        CanInstallVsCodeExtension = state is { VsCodeFound: true, Installed: null };
+        VsCodeExtensionUpdateAvailable =
+            state.VsCodeFound && state.Installed != null &&
+            state.Installed < VsCodeExtensionInstaller.BundledVersion;
+    }
+
     /// <summary>
     /// Installs the bundled VS Code extension that previews dir2site's ^^^ figure syntax. Offered
     /// here rather than hidden in a menu because the people writing articles are the ones who need
@@ -209,6 +244,10 @@ public partial class MainWindowViewModel : ViewModelBase
             AppendError(result.Message);
             if (result.RevealPath != null) Reveal(result.RevealPath);
         }
+
+        // Whichever affordance was showing should go away once it has been acted on — and stay if
+        // the install didn't actually take.
+        await RefreshVsCodeExtensionState();
     }
 
     /// <summary>Shows a file in Finder / Explorer / the desktop file manager.</summary>

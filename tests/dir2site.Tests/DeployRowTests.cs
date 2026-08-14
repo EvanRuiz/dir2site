@@ -3,6 +3,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -150,5 +151,27 @@ public class DeployRowTests : IDisposable
         var (window, _) = ShowWithProject();
 
         Assert.True(Button(window, "Configure…").IsEffectivelyEnabled);
+    }
+
+    /// <summary>
+    /// The VS Code extension is only offered to someone who hasn't got it — see
+    /// VsCodeExtensionDetectionTests for what decides that.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task TheExtensionInstallButtonFollowsItsFlag()
+    {
+        var (window, vm) = ShowWithProject();
+
+        // The startup scan reads the real machine; let it land before driving the flag ourselves.
+        await vm.VsCodeExtensionStateReady;
+        Dispatcher.UIThread.RunJobs();
+
+        vm.CanInstallVsCodeExtension = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(Button(window, "Install VS Code Extension").IsEffectivelyVisible);
+
+        vm.CanInstallVsCodeExtension = false;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(Button(window, "Install VS Code Extension").IsEffectivelyVisible);
     }
 }
