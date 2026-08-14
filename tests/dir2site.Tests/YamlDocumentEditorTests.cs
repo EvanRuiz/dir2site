@@ -80,6 +80,24 @@ public class YamlDocumentEditorTests
         Assert.Equal("https://example.com", Value(editor.Text, "siteUrl"));
     }
 
+    /// <summary>
+    /// Appending to a file that ends with an explicit document-end marker starts a second document,
+    /// and the deserializer takes one document or none — so the file parsed before the edit and not
+    /// after. Refusing keeps a valid file valid; the caller falls back or leaves it alone.
+    /// </summary>
+    [Theory]
+    [InlineData("title: My Site\n...\n")]              // explicit document end
+    [InlineData("title: My Site\n---\nfooter: © 2026\n")] // genuinely two documents
+    [InlineData("{title: My Site, footer: x}\n")]      // flow mapping: nothing to append to
+    public void AppendingWhereItWouldNotSurvive_IsRefused(string text)
+    {
+        var editor = YamlDocumentEditor.TryLoad(text)!;
+
+        Assert.False(editor.AddIfAbsent("siteUrl", ""));
+        Assert.False(editor.IsModified);
+        Assert.Equal(text, editor.Text);
+    }
+
     [Theory]
     [InlineData("has: a colon")]
     [InlineData("trailing hash #")]

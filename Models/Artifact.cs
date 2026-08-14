@@ -22,9 +22,21 @@ public class Artifact
     public string? Caption {get; set;}
     public string? Credit {get; set;}
 
-    // ApplyNamingConventions is off because the deserializer's camelCase convention is otherwise
-    // applied to the alias as well, turning "url-text" back into "urlText" — so the hyphenated key
-    // this alias exists to support never actually matched anything.
+    /// <summary>
+    /// An external reference or source for this artifact — the page it came from, the original
+    /// posting, the archive record. Shown on the artifact's own page under the credit line.
+    /// </summary>
+    public string? Url {get; set;}
+
+    /// <summary>
+    /// What the link to <see cref="Url"/> says. Blank falls back to the URL itself, so a link is
+    /// never silently withheld from a site owner who filled in only the address.
+    /// </summary>
+    /// <remarks>
+    /// ApplyNamingConventions is off because the deserializer's camelCase convention is otherwise
+    /// applied to the alias as well, turning "url-text" back into "urlText" — so the hyphenated key
+    /// this alias exists to support never actually matched anything.
+    /// </remarks>
     [YamlMember(Alias = "url-text", ApplyNamingConventions = false)]
     public string? UrlText {get; set;}
 

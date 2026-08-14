@@ -141,6 +141,29 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Says once that the scan brought yaml files up to the current key set. Nothing has gone
+    /// wrong — the settings are added blank and every value already there is untouched — but the
+    /// app has written to files the user owns and very likely has in version control, and finding
+    /// that out from a diff is worse than being told.
+    /// </summary>
+    /// <remarks>
+    /// The banner rather than the status line, because the status line is overwritten by the next
+    /// thing that happens. One line however many files: naming them all would be a wall of text on
+    /// the first scan after an upgrade, which is exactly when this fires for a whole project.
+    /// </remarks>
+    private void ReportUpdatedYamls(IReadOnlyList<string> updatedYamls)
+    {
+        if (updatedYamls.Count == 0) return;
+
+        var subject = updatedYamls.Count == 1
+            ? $"1 yaml file ({Path.GetFileName(updatedYamls[0])})"
+            : $"{updatedYamls.Count:N0} yaml files";
+        AppendWarning(
+            $"Added the settings they were missing to {subject}. " +
+            "Values you had already written are unchanged.");
+    }
+
+    /// <summary>
     /// Things that didn't stop the site being generated but didn't do what was written either —
     /// a misspelled setting, two folders competing for one address. Kept off the error banner so
     /// a typo doesn't announce itself as a failed build.
@@ -417,15 +440,18 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             var progress = new Progress<string>(msg => StatusText = msg);
 
-            var (root, files, artifacts) = await Task.Run(() =>
+            var (root, files, artifacts, updatedYamls) = await Task.Run(() =>
             {
                 var collected = new List<string>();
                 var collectedArtifacts = new List<string>();
-                var tree = DirectoryTraverser.BuildTree(DirectoryRoot, collected, collectedArtifacts, progress);
-                return (tree, collected, collectedArtifacts);
+                var updated = new List<string>();
+                var tree = DirectoryTraverser.BuildTree(
+                    DirectoryRoot, collected, collectedArtifacts, progress, updated);
+                return (tree, collected, collectedArtifacts, updated);
             });
 
             DirItems.Add(root);
+            ReportUpdatedYamls(updatedYamls);
 
             await LoadOrCreateDir2SiteConfig();
             ReloadDeployTargets();
@@ -487,12 +513,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Re-scan from disk so any YAML edits since last load are picked up
         tracker.Report("Scanning for changes...");
+        var updatedYamls = new List<string>();
         var freshRoot = await Task.Run(() =>
         {
             var files     = new List<string>();
             var artifacts = new List<string>();
-            return DirectoryTraverser.BuildTree(DirectoryRoot!, files, artifacts, tracker);
+            return DirectoryTraverser.BuildTree(DirectoryRoot!, files, artifacts, tracker, updatedYamls);
         });
+        ReportUpdatedYamls(updatedYamls);
 
         // Generate previews first so site settings (PDF resize/quality) affect output
         tracker.Report("Generating previews...");

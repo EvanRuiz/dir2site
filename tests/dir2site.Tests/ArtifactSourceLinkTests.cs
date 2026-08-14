@@ -1,0 +1,238 @@
+// SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+using System;
+using System.Collections.Generic;
+using System.IO;
+using Avalonia.Headless.XUnit;
+using dir2site.Models;
+using dir2site.Services;
+using Xunit;
+
+namespace dir2site.Tests;
+
+/// <summary>
+/// An artifact's link out to where it came from: <c>url</c> with <c>url-text</c> for the words.
+/// It shows on the artifact's own page, under the credit line — not on the card, where the only
+/// link is the one to the artifact itself.
+/// </summary>
+public class ArtifactSourceLinkTests : IDisposable
+{
+    private readonly string _root = Path.Combine(
+        Path.GetTempPath(), "d2s-link-" + Guid.NewGuid().ToString("N"));
+
+    public ArtifactSourceLinkTests() => Directory.CreateDirectory(_root);
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, recursive: true); } catch { }
+    }
+
+    private void MakePhoto(string fileName, string extra)
+    {
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        File.WriteAllText(Path.Combine(_root, fileName), "not really a jpeg");
+        File.WriteAllText(Path.Combine(_root, fileName + ".yaml"),
+            $"""
+             type: photo
+             caption: {stem}
+             credit: A. Nother
+             preview: .dir2site/{stem}/{stem}-preview.jpg
+             previewLarge: .dir2site/{stem}/{stem}-preview-large.jpg
+             {extra}
+             """);
+    }
+
+    private IReadOnlyList<string> Generate()
+    {
+        var tree = DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>());
+        var result = SiteGenerator.Generate(_root, tree, new Dir2SiteModel
+        {
+            Title = "My Site",
+            Footer = "© 2026",
+            SiteUrl = "https://example.test",
+            SecondaryColor = "#AA3311",
+        });
+        Assert.Empty(result.Errors);
+        return result.Warnings;
+    }
+
+    private string ArtifactPage(string stem) =>
+        File.ReadAllText(Path.Combine(_root, "_site", stem, "index.html"));
+
+    private string CollectionPage() =>
+        File.ReadAllText(Path.Combine(_root, "_site", "index.html"));
+
+    [AvaloniaFact]
+    public void APhotoWithAUrlLinksOutFromItsOwnPage()
+    {
+        MakePhoto("Apple.jpg", "url: https://example.org/apple\nurl-text: See the original");
+        Generate();
+
+        var page = ArtifactPage("Apple");
+        Assert.Contains("href=\"https://example.org/apple\"", page);
+        Assert.Contains("See the original", page);
+        Assert.Contains("rel=\"noopener noreferrer\"", page);
+        Assert.Contains("bi-box-arrow-up-right", page);
+    }
+
+    /// The icon has to sit inside the anchor, or it is neither the link's colour nor its click.
+    [AvaloniaFact]
+    public void TheIconIsPartOfTheLink()
+    {
+        MakePhoto("Apple.jpg", "url: https://example.org/apple\nurl-text: See the original");
+        Generate();
+
+        Assert.Contains(
+            "See the original<i class=\"bi bi-box-arrow-up-right\" aria-hidden=\"true\"></i></a>",
+            ArtifactPage("Apple"));
+    }
+
+    /// <summary>
+    /// The link belongs beside the credit, not under it: both say where the artifact came from, and
+    /// a row of its own gave one link the weight of a whole line of metadata.
+    /// </summary>
+    [AvaloniaFact]
+    public void TheLinkSharesTheCreditsLine()
+    {
+        MakePhoto("Apple.jpg", "url: https://example.org/apple\nurl-text: See the original");
+        Generate();
+
+        var page = ArtifactPage("Apple");
+        var credit = page.IndexOf("A. Nother", StringComparison.Ordinal);
+        var link = page.IndexOf("artifact-link", StringComparison.Ordinal);
+
+        Assert.InRange(link, credit, page.IndexOf("</p>", credit, StringComparison.Ordinal));
+    }
+
+    /// With no credit there is nothing to sit beside, and no empty line where one would have been.
+    [AvaloniaFact]
+    public void WithoutACreditTheLinkStandsAlone()
+    {
+        var stem = "Apple";
+        File.WriteAllText(Path.Combine(_root, stem + ".jpg"), "not really a jpeg");
+        File.WriteAllText(Path.Combine(_root, stem + ".jpg.yaml"),
+            $"type: photo\ncaption: {stem}\nurl: https://example.org/apple\nurl-text: See the original\n");
+        Generate();
+
+        var page = ArtifactPage(stem);
+        Assert.Contains("artifact-link", page);
+        Assert.DoesNotContain("artifact-meta-sep", page);
+    }
+
+    /// Silently dropping a url because its text is blank is the bug this feature came from.
+    [AvaloniaFact]
+    public void ABlankUrlTextFallsBackToTheAddress()
+    {
+        MakePhoto("Apple.jpg", "url: https://example.org/apple\nurl-text:");
+        Generate();
+
+        var page = ArtifactPage("Apple");
+        Assert.Contains("href=\"https://example.org/apple\"", page);
+        Assert.Contains(">https://example.org/apple<", page);
+    }
+
+    [AvaloniaFact]
+    public void NoUrlMeansNoLink()
+    {
+        MakePhoto("Apple.jpg", "url:\nurl-text: See the original");
+        Generate();
+
+        var page = ArtifactPage("Apple");
+        Assert.DoesNotContain("artifact-link", page);
+        Assert.DoesNotContain("See the original", page);
+    }
+
+    /// The card's one link is the artifact itself; a second one competing with it is why this
+    /// lives on the page instead.
+    [AvaloniaFact]
+    public void TheCardDoesNotCarryTheLink()
+    {
+        MakePhoto("Apple.jpg", "url: https://example.org/apple\nurl-text: See the original");
+        Generate();
+
+        var collection = CollectionPage();
+        Assert.DoesNotContain("https://example.org/apple", collection);
+        Assert.Contains("href=\"Apple/\"", collection);
+    }
+
+    [AvaloniaFact]
+    public void TheLinkTakesTheSitesSecondaryColour()
+    {
+        MakePhoto("Apple.jpg", "url: https://example.org/apple\nurl-text: See the original");
+        Generate();
+
+        var css = File.ReadAllText(Path.Combine(_root, "_site", "css", "site.css"));
+        Assert.Contains(".artifact-link { color: #AA3311", css);
+    }
+
+    [AvaloniaFact]
+    public void AUrlFromAYamlIsEscapedLikeAnyOtherValue()
+    {
+        MakePhoto("Apple.jpg", "url: \"https://example.org/a?x=1&y=2\"\nurl-text: \"Bell & Co\"");
+        Generate();
+
+        var page = ArtifactPage("Apple");
+        Assert.Contains("x=1&amp;y=2", page);
+        Assert.Contains("Bell &amp; Co", page);
+    }
+
+    /// Escaping keeps the value inside the attribute; it says nothing about what following the link
+    /// would run. A yaml is hand-authored, but a link that executes is not something to publish.
+    [AvaloniaFact]
+    public void ASchemeWeWouldNotFollowIsNotPublishedAsALink()
+    {
+        MakePhoto("Apple.jpg", "url: \"javascript:alert(1)\"\nurl-text: Tap here");
+        Generate();
+
+        var page = ArtifactPage("Apple");
+        Assert.DoesNotContain("javascript:", page);
+        Assert.DoesNotContain("artifact-link", page);
+    }
+
+    /// A dropped url is the same shape of problem as a misspelled key: written in good faith, with
+    /// nothing on the page to show for it. `ftp:` is the case that isn't an attack — an archivist's
+    /// perfectly reasonable address that this site won't publish.
+    [AvaloniaFact]
+    public void AUrlTheSiteWillNotPublishIsReported()
+    {
+        MakePhoto("Apple.jpg", "url: ftp://archive.example.org/record\nurl-text: The record");
+
+        var warnings = Generate();
+
+        Assert.Contains(warnings, w => w.Contains("Apple.jpg") && w.Contains("url"));
+        Assert.DoesNotContain("artifact-link", ArtifactPage("Apple"));
+    }
+
+    [AvaloniaFact]
+    public void AGoodUrlIsNotReported()
+    {
+        MakePhoto("Apple.jpg", "url: https://example.org/apple\nurl-text: See the original");
+
+        Assert.DoesNotContain(Generate(), w => w.Contains("url"));
+    }
+
+    [AvaloniaFact]
+    public void AnAddressWithinTheSiteIsStillALink()
+    {
+        MakePhoto("Apple.jpg", "url: ../Elsewhere/\nurl-text: The other one");
+        Generate();
+
+        Assert.Contains("href=\"../Elsewhere/\"", ArtifactPage("Apple"));
+    }
+
+    [AvaloniaFact]
+    public void APdfPageCarriesTheLinkToo()
+    {
+        File.WriteAllText(Path.Combine(_root, "Report.pdf"), "not really a pdf");
+        File.WriteAllText(Path.Combine(_root, "Report.pdf.yaml"),
+            """
+            type: pdf
+            caption: Report
+            url: https://example.org/report
+            url-text: Read the filing
+            """);
+        Generate();
+
+        Assert.Contains("https://example.org/report", ArtifactPage("Report"));
+    }
+}

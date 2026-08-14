@@ -14,8 +14,25 @@ public partial class ArtifactViewModel : ViewModelBase
     [ObservableProperty] public partial string Id { get; set; } = string.Empty;
     [ObservableProperty] public partial string? Caption { get; set; }
     [ObservableProperty] public partial string? Credit { get; set; }
+    [ObservableProperty] public partial string? Url { get; set; }
     [ObservableProperty] public partial string? UrlText { get; set; }
     [ObservableProperty] public partial string? Date { get; set; }
+
+    /// <summary>
+    /// What the pane shows for the source link. A url with no text falls back to the address, the
+    /// same way the generated page does; text with no url is a video, whose address lives in the
+    /// .url shortcut rather than the yaml.
+    /// </summary>
+    public string? UrlDisplay => (Url, UrlText) switch
+    {
+        ({ Length: > 0 } url, { Length: > 0 } text) => $"{text} — {url}",
+        ({ Length: > 0 } url, _)                    => url,
+        (_, { Length: > 0 } text)                   => text,
+        _                                           => null,
+    };
+
+    partial void OnUrlChanged(string? value) => OnPropertyChanged(nameof(UrlDisplay));
+    partial void OnUrlTextChanged(string? value) => OnPropertyChanged(nameof(UrlDisplay));
     [ObservableProperty] public partial string? Preview { get; set; }
     [ObservableProperty] public partial string? PreviewLarge { get; set; }
 
