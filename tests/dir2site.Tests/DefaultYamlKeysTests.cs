@@ -274,6 +274,48 @@ public class DefaultYamlKeysTests : IDisposable
         Assert.Equal(broken, File.ReadAllText(path + ".yaml"));
     }
 
+    /// <summary>
+    /// A yaml ending in an explicit document-end marker parses perfectly well. Appending past that
+    /// marker would leave a file that no longer parses at all — the artifact would drop off the site
+    /// on the next scan — so the backfill declines and the file keeps working without the new keys.
+    /// </summary>
+    [Fact]
+    public void AFileWeCannotAppendToKeepsWorkingWithoutTheNewKeys()
+    {
+        var original = "type: photo\ncaption: Apple\n...\n";
+        var yaml = ParseAndReadYaml("Apple.jpg", original);
+
+        Assert.Equal(original, yaml);
+
+        var path = Path.Combine(_root, "Apple.jpg");
+        var errors = new List<string>();
+        var artifact = YamlParser.TryParseYamlMeta(path, errors, new List<string>());
+        Assert.Empty(errors);
+        Assert.Equal("Apple", artifact!.Caption);
+    }
+
+    /// <summary>
+    /// The scan writes to files the user owns, so it hands back which ones — the app says so once
+    /// when the walk finishes rather than leaving them to find it in a diff.
+    /// </summary>
+    [Fact]
+    public void TheWalkSaysWhichFilesItBroughtUpToDate()
+    {
+        File.WriteAllText(Path.Combine(_root, "Apple.jpg"), "not really a jpeg");
+        File.WriteAllText(Path.Combine(_root, "Apple.jpg.yaml"), "type: photo\ncaption: Apple\n");
+        File.WriteAllText(Path.Combine(_root, "Pear.jpg"), "not really a jpeg");
+
+        var updated = new List<string>();
+        DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>(), null, updated);
+
+        // Pear's yaml was written by this same walk and is already complete, so only Apple's counts.
+        Assert.Equal(["Apple.jpg.yaml"], updated.Select(Path.GetFileName));
+
+        var second = new List<string>();
+        DirectoryTraverser.BuildTree(_root, new List<string>(), new List<string>(), null, second);
+        Assert.Empty(second);
+    }
+
     // ---- the two lists agreeing -------------------------------------------
 
     /// <summary>

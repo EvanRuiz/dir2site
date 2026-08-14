@@ -68,7 +68,16 @@ public static class YamlParser
     /// and a typo shouldn't read like a failed generation. Optional so a caller that only wants the
     /// artifact needn't invent a list.
     /// </param>
-    public static Artifact? TryParseYamlMeta(string filePath, List<string> errors, List<string>? warnings = null)
+    /// <param name="updatedYamls">
+    /// Collects the path of every yaml this call brought up to the current key set, so the caller
+    /// can say once that it happened rather than once per file. Optional: a caller that only wants
+    /// the artifact needn't care that a file was tidied on the way.
+    /// </param>
+    public static Artifact? TryParseYamlMeta(
+        string filePath,
+        List<string> errors,
+        List<string>? warnings = null,
+        IList<string>? updatedYamls = null)
     {
         var yamlPath = FindYamlMeta(filePath);
 
@@ -105,7 +114,7 @@ public static class YamlParser
                 if (parse(yaml) is { } artifact)
                 {
                     ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), warnings);
-                    if (!scaffolded) EnsureDefaultKeys(yamlPath, yaml, artifact, warnings);
+                    if (!scaffolded) EnsureDefaultKeys(yamlPath, yaml, artifact, warnings, updatedYamls);
                     return artifact;
                 }
             }
@@ -122,7 +131,7 @@ public static class YamlParser
                     ReportUnknownKeys(yaml, yamlPath, artifact.GetType(), warnings);
                     // The files with no type: token at all are the oldest in a project, and so the
                     // likeliest to predate a setting. Backfilling them is the point, not an edge.
-                    if (!scaffolded) EnsureDefaultKeys(yamlPath, yaml, artifact, warnings);
+                    if (!scaffolded) EnsureDefaultKeys(yamlPath, yaml, artifact, warnings, updatedYamls);
                     return artifact;
                 }
             }
@@ -188,13 +197,18 @@ public static class YamlParser
     /// document the editor cannot load is left alone entirely: this is housekeeping, and no missing
     /// key is worth a comment.
     ///
-    /// A successful backfill is deliberately silent. It is additive, idempotent and preserves the
-    /// file, so saying so once per artifact would bury the warnings that mean something under a
-    /// notice about nothing having gone wrong. A failed one is not silent: a project on read-only
-    /// media would otherwise never gain the keys and never say why.
+    /// A file that was changed goes into <paramref name="updatedYamls"/> rather than the warnings,
+    /// so the caller can say it once for the whole scan — a line per artifact would bury the
+    /// warnings that mean something under a notice about nothing having gone wrong. A failure is a
+    /// warning in its own right: a project on read-only media would otherwise never gain the keys
+    /// and never say why.
     /// </remarks>
     private static void EnsureDefaultKeys(
-        string yamlPath, string yaml, Artifact artifact, List<string>? warnings)
+        string yamlPath,
+        string yaml,
+        Artifact artifact,
+        List<string>? warnings,
+        IList<string>? updatedYamls)
     {
         // The resolved type rather than the yaml's own token: the token may be missing entirely, or
         // spelled "Photo", and DefaultKeys would then fall through to the bare shared set and leave
@@ -226,7 +240,11 @@ public static class YamlParser
 
         // The artifact itself parsed fine, so this is a warning rather than an error — but the file
         // keeps coming up short on every scan, and a person should be able to find out why.
-        try { File.WriteAllText(yamlPath, editor.Text); }
+        try
+        {
+            File.WriteAllText(yamlPath, editor.Text);
+            updatedYamls?.Add(yamlPath);
+        }
         catch (Exception ex)
         {
             warnings?.Add(
