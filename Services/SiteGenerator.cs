@@ -802,11 +802,16 @@ public static class SiteGenerator
     /// </summary>
     /// <returns>How many files went, and anything that refused to.</returns>
     public static (int Removed, IReadOnlyList<string> Errors) RemoveOrphans(
-        string siteRoot, IReadOnlyList<string> relativePaths)
+        string siteRoot, IReadOnlyList<string> relativePaths, IProgress<string>? progress = null)
     {
         var root = Path.GetFullPath(siteRoot);
         var removed = 0;
+        var done = 0;
         var errors = new List<string>();
+
+        // One report per file would post tens of thousands of updates to the UI thread, which is
+        // its own kind of freeze; a couple of hundred is more than a status line can show.
+        var step = Math.Max(1, relativePaths.Count / 200);
 
         foreach (var rel in relativePaths)
         {
@@ -841,8 +846,12 @@ public static class SiteGenerator
                 // stop the rest going. It gets reported, and offered again next generate.
                 errors.Add($"{rel}: {ex.Message}");
             }
+
+            if (++done % step == 0 || done == relativePaths.Count)
+                progress?.Report($"Removing files… ({done}/{relativePaths.Count})");
         }
 
+        progress?.Report("Tidying up empty folders…");
         RemoveEmptyDirectories(root, root);
         return (removed, errors);
     }

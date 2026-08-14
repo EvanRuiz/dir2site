@@ -586,10 +586,27 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        var result = await Task.Run(() => SiteGenerator.RemoveOrphans(siteRoot, toRemove));
-        StatusText = $"Site generated → _site/ — removed {result.Removed} file(s)";
-        if (result.Errors.Count > 0)
-            AppendError(string.Join("\n", result.Errors));
+        // Deleting tens of thousands of files takes seconds even on a fast disk, and longer on a
+        // network or cloud-synced folder. Without the busy flag and a running count the window sat
+        // there looking finished, still showing the line from the generate that preceded it.
+        IsLoading = true;
+        var progress = new Progress<string>(message => StatusText = message);
+        try
+        {
+            var result = await Task.Run(() => SiteGenerator.RemoveOrphans(siteRoot, toRemove, progress));
+            StatusText = $"Site generated → _site/ — removed {result.Removed} file(s)";
+            if (result.Errors.Count > 0)
+                AppendError(string.Join("\n", result.Errors));
+        }
+        catch (Exception ex)
+        {
+            StatusText = "Removing files failed";
+            AppendError(ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     // ---- SFTP deploy --------------------------------------------------------
