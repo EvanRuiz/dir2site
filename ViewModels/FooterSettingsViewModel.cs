@@ -12,6 +12,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using dir2site.Models;
 using dir2site.Services;
+using dir2site.Views;
 
 namespace dir2site.ViewModels;
 
@@ -97,6 +98,31 @@ public partial class FooterSettingsViewModel : ViewModelBase
         foreach (var item in config.FooterItems) Items.Add(FooterItemRow.From(item));
 
         _selectedItem = Items.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// What is unfinished about the rows, or empty when nothing is.
+    /// </summary>
+    /// <remarks>
+    /// Asked at Save rather than watched while typing. A row is incomplete for most of the time it
+    /// is being written — a new one is blank the moment it is added — so a live warning spends its
+    /// life complaining about work in progress, and is being ignored by the time it is right.
+    ///
+    /// Only what the dialog can be sure of on its own: a row with nothing to link to, or nothing to
+    /// show. Whether a path actually resolves is the generator's business, since it walks the tree.
+    /// </remarks>
+    public string IncompleteSummary()
+    {
+        var noLink = Items.Count(r => r.Link.Trim().Length == 0);
+        var noTitle = Items.Count(r => r.Title.Trim().Length == 0);
+
+        var problems = new List<string>();
+        if (noLink > 0)
+            problems.Add(noLink == 1 ? "1 row has no link" : $"{noLink} rows have no link");
+        if (noTitle > 0)
+            problems.Add(noTitle == 1 ? "1 row has no title" : $"{noTitle} rows have no title");
+
+        return string.Join(" and ", problems);
     }
 
     /// <summary>
@@ -232,11 +258,26 @@ public partial class FooterSettingsViewModel : ViewModelBase
     [ObservableProperty] private string _status = string.Empty;
 
     [RelayCommand]
-    private void Save() =>
+    private async Task Save()
+    {
+        if (IncompleteSummary() is { Length: > 0 } problems)
+        {
+            var confirm = new ConfirmView(
+                "Unfinished Footer Rows",
+                $"Save the footer with {problems}?",
+                "A row with no link shows in the footer as plain text rather than something to " +
+                "click, and a row with no title shows as its icon alone. Both are kept — nothing " +
+                "is thrown away — so this is only worth a look if it wasn't what you meant.",
+                "Save Anyway");
+
+            if (!await confirm.ShowDialog<bool>(_window)) return;
+        }
+
         _window.Close(new FooterSettingsResult(
             FooterText,
             FooterColor.Trim(),
             [.. Items.Select(row => row.ToItem())]));
+    }
 
     [RelayCommand]
     private void Cancel() => _window.Close(null);

@@ -192,15 +192,35 @@ public class FooterTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void ALinkToNothingIsWarnedAboutAndLeftOut()
+    public void ALinkToNothingIsWarnedAboutAndShownWithoutALink()
     {
         MakeCollection("Photographs");
 
         var result = Generate(Config(new FooterItem { Title = "Ghost", Link = "Nowhere/Nothing.md" }));
 
         Assert.Contains(result.Warnings, w => w.Contains("Ghost") && w.Contains("isn't in the project"));
-        Assert.DoesNotContain("Ghost", ReadPage());
         Assert.Empty(result.Errors);
+
+        // Dropping it made a typo look like the row had never been written. It stays, as text.
+        var footer = ReadFooter();
+        Assert.Contains("Ghost", footer);
+        Assert.Contains("footer-link-unlinked", footer);
+        Assert.DoesNotContain("href=\"Nowhere", footer);
+    }
+
+    [AvaloniaFact]
+    public void ARowWithNoLinkAtAllIsStillShown()
+    {
+        MakeCollection("Photographs");
+
+        var result = Generate(Config(new FooterItem { Title = "Just Words", Icon = "bi-lock" }));
+
+        Assert.Contains(result.Warnings, w => w.Contains("Just Words") && w.Contains("no link"));
+
+        var footer = ReadFooter();
+        Assert.Contains("Just Words", footer);
+        // The icon it was given comes along, so the row still reads as the one that was written.
+        Assert.Contains("bi-lock", footer);
     }
 
     [AvaloniaFact]
@@ -213,7 +233,8 @@ public class FooterTests : IDisposable
         var result = Generate(Config(new FooterItem { Title = "The Clip", Link = "Films/Clip.url" }));
 
         Assert.Contains(result.Warnings, w => w.Contains("The Clip") && w.Contains("video"));
-        Assert.DoesNotContain("The Clip", ReadPage());
+        Assert.Contains("The Clip", ReadFooter());
+        Assert.Contains("footer-link-unlinked", ReadFooter());
     }
 
     [AvaloniaFact]
@@ -454,6 +475,25 @@ public class FooterTests : IDisposable
         Assert.DoesNotContain("<div class=\"col\">", footer);
         // Nothing to divide, so no rule above the copyright line.
         Assert.DoesNotContain("border-top", footer);
+        // And no band: one sentence marooned on a colored strip is worse than the plain line that
+        // every project had before columns existed.
+        Assert.DoesNotContain("has-columns", footer);
+    }
+
+    [AvaloniaFact]
+    public void TheBandBelongsToAFooterThatHasColumns()
+    {
+        MakeCollection("Photographs");
+
+        Generate(Config(new FooterItem { Title = "Row", Link = "https://example.test/a" }));
+
+        Assert.Contains("has-columns", ReadFooter());
+
+        var css = File.ReadAllText(Path.Combine(_root, "_site", "css", "site.css"));
+        // The colour is on the qualified selector, so a footer without columns cannot pick it up.
+        Assert.Contains(".site-footer.has-columns { background-color:", css);
+        // And the footer is pushed down, so a short page has no white left under it.
+        Assert.Contains(".site-footer { margin-top: auto; }", css);
     }
 
     [AvaloniaFact]
@@ -467,7 +507,7 @@ public class FooterTests : IDisposable
         Generate(config);
 
         var css = File.ReadAllText(Path.Combine(_root, "_site", "css", "site.css"));
-        Assert.Contains(".site-footer { background-color: #223355; }", css);
+        Assert.Contains(".site-footer.has-columns { background-color: #223355; }", css);
         // Dark, so the band takes light text.
         Assert.Contains("rgba(255, 255, 255, 0.72)", css);
     }
@@ -482,7 +522,7 @@ public class FooterTests : IDisposable
         Generate(config);
 
         var css = File.ReadAllText(Path.Combine(_root, "_site", "css", "site.css"));
-        Assert.Contains(".site-footer { background-color: #f5f5f5; }", css);
+        Assert.Contains(".site-footer.has-columns { background-color: #f5f5f5; }", css);
         Assert.Contains("#555555", css);
         Assert.DoesNotContain("rgba(255, 255, 255, 0.72)", css);
     }
