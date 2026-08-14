@@ -177,7 +177,7 @@ public class FooterTests : IDisposable
 
         var page = ReadPage("Photographs");
         Assert.Contains("href=\"https://example.test/channel\"", page);
-        Assert.Contains("target=\"_blank\" rel=\"noopener\"", page);
+        Assert.Contains("target=\"_blank\" rel=\"noopener noreferrer\"", page);
     }
 
     [AvaloniaFact]
@@ -261,6 +261,151 @@ public class FooterTests : IDisposable
 
         Assert.Contains(result.Warnings, w => w.Contains("Sneaky") && w.Contains("iconColor"));
         Assert.DoesNotContain("background:url", page);
+    }
+
+    [AvaloniaFact]
+    public void AQuoteInALinkCannotEscapeTheHrefAttribute()
+    {
+        MakeCollection("Photographs");
+
+        // The realistic case is a pasted URL carrying a quote, not an attack — but either way it
+        // must not close the attribute and turn the rest of the line into markup.
+        Generate(Config(
+            new FooterItem { Title = "Pasted", Link = "https://example.test/a\" onmouseover=\"alert(1)" },
+            new FooterItem { Title = "Site Path", Link = "/page\" onmouseover=\"alert(1)" }));
+
+        var footer = ReadFooter();
+        Assert.DoesNotContain("onmouseover=\"", footer);
+        Assert.Contains("&quot;", footer);
+        // Both rows still render — escaping is not dropping them.
+        Assert.Contains("Pasted", footer);
+        Assert.Contains("Site Path", footer);
+    }
+
+    [AvaloniaFact]
+    public void ABrandIconGetsItsOwnColoursWithoutBeingAsked()
+    {
+        MakeCollection("Photographs");
+
+        // The whole point: bi-youtube on its own must not render as a mark with the footer showing
+        // through the play triangle, which is the wrong-looking result and the easiest to get.
+        Generate(Config(new FooterItem { Title = "Watch", Icon = "bi-youtube", Link = "https://example.test/a" }));
+
+        var footer = ReadFooter();
+        Assert.Contains("style=\"color:#ff0000\"", footer);
+        Assert.Contains("--knockout:#ffffff", footer);
+        Assert.Contains("footer-icon-knockout", footer);
+    }
+
+    [AvaloniaFact]
+    public void AnOrdinaryIconGetsNoColoursOfItsOwn()
+    {
+        MakeCollection("Photographs");
+
+        Generate(Config(new FooterItem { Title = "Contact", Icon = "bi-envelope", Link = "https://example.test/a" }));
+
+        var footer = ReadFooter();
+        Assert.DoesNotContain("style=\"color:", footer);
+        Assert.DoesNotContain("footer-icon-knockout", footer);
+    }
+
+    [AvaloniaFact]
+    public void SayingEitherColourTurnsTheBrandDefaultsOff()
+    {
+        MakeCollection("Photographs");
+
+        // Naming a colour is the author taking charge of the mark; filling in the other half of a
+        // brand's palette underneath them would be a surprise.
+        Generate(Config(new FooterItem
+        {
+            Title = "Muted",
+            Icon = "bi-youtube",
+            IconColor = "#999999",
+            Link = "https://example.test/a",
+        }));
+
+        var footer = ReadFooter();
+        Assert.Contains("style=\"color:#999999\"", footer);
+        Assert.DoesNotContain("#ff0000", footer);
+        Assert.DoesNotContain("footer-icon-knockout", footer);
+    }
+
+    [AvaloniaFact]
+    public void AMailtoLinkWorksAndDoesNotOpenAnEmptyTab()
+    {
+        MakeCollection("Photographs");
+
+        Generate(Config(new FooterItem { Title = "Mail Us", Link = "mailto:hello@example.test" }));
+
+        var footer = ReadFooter();
+        Assert.Contains("href=\"mailto:hello@example.test\"", footer);
+        // Absolute, so it takes no prefix — but it hands off to a mail client rather than loading a
+        // page, and a new tab for that just leaves an empty one behind.
+        Assert.DoesNotContain("target=\"_blank\"", footer);
+        Assert.DoesNotContain("../mailto", footer);
+    }
+
+    [AvaloniaFact]
+    public void AnExternalLinkDisclaimsTheReferrerAsWellAsTheOpener()
+    {
+        MakeCollection("Photographs");
+
+        Generate(Config(new FooterItem { Title = "Off Site", Link = "https://example.test/a" }));
+
+        Assert.Contains("rel=\"noopener noreferrer\"", ReadFooter());
+    }
+
+    [AvaloniaFact]
+    public void AColumnOutsideTheRangeIsMovedAndSaidSo()
+    {
+        MakeCollection("Photographs");
+
+        var result = Generate(Config(
+            new FooterItem { Column = 99, Title = "TooHigh", Link = "https://example.test/a" },
+            new FooterItem { Column = 0, Title = "TooLow", Link = "https://example.test/b" },
+            new FooterItem { Column = 2, Title = "Fine", Link = "https://example.test/c" }));
+
+        Assert.Contains(result.Warnings, w => w.Contains("TooHigh") && w.Contains("column 99"));
+        Assert.Contains(result.Warnings, w => w.Contains("TooLow") && w.Contains("column 0"));
+        // A column that was already in range says nothing.
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("Fine"));
+
+        // Still rendered, just moved — clamping is not dropping them.
+        var footer = ReadFooter();
+        Assert.Contains("TooHigh", footer);
+        Assert.Contains("TooLow", footer);
+    }
+
+    [AvaloniaFact]
+    public void AHexColourIsAcceptedOnlyAtTheLengthsCssHas()
+    {
+        MakeCollection("Photographs");
+
+        var result = Generate(Config(
+            new FooterItem { Title = "Shorthand", Icon = "bi-lock", IconColor = "#f00", Link = "https://example.test/a" },
+            new FooterItem { Title = "Alpha", Icon = "bi-lock", IconColor = "#f00f", Link = "https://example.test/b" },
+            new FooterItem { Title = "Nonsense", Icon = "bi-lock", IconColor = "#12345", Link = "https://example.test/c" }));
+
+        var footer = ReadFooter();
+        Assert.Contains("color:#f00\"", footer);
+        Assert.Contains("color:#f00f\"", footer);
+        // Five digits is not a CSS colour, and IsDarkColor could not read it either.
+        Assert.DoesNotContain("#12345", footer);
+        Assert.Contains(result.Warnings, w => w.Contains("Nonsense") && w.Contains("iconColor"));
+    }
+
+    [AvaloniaFact]
+    public void AFourDigitFooterColourIsReadForDarknessRatherThanAssumedDark()
+    {
+        MakeCollection("Photographs");
+
+        var config = Config();
+        config.FooterColor = "#fffe";   // very light, with alpha
+        Generate(config);
+
+        var css = File.ReadAllText(Path.Combine(_root, "_site", "css", "site.css"));
+        Assert.Contains("#555555", css);
+        Assert.DoesNotContain("rgba(255, 255, 255, 0.72)", css);
     }
 
     [AvaloniaFact]

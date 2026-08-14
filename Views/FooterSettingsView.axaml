@@ -71,7 +71,7 @@
             <Button Content="Move down" HorizontalAlignment="Stretch"
                     Command="{Binding MoveDownCommand}"/>
             <TextBlock TextWrapping="Wrap" Foreground="#999" FontSize="11" Margin="0,8,0,0"
-                       Text="Icon fill shows through a brand icon's cut-out — set it to #ffffff for a YouTube or Facebook mark."/>
+                       Text="Brand icons like bi-youtube colour themselves. Fill in either colour only to override that."/>
         </StackPanel>
 
         <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}">

@@ -7,7 +7,10 @@
           <ul class="list-unstyled mb-0">
             {{- for item in column }}
             <li class="mb-3">
-              <a class="footer-link d-flex align-items-center gap-2" href="{{ if item.absolute }}{{ item.href }}{{ else }}{{ prefix }}{{ item.href }}{{ end }}"{{ if item.absolute }} target="_blank" rel="noopener"{{ end }}>
+              {{## Escaped like every other authored field: the scheme is checked before a link is
+                  called absolute, but the rest of it is whatever was typed, and a quote in a pasted
+                  URL would otherwise close the attribute and turn the tail into markup. ##}}
+              <a class="footer-link d-flex align-items-center gap-2" href="{{ if item.absolute }}{{ item.href | html.escape }}{{ else }}{{ prefix }}{{ item.href | html.escape }}{{ end }}"{{ if item.new_tab }} target="_blank" rel="noopener noreferrer"{{ end }}>
                 {{- if item.icon != "" }}
                 <span class="footer-icon{{ if item.icon_background != "" }} footer-icon-knockout{{ end }}"{{ if item.icon_background != "" }} style="--knockout:{{ item.icon_background }}"{{ end }}><i class="bi {{ item.icon }} fs-5"{{ if item.icon_color != "" }} style="color:{{ item.icon_color }}"{{ end }} aria-hidden="true"></i></span>
                 {{- end }}

@@ -618,8 +618,12 @@ public static class SiteGenerator
         }
     }
 
+    // A bare "--" is excluded for the same reason a bare "-" is: a marker needs a name after it,
+    // and without this the folder called "--" would be treated as menu-only while PublicName —
+    // which leaves it alone — kept it addressed at "--".
     private static bool IsMenuOnly(DirectoryTreeItem item) =>
-        item.IsDirectory && item.Name.Length > 1 && item.Name[0] == MenuOnlyPrefix;
+        item.IsDirectory && item.Name.Length > 1 && item.Name[0] == MenuOnlyPrefix
+        && item.Name != UnlistedPrefix;
 
     /// <summary>
     /// Kept out of the menu as well as the cards. A superset of <see cref="IsMenuOnly"/>, which
@@ -644,8 +648,17 @@ public static class SiteGenerator
     /// </remarks>
     private static string PublicName(string name)
     {
-        if (name.Length > 2 && name.StartsWith(UnlistedPrefix, StringComparison.Ordinal)) name = name[2..];
-        else if (name.Length > 1 && name[0] == MenuOnlyPrefix) name = name[1..];
+        if (name.StartsWith(UnlistedPrefix, StringComparison.Ordinal))
+        {
+            // A bare "--" is a name, so it keeps both dashes; stripping one would publish it at "-"
+            // and quietly claim the single-dash marker on the author's behalf.
+            if (name.Length > 2) name = name[2..];
+        }
+        else if (name.Length > 1 && name[0] == MenuOnlyPrefix)
+        {
+            name = name[1..];
+        }
+
         if (name.Length > 1 && name[^1] == HomePromotedSuffix) name = name[..^1];
         return name;
     }
@@ -737,8 +750,12 @@ public static class SiteGenerator
     /// the page's own <c>prefix</c>, which differs by depth — so the distinction has to survive to
     /// the template rather than being baked in here.
     /// </param>
+    /// <param name="NewTab">
+    /// Separate from <paramref name="Absolute"/> because a mailto: is also absolute but hands off to
+    /// a mail client — opening a tab for it just leaves an empty one behind.
+    /// </param>
     private sealed record FooterLink(
-        string Href, bool Absolute,
+        string Href, bool Absolute, bool NewTab,
         string Icon, string IconColor, string IconBackground,
         string Title, string Note);
 
@@ -746,7 +763,46 @@ public static class SiteGenerator
     private const int MaxFooterColumns = 4;
 
     private static readonly Regex IconNamePattern = new(@"^bi-[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.Compiled);
-    private static readonly Regex HexColorPattern = new(@"^#[0-9a-fA-F]{3,8}$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The house colours of the brand glyphs, and the fill their cut-out wants.
+    /// </summary>
+    /// <remarks>
+    /// A brand mark has one right answer and everybody knows what it is, so <c>icon: bi-youtube</c>
+    /// on its own produces it rather than a monochrome badge with the footer showing through the
+    /// play triangle — which is the one result nobody wants and the easiest to get by accident.
+    /// Setting either colour on the row turns this off completely, so an author who wants the mark
+    /// to match the rest of the column says so and gets exactly that.
+    /// </remarks>
+    private static readonly IReadOnlyDictionary<string, (string Color, string Background)> BrandColors =
+        new Dictionary<string, (string, string)>(StringComparer.Ordinal)
+        {
+            { "bi-youtube",   ("#ff0000", "#ffffff") },
+            { "bi-facebook",  ("#1877f2", "#ffffff") },
+            { "bi-instagram", ("#e4405f", "#ffffff") },
+            { "bi-linkedin",  ("#0a66c2", "#ffffff") },
+            { "bi-twitter",   ("#1da1f2", "#ffffff") },
+            { "bi-twitter-x", ("#000000", "#ffffff") },
+            { "bi-github",    ("#181717", "#ffffff") },
+            { "bi-mastodon",  ("#6364ff", "#ffffff") },
+            { "bi-tiktok",    ("#000000", "#ffffff") },
+            { "bi-whatsapp",  ("#25d366", "#ffffff") },
+            { "bi-telegram",  ("#26a5e4", "#ffffff") },
+            { "bi-pinterest", ("#bd081c", "#ffffff") },
+            { "bi-reddit",    ("#ff4500", "#ffffff") },
+            { "bi-vimeo",     ("#1ab7ea", "#ffffff") },
+            { "bi-twitch",    ("#9146ff", "#ffffff") },
+            { "bi-discord",   ("#5865f2", "#ffffff") },
+            { "bi-spotify",   ("#1db954", "#ffffff") },
+            { "bi-threads",   ("#000000", "#ffffff") },
+            { "bi-bluesky",   ("#0285ff", "#ffffff") },
+            { "bi-slack",     ("#4a154b", "#ffffff") },
+            { "bi-medium",    ("#000000", "#ffffff") },
+        };
+    // The lengths CSS actually has: #rgb, #rgba, #rrggbb, #rrggbbaa. A flat 3-to-8 range also let
+    // through #12345, which is not a colour at all and which IsDarkColor could not read either.
+    private static readonly Regex HexColorPattern =
+        new(@"^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$", RegexOptions.Compiled);
 
     /// <summary>
     /// The configured footer rows, grouped into columns and resolved to hrefs. Empty columns close
@@ -763,17 +819,27 @@ public static class SiteGenerator
         foreach (var item in config.FooterItems)
         {
             var title = item.Title ?? string.Empty;
-            var (href, absolute) = ResolveFooterLink(item, title, targets, warnings);
+            var (href, absolute, newTab) = ResolveFooterLink(item, title, targets, warnings);
             if (href == null) continue;
 
             var column = Math.Clamp(item.Column, 1, MaxFooterColumns);
+            if (column != item.Column)
+                warnings.Add($"Footer item \"{title}\" asks for column {item.Column}, which isn't between 1 and {MaxFooterColumns}, so it went in column {column}.");
+
             if (!columns.TryGetValue(column, out var rows)) columns[column] = rows = [];
 
+            var icon = SanitizeIcon(item.Icon, title, warnings);
+            var color = SanitizeColor(item.IconColor, "iconColor", title, warnings);
+            var background = SanitizeColor(item.IconBackground, "iconBackground", title, warnings);
+
+            // Only when the row says nothing about colour at all: naming either one is the author
+            // taking charge of how the mark looks, and half a brand's colours is nobody's intent.
+            if (color.Length == 0 && background.Length == 0 && BrandColors.TryGetValue(icon, out var brand))
+                (color, background) = brand;
+
             rows.Add(new FooterLink(
-                href, absolute,
-                SanitizeIcon(item.Icon, title, warnings),
-                SanitizeColor(item.IconColor, "iconColor", title, warnings),
-                SanitizeColor(item.IconBackground, "iconBackground", title, warnings),
+                href, absolute, newTab,
+                icon, color, background,
                 title,
                 item.Note ?? string.Empty));
         }
@@ -785,39 +851,42 @@ public static class SiteGenerator
     /// Where a footer row points, and whether that href stands alone. Null href means the row can't
     /// be published and has already been warned about.
     /// </summary>
-    private static (string? Href, bool Absolute) ResolveFooterLink(
+    private static (string? Href, bool Absolute, bool NewTab) ResolveFooterLink(
         FooterItem item, string title, IReadOnlyDictionary<string, string?> targets, ConcurrentBag<string> warnings)
     {
         var link = (item.Link ?? string.Empty).Trim();
         if (link.Length == 0)
         {
             warnings.Add($"Footer item \"{title}\" has no link, so it was left out of the footer.");
-            return (null, false);
+            return (null, false, false);
         }
 
-        // Off-site, or a mail link: taken as written. The site knows nothing about where it goes.
+        // Off-site: taken as written. The site knows nothing about where it goes.
         if (link.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
-            link.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-            link.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))
-            return (link, true);
+            link.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            return (link, true, true);
+
+        // Also absolute, but it hands off to a mail client rather than loading a page.
+        if (link.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))
+            return (link, true, false);
 
         // A page dir2site didn't generate. Root-relative, so it still takes the page's prefix.
-        if (link[0] == '/') return (link.TrimStart('/'), false);
+        if (link[0] == '/') return (link.TrimStart('/'), false, false);
 
         var key = link.Replace('\\', '/').TrimStart('.', '/');
         if (!targets.TryGetValue(key, out var href))
         {
             warnings.Add($"Footer item \"{title}\" points at {link}, which isn't in the project, so it was left out of the footer.");
-            return (null, false);
+            return (null, false, false);
         }
 
         if (href == null)
         {
             warnings.Add($"Footer item \"{title}\" points at {link}, which is a video and has no page of its own, so it was left out of the footer.");
-            return (null, false);
+            return (null, false, false);
         }
 
-        return (href, false);
+        return (href, false, false);
     }
 
     /// <summary>
@@ -896,7 +965,9 @@ public static class SiteGenerator
     private static bool IsDarkColor(string hex)
     {
         var value = hex.TrimStart('#');
-        if (value.Length == 3)
+        // Shorthand doubles each digit; the alpha one expands to eight, whose first six are the
+        // colour. Opacity doesn't change which way the text has to go, so it is ignored either way.
+        if (value.Length is 3 or 4)
             value = string.Concat(value.Select(c => new string(c, 2)));
         if (value.Length < 6 ||
             !int.TryParse(value[..2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r) ||
@@ -939,6 +1010,7 @@ public static class SiteGenerator
             var obj = new ScriptObject();
             obj.SetValue("href", link.Href, readOnly: true);
             obj.SetValue("absolute", link.Absolute, readOnly: true);
+            obj.SetValue("new_tab", link.NewTab, readOnly: true);
             obj.SetValue("icon", link.Icon, readOnly: true);
             obj.SetValue("icon_color", link.IconColor, readOnly: true);
             obj.SetValue("icon_background", link.IconBackground, readOnly: true);

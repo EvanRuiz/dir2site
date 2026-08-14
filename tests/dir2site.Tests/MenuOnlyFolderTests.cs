@@ -240,17 +240,28 @@ public class MenuOnlyFolderTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void ADoubleDashOnItsOwnIsNotTheUnlistedMarker()
+    public void ADoubleDashOnItsOwnIsAName()
     {
-        // Each marker needs a name after it, so "--" isn't the unlisted one — it is the single-dash
-        // marker on a folder named "-", which is what it already meant before "--" existed. Odd, but
-        // unchanged, and it keeps both rules stated the same way.
+        // Every marker needs a name after it, so a folder called "--" is left alone exactly as "-"
+        // and "+" are — published at "--", and an ordinary folder rather than a marked one.
         MakeFolder("--");
 
         Generate();
 
-        Assert.True(Directory.Exists(SitePath("-")));
-        Assert.Contains("nav-link\" href=\"-/\"", ReadPage());
+        Assert.True(Directory.Exists(SitePath("--")));
+        Assert.False(Directory.Exists(SitePath("-")));
+        Assert.Contains("nav-link\" href=\"--/\"", ReadPage());
+    }
+
+    [AvaloniaFact]
+    public void AThirdDashIsTheUnlistedMarkerOnAFolderNamedWithADash()
+    {
+        MakeFolder("---Odd");
+
+        Generate();
+
+        Assert.True(Directory.Exists(SitePath("-Odd")));
+        Assert.DoesNotContain("nav-link\" href=\"-Odd/\"", ReadPage());
     }
 
     [AvaloniaFact]

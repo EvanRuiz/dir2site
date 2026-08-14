@@ -293,12 +293,24 @@ something that isn't in the project is reported by Generate Site and left out of
 **`icon`** is a [Bootstrap Icons](https://icons.getbootstrap.com/) name, with or without its `bi-`
 prefix, and `iconColor` tints it.
 
-**`iconBackground`** is for brand marks. Bootstrap's brand icons are a single shape with the inner
-symbol cut out — `bi-youtube` is a rounded rectangle whose play triangle is a *hole* — so on a dark
-footer that triangle shows the band colour and the logo comes out wrong. Setting `iconBackground`
-to `#ffffff` fills the cut-out, and the glyph itself masks everything around it. Pair it with
-`iconColor` for a correct YouTube, Facebook or Instagram mark. Ordinary single-colour icons don't
-need it.
+**Brand icons colour themselves.** `icon: bi-youtube` alone renders the real mark — red, with a
+white play triangle — and the same goes for Facebook, Instagram, LinkedIn, Mastodon, GitHub, Bluesky
+and the rest of Bootstrap's brand set. You don't have to know a brand's hex code, and you can't
+accidentally ship a logo that looks wrong.
+
+Naming either colour yourself turns that off, so a mark that should match the rest of the column
+rather than shout is one line:
+
+```yaml
+  - icon: bi-youtube
+    iconColor: "#999999"    # deliberately muted; no brand fill applied
+```
+
+**`iconBackground`** is what makes the above work, and is there if you need it directly. Bootstrap's
+brand icons are a single shape with the inner symbol cut out — `bi-youtube` is a rounded rectangle
+whose play triangle is a *hole* — so on a dark footer that triangle would show the band colour.
+`iconBackground` fills the cut-out, and the glyph itself masks everything around it. Ordinary
+single-colour icons don't need it.
 
 **`note`** is a caption line under the link — a maintainer's name, a view count. It is plain text;
 `footer:` remains the one field that takes HTML, which is where the copyright line with its `<br>`
