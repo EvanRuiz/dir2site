@@ -32,17 +32,24 @@
             <Button Content="Keep Them" Command="{Binding KeepCommand}"/>
         </StackPanel>
 
+        <!-- ListBox, not ItemsControl in a ScrollViewer: only a control with its own viewport can
+             virtualise, and a take-down after a big rename can list tens of thousands of files.
+             Realising a checkbox for every one of them freezes the app for a minute before the
+             dialog even appears. -->
         <Border BorderBrush="#444" BorderThickness="1" CornerRadius="4">
-            <ScrollViewer>
-                <ItemsControl ItemsSource="{Binding Items}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:OrphanFileItem">
-                            <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Path}"
-                                      Margin="6,2" FontFamily="Courier New"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
+            <ListBox ItemsSource="{Binding Items}" SelectionMode="Toggle" Background="Transparent">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel/>
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:OrphanFileItem">
+                        <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Path}"
+                                  Margin="6,2" FontFamily="Courier New"/>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Border>
     </DockPanel>
 </Window>
