@@ -107,6 +107,27 @@ public sealed class YamlDocumentEditor
             : ReplaceValue(root, keyNode, value, emitted);
     }
 
+    /// <summary>
+    /// Adds a top-level key, but only when the document doesn't already have one. A key that is
+    /// present keeps whatever it says — including a deliberately blank value, which
+    /// <see cref="Set(string,string)"/> would treat as something to overwrite.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="literal"/> is spliced in as written, so the caller owns its YAML validity —
+    /// this exists for defaults the app itself defines. An empty literal is written as a bare
+    /// <c>key:</c>, the way the scaffolded templates spell it, rather than as a quoted empty string.
+    /// </remarks>
+    public bool AddIfAbsent(string key, string literal)
+    {
+        var root = Root();
+        if (root == null) return false;
+
+        if (root.Children.Keys.OfType<YamlScalarNode>().Any(k => k.Value == key))
+            return true;
+
+        return AddKey(root, key, literal, emitted: literal);
+    }
+
     /// <summary>Applies several top-level keys, stopping at the first that can't be applied.</summary>
     public bool SetAll(IEnumerable<KeyValuePair<string, string>> values) =>
         values.All(kv => Set(kv.Key, kv.Value));
@@ -257,7 +278,10 @@ public sealed class YamlDocumentEditor
             ? (int)firstKey.Start.Column - 1
             : 0;
 
-        var line = new string(' ', indent) + key + ": " + (emitted ?? Emit(value, indent));
+        // An empty emission is a key with no value at all ("credit:"); anything else takes the
+        // space. Without the distinction the line would carry a trailing space nothing can see.
+        var valueText = emitted ?? Emit(value, indent);
+        var line = new string(' ', indent) + key + (valueText.Length == 0 ? ":" : ": " + valueText);
         var body = _text.TrimEnd('\r', '\n');
         var separator = body.Length == 0 ? "" : Eol;
 

@@ -175,6 +175,14 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 
 .video-source-link { white-space: nowrap; }
 
+/* An artifact's link out to its source. The colour is stated on both states so Bootstrap's own
+   link-hover variable can't pull it back to the theme blue halfway through a hover. */
+.artifact-link { color: {{ site.secondary_color }}; text-decoration: none; }
+.artifact-link:hover,
+.artifact-link:focus { color: {{ site.secondary_color }}; text-decoration: underline; }
+/* Inside the anchor, so it inherits the colour and is part of the same click target. */
+.artifact-link .bi { margin-left: 0.3rem; font-size: 0.9em; vertical-align: baseline; }
+
 /* Markdown artifact */
 
 /* The 820px column is also MarkdownPreviewRenderer.SiteColumnWidth, which reads an authored

@@ -247,6 +247,22 @@ public class VideoArtifactTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void AUrlInTheYamlSendsTheCardsLinkSomewhereElse()
+    {
+        // Everywhere else `url` is the artifact's link out; a video has no page to put it on, so it
+        // takes over the card's link — the talk's own page rather than the upload.
+        var folder = MakeFolder("Videos");
+        MakeVideo(folder, "Talk.url", "https://youtu.be/AbCdEfGhIjK",
+            extra: "url: https://example.org/talks/2026\nurl-text: About this talk");
+
+        Generate();
+        var page = ReadPage("Videos");
+
+        Assert.Contains("https://example.org/talks/2026", page);
+        Assert.Contains("About this talk", page);
+    }
+
+    [AvaloniaFact]
     public void WithoutUrlTextThereIsNoOutboundLink()
     {
         // Opting in via url-text keeps the card free of a link the site owner didn't ask for.
