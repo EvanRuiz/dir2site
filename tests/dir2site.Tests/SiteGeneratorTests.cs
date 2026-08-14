@@ -521,15 +521,14 @@ public class SiteGeneratorTests : IDisposable
     /// and none of those leaves a trace the user could act on.
     /// </summary>
     /// <remarks>
-    /// Unix only: it needs a directory that exists and refuses to be listed, and there is no
-    /// portable way to arrange that. <see cref="AvaloniaFact"/> can't carry SkippableFact's runtime
-    /// skip, hence the early return rather than a proper skip.
+    /// Runs on Windows and Unix alike — see <see cref="UnreadableDirectory"/>. Windows is where
+    /// this matters most: cloud-synced folders, network shares and virus scanners are the triggers.
+    /// If the machine won't let the directory be made unreadable (an elevated session can bypass a
+    /// deny ACE) the test says so rather than passing on a readable folder.
     /// </remarks>
     [AvaloniaFact]
     public void AnUnreadableFolder_TakesTheWholeRemovalOfferOffTheTable()
     {
-        if (OperatingSystem.IsWindows()) return;
-
         var articles = MakeFolder("Articles");
         MakeArtifact(articles, "Letter.jpg", "A Letter");
         MakeArtifact(articles, "Memo.jpg", "A Memo");
@@ -539,9 +538,13 @@ public class SiteGeneratorTests : IDisposable
         Assert.Empty(Generate(Config()).Orphans);
         Assert.True(File.Exists(SitePath("Articles", "_media", "figure.webp")));
 
-        File.SetUnixFileMode(articles, UnixFileMode.None);
-        try
+        using (var denied = UnreadableDirectory.Make(articles))
         {
+            // Loud rather than quiet: a pass on a directory that stayed readable would be no
+            // coverage at all, on the platform where this failure is most likely.
+            Assert.True(denied != null,
+                "could not make the folder unreadable, so this test proved nothing");
+
             var result = Generate(Config());
 
             // Nothing offered, and the reason said out loud — the alternative was silently
@@ -549,13 +552,38 @@ public class SiteGeneratorTests : IDisposable
             Assert.Empty(result.Orphans);
             Assert.Contains(result.Warnings, w => w.Contains("could not be read"));
         }
-        finally
-        {
-            File.SetUnixFileMode(articles,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        }
 
         Assert.True(File.Exists(SitePath("Articles", "_media", "figure.webp")));
+    }
+
+    /// <summary>
+    /// A file that won't copy is reported, and everything else still generates. Letting it escape
+    /// took the whole generate down — and the caller cleared its busy flag after the await, so the
+    /// window came back with every button disabled and nothing said, which is a hang as far as
+    /// anyone using it is concerned. Locked and unreadable files are ordinary on Windows.
+    /// </summary>
+    [AvaloniaFact]
+    public void AFileThatWillNotCopy_IsReportedRatherThanEndingTheGenerate()
+    {
+        var documents = MakeFolder("Documents");
+        MakeArtifact(documents, "Letter.jpg", "A Letter");
+        MakeArtifact(documents, "Memo.jpg", "A Memo");
+        var media = MakeFolder("_media", "figures");
+        File.WriteAllText(Path.Combine(media, "figure.webp"), "not really a webp");
+
+        Generate(Config());
+
+        // Block the destination by putting a file where its folder has to go. Portable, and the
+        // same shape as anything else that makes a copy fail part-way through a run.
+        Directory.Delete(SitePath("_media", "figures"), recursive: true);
+        File.WriteAllText(SitePath("_media", "figures"), "in the way");
+
+        var result = Generate(Config());
+
+        Assert.Contains(result.Errors, e => e.Contains("figure.webp"));
+        // The rest of the site still generated rather than stopping at the bad file.
+        Assert.True(File.Exists(SitePath("Documents", "index.html")));
+        Assert.True(File.Exists(SitePath("index.html")));
     }
 
     /// <summary>

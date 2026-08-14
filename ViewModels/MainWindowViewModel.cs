@@ -511,25 +511,41 @@ public partial class MainWindowViewModel : ViewModelBase
         var sink = new Progress<GenerateProgress>(OnGenerateProgress);
         var tracker = new GenerateProgressTracker(sink);
 
-        // Re-scan from disk so any YAML edits since last load are picked up
-        tracker.Report("Scanning for changes...");
-        var updatedYamls = new List<string>();
-        var freshRoot = await Task.Run(() =>
+        (string Summary, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings,
+            IReadOnlyList<string> Orphans) result;
+        try
         {
-            var files     = new List<string>();
-            var artifacts = new List<string>();
-            return DirectoryTraverser.BuildTree(DirectoryRoot!, files, artifacts, tracker, updatedYamls);
-        });
-        ReportUpdatedYamls(updatedYamls);
+            // Re-scan from disk so any YAML edits since last load are picked up
+            tracker.Report("Scanning for changes...");
+            var updatedYamls = new List<string>();
+            var freshRoot = await Task.Run(() =>
+            {
+                var files     = new List<string>();
+                var artifacts = new List<string>();
+                return DirectoryTraverser.BuildTree(DirectoryRoot!, files, artifacts, tracker, updatedYamls);
+            });
+            ReportUpdatedYamls(updatedYamls);
 
-        // Generate previews first so site settings (PDF resize/quality) affect output
-        tracker.Report("Generating previews...");
-        var root = freshRoot;
-        await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, tracker));
+            // Generate previews first so site settings (PDF resize/quality) affect output
+            tracker.Report("Generating previews...");
+            var root = freshRoot;
+            await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, tracker));
 
-        tracker.Report("Generating site...");
-        var result = await Task.Run(() =>
-            SiteGenerator.Generate(DirectoryRoot, root, config, tracker));
+            tracker.Report("Generating site...");
+            result = await Task.Run(() =>
+                SiteGenerator.Generate(DirectoryRoot, root, config, tracker));
+        }
+        catch (Exception ex)
+        {
+            // Whatever went wrong, the app has to come back. IsLoading gates every button on the
+            // window, so an escaping exception left it stuck on with nothing said — indisting-
+            // uishable from a hang, and the scan and preview stages both touch every file in the
+            // project, which is where a locked or unreadable one shows up.
+            IsLoading = false;
+            StatusText = "Generate failed";
+            AppendError(ex.Message);
+            return;
+        }
 
         IsLoading = false;
         StatusText = result.Summary;

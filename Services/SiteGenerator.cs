@@ -77,7 +77,23 @@ public static class SiteGenerator
         tracker.SetFileTotal(copyJobs.Count);
         foreach (var job in copyJobs)
         {
-            tracker.FileDone(CopyFileIfDifferent(job.Src, job.Dest, ledger, progress, job.Label));
+            // A file that won't copy is reported and the rest still go. Letting it escape took the
+            // whole generate down with it — and since the caller resets its "busy" flag after the
+            // await, the app was left spinning with every button disabled and nothing said. Locked
+            // files are ordinary on Windows: an indexer, a virus scanner, the preview server, or a
+            // cloud-synced original that won't come back down on demand.
+            try
+            {
+                tracker.FileDone(CopyFileIfDifferent(job.Src, job.Dest, ledger, progress, job.Label));
+            }
+            catch (Exception ex)
+            {
+                // The destination is already in the ledger — registered before the copy was
+                // attempted — so a file that failed to copy keeps whatever is in the site rather
+                // than being offered for deletion on top of the error.
+                errors.Add($"{job.Label}: {ex.Message}");
+                tracker.FileDone(Change.None);
+            }
         }
 
         // Last, so that everything this run meant to put in the site has been registered. A run
