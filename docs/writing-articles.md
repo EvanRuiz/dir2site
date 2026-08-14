@@ -87,7 +87,9 @@ The article text flows beside the figure, then continues at full width below it.
   - `.figure-left` — floats left, text wraps on the right
   - `.figure-center` — centered block, text above and below (hero image, diagram)
   - with no `.figure-*` class, a `^^^` block is simply a centered figure
-- `{width=220}` sets the image width in pixels (optional).
+- `{width=220}` sets the image width in pixels (optional). A stated width is what the reader gets,
+  narrowing only when the window is too small for it. Without one, a floated figure is capped at
+  45% of the text column so it always leaves room to wrap beside.
 
 ### Alternative: figure containers and raw HTML
 

@@ -207,6 +207,12 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 .markdown-body img.figure-right { float: right; margin: 0.3em 0 1.2em 1.6em; }
 .markdown-body img.figure-left  { float: left;  margin: 0.3em 1.6em 1.2em 0; }
 .markdown-body img.figure-center { display: block; margin: 1.4em auto; }
+/* A bare classed image — no ^^^ and no ::: — has no box around it to carry the guard, so it needs
+   its own; the container rules used to supply this by accident. An authored width replaces it, as
+   it does on the figure. The wrapped forms escape it through the higher-specificity rules below,
+   so this stays at plain img.figure-* specificity. */
+.markdown-body img.figure-right, .markdown-body img.figure-left { max-width: 45%; }
+.markdown-body img.figure-right[width], .markdown-body img.figure-left[width] { max-width: 100%; }
 
 /* The ^^^ form puts the class on the <img>, because that is where the author writes
    {.figure-right} — but floating the image leaves the <figcaption> as a full-width block
@@ -227,7 +233,7 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 .markdown-body figure:has(img[width]) { max-width: 100%; }
 .markdown-body figure img.figure-right,
 .markdown-body figure img.figure-left,
-.markdown-body figure img.figure-center { float: none; margin: 0; }
+.markdown-body figure img.figure-center { float: none; margin: 0; max-width: 100%; }
 .markdown-body figure p { margin: 0; }
 .markdown-body .figure-right img, .markdown-body .figure-left img, .markdown-body .figure-center img,
 .markdown-body figure img {
@@ -240,7 +246,13 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 /* The same for the container and raw-HTML forms, whose picture is a plain <img> inside the box. */
 .markdown-body :not(img).figure-right:has(img[width]),
 .markdown-body :not(img).figure-left:has(img[width]) { max-width: 100%; }
-/* Zero width with a 100% minimum takes the caption out of the figure's intrinsic sizing while
-   still filling it: without this a caption longer than the picture widens the whole box, and the
-   image's authored width no longer describes what the reader sees. */
-.markdown-body figure figcaption { width: 0; min-width: 100%; }
+/* Zero width with a 100% minimum takes the caption out of the box's intrinsic sizing while still
+   filling it: without this a caption longer than the picture widens the whole box, and the image's
+   authored width no longer describes what the reader sees.
+
+   The container form needs it too, where the caption is a plain <p> rather than a <figcaption>:
+   :only-child excludes a container holding nothing but its picture, whose one paragraph is the
+   image's, not a caption. */
+.markdown-body figure figcaption,
+.markdown-body :not(img).figure-right > p:last-child:not(:only-child),
+.markdown-body :not(img).figure-left  > p:last-child:not(:only-child) { width: 0; min-width: 100%; }

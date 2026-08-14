@@ -30,6 +30,11 @@ public static partial class MarkdownPreviewRenderer
     private const int SmallWidth = 800, SmallHeight = 600;
     private const float Pad = 44f;
 
+    // The gutter between a floated figure and the text beside it, and the narrowest that text
+    // column is allowed to get before the figure stops floating — about six words at the 24px
+    // body size, below which a card reads as a ragged sliver rather than a paragraph.
+    private const float FloatGap = 26f, MinTextBand = 330f;
+
     // The column the published article is laid out in (.markdown-body's max-width in
     // Assets/templates/site-css.html). An authored figure width is read as a fraction of it, so
     // this preview and the page agree about how big a figure looks. SiteColumnWidthTests fails if
@@ -439,8 +444,19 @@ public static partial class MarkdownPreviewRenderer
                     ? Math.Clamp(authored / SiteColumnWidth * contentWidth, 120f, contentWidth)
                     : Math.Clamp(230f * 1.45f, 240f, contentWidth * 0.42f);
                 float hf = wf * bmp.Height / bmp.Width;
-                float fx = figure.Align == FigureAlign.Left ? x0
-                         : figure.Align == FigureAlign.Right ? x1 - wf
+
+                // Floating only helps while a readable column survives beside the picture. Past
+                // that the band degrades to two words a line, and a figure wide enough to push its
+                // edge beyond x1 would spill words into the right margin, since FlowText always
+                // places at least one word. So a figure that wide stops floating and takes the
+                // text below it instead — which is how the page reads at that size anyway.
+                var align = figure.Align != FigureAlign.Center
+                            && contentWidth - wf - FloatGap < MinTextBand
+                    ? FigureAlign.Center
+                    : figure.Align;
+
+                float fx = align == FigureAlign.Left ? x0
+                         : align == FigureAlign.Right ? x1 - wf
                          : x0 + (contentWidth - wf) / 2;
                 float top = y + 4;
 
@@ -452,15 +468,15 @@ public static partial class MarkdownPreviewRenderer
                 float capBottom = DrawCaption(canvas, figure.Caption, fx, wf, top + hf + 22);
                 float bottom = capBottom + 12;
 
-                if (figure.Align == FigureAlign.Center)
+                if (align == FigureAlign.Center)
                 {
                     y = bottom; // centered block in flow; text continues full width below
                 }
                 else
                 {
                     floatRect = (top, bottom,
-                        figure.Align == FigureAlign.Right ? fx - 26 : fx + wf + 26,
-                        figure.Align == FigureAlign.Right);
+                        align == FigureAlign.Right ? fx - FloatGap : fx + wf + FloatGap,
+                        align == FigureAlign.Right);
                 }
             }
         }

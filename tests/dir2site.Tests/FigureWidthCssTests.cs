@@ -90,4 +90,75 @@ public class FigureWidthCssTests
                 + "a container, and clamps it to 45% of the figure. Scope it with :not(img).");
         }
     }
+
+    /// <summary>
+    /// Scoping the container rules with <c>:not(img)</c> took the guard off the one form that had
+    /// nothing else bounding it — a bare <c>![](x.jpg){.figure-left}</c>, no <c>^^^</c> and no
+    /// <c>:::</c> — which then floated at the full column width and left no room to wrap beside.
+    /// The guard has to be restated on the image itself, and an authored width still has to beat it.
+    /// </summary>
+    [Theory]
+    [InlineData("site")]
+    [InlineData("extension")]
+    public void ABareClassedImage_KeepsAGuard_AndStillHonoursAnAuthoredWidth(string which)
+    {
+        var css = which == "site" ? SiteCss() : ExtensionCss();
+
+        var guard = Regex.Match(css, @"img\.figure-(left|right)\b(?![\[:])[^{}]*\{[^{}]*max-width:\s*45%");
+        Assert.True(guard.Success,
+            $"The {which} CSS leaves a bare img.figure-left/right with no width guard, so it floats "
+            + "at the full column width and the text has nowhere to wrap.");
+
+        var honoured = Regex.Match(css, @"img\.figure-(left|right)\[width\][^{}]*\{([^{}]*)\}");
+        Assert.True(honoured.Success && Regex.IsMatch(honoured.Groups[2].Value, @"max-width:\s*100%"),
+            $"The {which} CSS clamps a bare image that states its own width.");
+
+        Assert.True(css.IndexOf("[width]", guard.Index, StringComparison.Ordinal) > guard.Index,
+            "The authored-width rule must follow the guard — same specificity, so order decides.");
+    }
+
+    /// <summary>
+    /// A floated box shrink-wraps to its widest child, so the caption sets the width unless it is
+    /// taken out of the box's intrinsic sizing. <c>&lt;figure&gt;</c> has had that treatment since
+    /// the caption fix; the container form, whose caption is a plain <c>&lt;p&gt;</c>, needs it too
+    /// now that its cap has been lifted — otherwise the picture is again narrower than its caption.
+    /// </summary>
+    [Theory]
+    [InlineData("site")]
+    [InlineData("extension")]
+    public void TheContainersCaption_IsAlsoTakenOutOfTheBoxsIntrinsicSizing(string which)
+    {
+        var css = which == "site" ? SiteCss() : ExtensionCss();
+
+        foreach (var side in new[] { "left", "right" })
+        {
+            var rule = Regex.Match(css,
+                @"(?<selector>[^{}]*\.figure-" + side + @"\s*>\s*p:last-child[^{}]*)\{(?<body>[^{}]*)\}");
+
+            Assert.True(rule.Success,
+                $"The {which} CSS never zero-widths the :::figure-{side} caption, so a caption longer "
+                + "than the picture widens the box past the authored width.");
+            Assert.Matches(@"width:\s*0", rule.Groups["body"].Value);
+            Assert.Matches(@"min-width:\s*100%", rule.Groups["body"].Value);
+
+            // A container holding only its picture has one paragraph — the image's, not a caption.
+            Assert.Contains(":not(:only-child)", rule.Groups["selector"].Value, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// The container form states its width on the image inside it, so lifting the cap needs its own
+    /// rule — the figure one keys on <c>figure:has(…)</c> and never matches a <c>&lt;div&gt;</c>.
+    /// </summary>
+    [Theory]
+    [InlineData("site")]
+    [InlineData("extension")]
+    public void TheContainerForm_AlsoHonoursAnAuthoredWidth(string which)
+    {
+        var css = which == "site" ? SiteCss() : ExtensionCss();
+
+        var rule = Regex.Match(css, @"\.figure-(left|right):has\(img\[width\]\)[^{}]*\{([^{}]*)\}");
+        Assert.True(rule.Success && Regex.IsMatch(rule.Groups[2].Value, @"max-width:\s*100%"),
+            $"The {which} CSS clamps a :::figure-* container whose image states a width.");
+    }
 }
