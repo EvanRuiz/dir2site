@@ -432,9 +432,11 @@ public static partial class MarkdownPreviewRenderer
                 // An authored width is a fraction of the site's column, so it means the same
                 // fraction here. The old fixed ×1.45 with a 240 floor landed width=150 and
                 // width=200 on the same value, which is the one thing a stated width shouldn't do.
-                // Without a width there is nothing to honour, so the original default stands.
+                // Without a width there is nothing to honour, so the original default stands. The
+                // page bounds an authored width by the column and nothing else, so the upper clamp
+                // here is the full content width — a 0.45 cap would shrink what the page honours.
                 float wf = figure.Width is { } authored
-                    ? Math.Clamp(authored / SiteColumnWidth * contentWidth, 120f, contentWidth * 0.45f)
+                    ? Math.Clamp(authored / SiteColumnWidth * contentWidth, 120f, contentWidth)
                     : Math.Clamp(230f * 1.45f, 240f, contentWidth * 0.42f);
                 float hf = wf * bmp.Height / bmp.Width;
                 float fx = figure.Align == FigureAlign.Left ? x0
