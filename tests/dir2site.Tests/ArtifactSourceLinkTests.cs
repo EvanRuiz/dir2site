@@ -87,6 +87,38 @@ public class ArtifactSourceLinkTests : IDisposable
             ArtifactPage("Apple"));
     }
 
+    /// <summary>
+    /// The link belongs beside the credit, not under it: both say where the artifact came from, and
+    /// a row of its own gave one link the weight of a whole line of metadata.
+    /// </summary>
+    [AvaloniaFact]
+    public void TheLinkSharesTheCreditsLine()
+    {
+        MakePhoto("Apple.jpg", "url: https://example.org/apple\nurl-text: See the original");
+        Generate();
+
+        var page = ArtifactPage("Apple");
+        var credit = page.IndexOf("A. Nother", StringComparison.Ordinal);
+        var link = page.IndexOf("artifact-link", StringComparison.Ordinal);
+
+        Assert.InRange(link, credit, page.IndexOf("</p>", credit, StringComparison.Ordinal));
+    }
+
+    /// With no credit there is nothing to sit beside, and no empty line where one would have been.
+    [AvaloniaFact]
+    public void WithoutACreditTheLinkStandsAlone()
+    {
+        var stem = "Apple";
+        File.WriteAllText(Path.Combine(_root, stem + ".jpg"), "not really a jpeg");
+        File.WriteAllText(Path.Combine(_root, stem + ".jpg.yaml"),
+            $"type: photo\ncaption: {stem}\nurl: https://example.org/apple\nurl-text: See the original\n");
+        Generate();
+
+        var page = ArtifactPage(stem);
+        Assert.Contains("artifact-link", page);
+        Assert.DoesNotContain("artifact-meta-sep", page);
+    }
+
     /// Silently dropping a url because its text is blank is the bug this feature came from.
     [AvaloniaFact]
     public void ABlankUrlTextFallsBackToTheAddress()
