@@ -29,10 +29,10 @@ public class BundledVsCodeExtensionTests
     }
 
     private static string VsixPath =>
-        Path.Combine(RepoRoot(), "Assets", "editors", "dir2site-figures.vsix");
+        Path.Combine(RepoRoot(), "Assets", "editors", "dir2site-markdown.vsix");
 
     private static string SourceDir =>
-        Path.Combine(RepoRoot(), "editors", "vscode-dir2site-figures");
+        Path.Combine(RepoRoot(), "editors", "vscode-dir2site-markdown");
 
     /// A failing staleness check should say what to run, not just that something disagrees.
     private const string Repackage =
@@ -51,7 +51,7 @@ public class BundledVsCodeExtensionTests
     public void ThePackageIsShipped()
     {
         Assert.True(File.Exists(VsixPath),
-            "Assets/editors/dir2site-figures.vsix is missing — the install button would have nothing to install."
+            "Assets/editors/dir2site-markdown.vsix is missing — the install button would have nothing to install."
             + Repackage);
     }
 
@@ -72,23 +72,23 @@ public class BundledVsCodeExtensionTests
     {
         // The version alone wouldn't catch a fix made without bumping it, which is the more likely
         // mistake of the two.
-        var source = File.ReadAllText(Path.Combine(SourceDir, "markdown-it-dir2site-figures.js"))
+        var source = File.ReadAllText(Path.Combine(SourceDir, "markdown-it-dir2site.js"))
                          .Replace("\r\n", "\n");
-        var packaged = ReadEntry("extension/markdown-it-dir2site-figures.js").Replace("\r\n", "\n");
+        var packaged = ReadEntry("extension/markdown-it-dir2site.js").Replace("\r\n", "\n");
 
         Assert.True(source == packaged,
-            "The packaged plugin differs from editors/vscode-dir2site-figures." + Repackage);
+            "The packaged plugin differs from editors/vscode-dir2site-markdown." + Repackage);
     }
 
     [Fact]
     public void ThePackagedStylesheetMatchesTheSource()
     {
-        var source = File.ReadAllText(Path.Combine(SourceDir, "media", "dir2site-figures.css"))
+        var source = File.ReadAllText(Path.Combine(SourceDir, "media", "preview.css"))
                          .Replace("\r\n", "\n");
-        var packaged = ReadEntry("extension/media/dir2site-figures.css").Replace("\r\n", "\n");
+        var packaged = ReadEntry("extension/media/preview.css").Replace("\r\n", "\n");
 
         Assert.True(source == packaged,
-            "The packaged stylesheet differs from editors/vscode-dir2site-figures." + Repackage);
+            "The packaged stylesheet differs from editors/vscode-dir2site-markdown." + Repackage);
     }
 
     [Fact]

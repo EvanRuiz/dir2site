@@ -20,7 +20,7 @@ namespace dir2site.Tests;
 /// variables so captions stay readable in a dark theme.
 ///
 /// When one of these fails, copy the changed rule across — <c>Assets/templates/site-css.html</c>
-/// and <c>editors/vscode-dir2site-figures/media/dir2site-figures.css</c> — then repackage with
+/// and <c>editors/vscode-dir2site-markdown/media/preview.css</c> — then repackage with
 /// <c>scripts/package-vscode-extension.sh</c>.
 /// </summary>
 public class FigureCssMirrorTests
@@ -62,7 +62,7 @@ public class FigureCssMirrorTests
         var site = FigureRules(File.ReadAllText(
             Path.Combine(RepoRoot(), "Assets", "templates", "site-css.html")));
         var extension = FigureRules(File.ReadAllText(
-            Path.Combine(RepoRoot(), "editors", "vscode-dir2site-figures", "media", "dir2site-figures.css")));
+            Path.Combine(RepoRoot(), "editors", "vscode-dir2site-markdown", "media", "preview.css")));
 
         // Guards the guard: a selector rename on both sides at once would otherwise pass by
         // comparing nothing at all.
