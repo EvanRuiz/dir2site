@@ -89,6 +89,32 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
         Assert.Empty(r.StaleRemote);
     }
 
+    /// <summary>
+    /// Quick Sync compares against the file list it wrote last time, never against the server, so
+    /// it cannot say how many files up there don't belong — only that its own records name none.
+    /// Printing "0 stale" stated the stronger of those, and it is the one people act on: a file
+    /// removed on the server by other means keeps its local size and mtime, so it is skipped every
+    /// time while the summary reads as though the two sides had been compared.
+    /// </summary>
+    [SkippableFact]
+    public void QuickSync_CountsStaleFilesOnlyWhenItFoundSome()
+    {
+        var d = Seeded(("index.html", "home"), ("_media/figure.webp", "a figure"));
+
+        var first = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        Assert.DoesNotContain("stale", first.Summary);
+
+        // Something the server has and the site doesn't — the one case Quick Sync can speak to,
+        // because its own records name it.
+        Write(d.SiteDir, "gone.html", "temporary");
+        SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        File.Delete(Path.Combine(d.SiteDir, "gone.html"));
+
+        var withStale = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        Assert.Contains("gone.html", withStale.StaleRemote);
+        Assert.Contains("1 stale", withStale.Summary);
+    }
+
     [SkippableFact]
     public void EditedFile_UploadsOnlyThatFile()
     {

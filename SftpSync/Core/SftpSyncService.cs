@@ -273,8 +273,13 @@ public static class SftpSyncService
 
         WriteManifest(client, manifestPath, local, errors);
 
-        var summary = $"Quick Sync: {diff.ToUpload.Count - errors.Count} uploaded, " +
-                      $"{diff.StaleRemote.Count} stale → {profile.Host}{note}";
+        // "0 stale" was a promise Quick Sync is in no position to make: it compares against the
+        // file list it wrote last time, never against the server, so all it really knows is that
+        // its own records name nothing extra. A count is only stated when there is something to
+        // count; silence claims nothing.
+        var stale = diff.StaleRemote.Count > 0 ? $", {diff.StaleRemote.Count} stale" : "";
+        var summary = $"Quick Sync: {diff.ToUpload.Count - errors.Count} uploaded{stale} " +
+                      $"→ {profile.Host}{note}";
         client.Disconnect();
         return new SyncResult(
             summary, diff.ToUpload.Count - errors.Count, diff.StaleRemote, errors, diff.ToUpload);
