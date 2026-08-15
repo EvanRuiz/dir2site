@@ -765,13 +765,13 @@ public static class SiteGenerator
     private static readonly Regex IconNamePattern = new(@"^bi-[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.Compiled);
 
     /// <summary>
-    /// The house colours of the brand glyphs, and the fill their cut-out wants.
+    /// The house colors of the brand glyphs, and the fill their cut-out wants.
     /// </summary>
     /// <remarks>
     /// A brand mark has one right answer and everybody knows what it is, so <c>icon: bi-youtube</c>
     /// on its own produces it rather than a monochrome badge with the footer showing through the
     /// play triangle — which is the one result nobody wants and the easiest to get by accident.
-    /// Setting either colour on the row turns this off completely, so an author who wants the mark
+    /// Setting either color on the row turns this off completely, so an author who wants the mark
     /// to match the rest of the column says so and gets exactly that.
     /// </remarks>
     private static readonly IReadOnlyDictionary<string, (string Color, string Background)> BrandColors =
@@ -800,7 +800,7 @@ public static class SiteGenerator
             { "bi-medium",    ("#000000", "#ffffff") },
         };
     // The lengths CSS actually has: #rgb, #rgba, #rrggbb, #rrggbbaa. A flat 3-to-8 range also let
-    // through #12345, which is not a colour at all and which IsDarkColor could not read either.
+    // through #12345, which is not a color at all and which IsDarkColor could not read either.
     private static readonly Regex HexColorPattern =
         new(@"^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$", RegexOptions.Compiled);
 
@@ -836,8 +836,8 @@ public static class SiteGenerator
             var color = SanitizeColor(item.IconColor, "iconColor", title, warnings);
             var background = SanitizeColor(item.IconBackground, "iconBackground", title, warnings);
 
-            // Only when the row says nothing about colour at all: naming either one is the author
-            // taking charge of how the mark looks, and half a brand's colours is nobody's intent.
+            // Only when the row says nothing about color at all: naming either one is the author
+            // taking charge of how the mark looks, and half a brand's colors is nobody's intent.
             if (color.Length == 0 && background.Length == 0 && BrandColors.TryGetValue(icon, out var brand))
                 (color, background) = brand;
 
@@ -951,33 +951,33 @@ public static class SiteGenerator
         return string.Empty;
     }
 
-    /// <summary>A hex colour, or empty. Stricter than the icon check because it lands in a style attribute.</summary>
+    /// <summary>A hex color, or empty. Stricter than the icon check because it lands in a style attribute.</summary>
     private static string SanitizeColor(string? color, string setting, string title, ConcurrentBag<string> warnings)
     {
         var value = (color ?? string.Empty).Trim();
         if (value.Length == 0) return string.Empty;
         if (HexColorPattern.IsMatch(value)) return value;
 
-        warnings.Add($"Footer item \"{title}\" has a {setting} of \"{color}\", which is not a hex colour like #ff0000, so it was left off.");
+        warnings.Add($"Footer item \"{title}\" has a {setting} of \"{color}\", which is not a hex color like #ff0000, so it was left off.");
         return string.Empty;
     }
 
     /// <summary>
     /// Whether the footer band needs light text on it. The navbar settles this with an explicit
-    /// setting; the footer takes a colour instead, so it has to work the answer out.
+    /// setting; the footer takes a color instead, so it has to work the answer out.
     /// </summary>
     private static bool IsDarkColor(string hex)
     {
         var value = hex.TrimStart('#');
         // Shorthand doubles each digit; the alpha one expands to eight, whose first six are the
-        // colour. Opacity doesn't change which way the text has to go, so it is ignored either way.
+        // color. Opacity doesn't change which way the text has to go, so it is ignored either way.
         if (value.Length is 3 or 4)
             value = string.Concat(value.Select(c => new string(c, 2)));
         if (value.Length < 6 ||
             !int.TryParse(value[..2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r) ||
             !int.TryParse(value.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g) ||
             !int.TryParse(value.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
-            return true;   // The default primary colour is dark, so dark is the safer guess.
+            return true;   // The default primary color is dark, so dark is the safer guess.
 
         // Rec. 601 luma — enough to answer "does this want white text on it".
         return (0.299 * r) + (0.587 * g) + (0.114 * b) < 140;
@@ -1562,8 +1562,8 @@ public static class SiteGenerator
         string siteRoot, Dir2SiteModel config, AvaloniaTemplateLoader loader,
         SiteLedger ledger, IProgress<string>? progress)
     {
-        // The stylesheet needs the colours, not the footer's rows — but it does need the footer
-        // colour and whether that colour is dark, so it goes through the same builder as the pages
+        // The stylesheet needs the colors, not the footer's rows — but it does need the footer
+        // color and whether that color is dark, so it goes through the same builder as the pages
         // rather than keeping a third hand-maintained copy of what "site" means.
         var siteObj = BuildSiteObject(config, []);
 

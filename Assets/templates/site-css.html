@@ -180,12 +180,12 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 
 .video-source-link { white-space: nowrap; }
 
-/* An artifact's link out to its source. The colour is stated on both states so Bootstrap's own
+/* An artifact's link out to its source. The color is stated on both states so Bootstrap's own
    link-hover variable can't pull it back to the theme blue halfway through a hover. */
 .artifact-link { color: {{ site.secondary_color }}; text-decoration: none; }
 .artifact-link:hover,
 .artifact-link:focus { color: {{ site.secondary_color }}; text-decoration: underline; }
-/* Inside the anchor, so it inherits the colour and is part of the same click target. */
+/* Inside the anchor, so it inherits the color and is part of the same click target. */
 .artifact-link .bi { margin-left: 0.3rem; font-size: 0.9em; vertical-align: baseline; }
 /* Only ever between the credit and the link, so it carries its own spacing rather than relying on
    whitespace the template would have to be careful about. */
@@ -198,7 +198,7 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 .site-footer { margin-top: auto; }
 
 /* The band belongs to a footer with columns in it. A lone closing line reads better as a quiet
-   line under the page than as a coloured strip with one sentence marooned in it — which is what
+   line under the page than as a colored strip with one sentence marooned in it — which is what
    every project that never configured a footer would otherwise get. */
 .site-footer.has-columns { background-color: {{ site.footer_color }}; }
 
@@ -207,8 +207,8 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 .site-footer .footer-link { text-decoration: none; }
 .site-footer.has-columns .footer-link:hover { color: {{ if site.footer_dark }}#ffffff{{ else }}#000000{{ end }}; }
 
-/* No band behind it, so it takes the page's own muted grey rather than a colour chosen to sit on
-   the footer colour. */
+/* No band behind it, so it takes the page's own muted grey rather than a color chosen to sit on
+   the footer color. */
 .site-footer:not(.has-columns) .footer-bar { color: #6c757d; }
 
 /* A row whose link didn't resolve: still there, still legible, but plainly not a link. */

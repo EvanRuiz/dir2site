@@ -267,7 +267,7 @@ public class FooterTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void IconColoursReachTheStyleAttributeOnlyWhenTheyAreHex()
+    public void IconColorsReachTheStyleAttributeOnlyWhenTheyAreHex()
     {
         MakeCollection("Photographs");
 
@@ -304,7 +304,7 @@ public class FooterTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void ABrandIconGetsItsOwnColoursWithoutBeingAsked()
+    public void ABrandIconGetsItsOwnColorsWithoutBeingAsked()
     {
         MakeCollection("Photographs");
 
@@ -319,7 +319,7 @@ public class FooterTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void AnOrdinaryIconGetsNoColoursOfItsOwn()
+    public void AnOrdinaryIconGetsNoColorsOfItsOwn()
     {
         MakeCollection("Photographs");
 
@@ -331,11 +331,11 @@ public class FooterTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void SayingEitherColourTurnsTheBrandDefaultsOff()
+    public void SayingEitherColorTurnsTheBrandDefaultsOff()
     {
         MakeCollection("Photographs");
 
-        // Naming a colour is the author taking charge of the mark; filling in the other half of a
+        // Naming a color is the author taking charge of the mark; filling in the other half of a
         // brand's palette underneath them would be a surprise.
         Generate(Config(new FooterItem
         {
@@ -398,7 +398,7 @@ public class FooterTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void AHexColourIsAcceptedOnlyAtTheLengthsCssHas()
+    public void AHexColorIsAcceptedOnlyAtTheLengthsCssHas()
     {
         MakeCollection("Photographs");
 
@@ -410,13 +410,13 @@ public class FooterTests : IDisposable
         var footer = ReadFooter();
         Assert.Contains("color:#f00\"", footer);
         Assert.Contains("color:#f00f\"", footer);
-        // Five digits is not a CSS colour, and IsDarkColor could not read it either.
+        // Five digits is not a CSS color, and IsDarkColor could not read it either.
         Assert.DoesNotContain("#12345", footer);
         Assert.Contains(result.Warnings, w => w.Contains("Nonsense") && w.Contains("iconColor"));
     }
 
     [AvaloniaFact]
-    public void AFourDigitFooterColourIsReadForDarknessRatherThanAssumedDark()
+    public void AFourDigitFooterColorIsReadForDarknessRatherThanAssumedDark()
     {
         MakeCollection("Photographs");
 
@@ -490,14 +490,14 @@ public class FooterTests : IDisposable
         Assert.Contains("has-columns", ReadFooter());
 
         var css = File.ReadAllText(Path.Combine(_root, "_site", "css", "site.css"));
-        // The colour is on the qualified selector, so a footer without columns cannot pick it up.
+        // The color is on the qualified selector, so a footer without columns cannot pick it up.
         Assert.Contains(".site-footer.has-columns { background-color:", css);
         // And the footer is pushed down, so a short page has no white left under it.
         Assert.Contains(".site-footer { margin-top: auto; }", css);
     }
 
     [AvaloniaFact]
-    public void TheFooterColourFallsBackToThePrimaryColour()
+    public void TheFooterColorFallsBackToThePrimaryColor()
     {
         MakeCollection("Photographs");
 
@@ -513,7 +513,7 @@ public class FooterTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void ALightFooterColourGetsDarkTextInstead()
+    public void ALightFooterColorGetsDarkTextInstead()
     {
         MakeCollection("Photographs");
 

@@ -621,7 +621,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>
     /// Opens the footer's own dialog. Its rows are a list of records rather than a single value, so
-    /// they don't fit beside the other site settings the way a colour or a title does.
+    /// they don't fit beside the other site settings the way a color or a title does.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanConfigureFooter))]
     private async Task ConfigureFooter()

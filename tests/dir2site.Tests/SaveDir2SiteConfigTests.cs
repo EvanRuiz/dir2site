@@ -58,7 +58,7 @@ public class SaveDir2SiteConfigTests : IDisposable
             title: Old Name
             footer: © 2026
 
-            # Colours picked to match the logo
+            # Colors picked to match the logo
             primaryColor: '#333333'
             secondaryColor: '#666666'
             backgroundColor: '#ffffff'
@@ -75,7 +75,7 @@ public class SaveDir2SiteConfigTests : IDisposable
 
         var result = File.ReadAllText(Path_);
         Assert.Contains("# My site config — please don't eat my notes", result);
-        Assert.Contains("# Colours picked to match the logo", result);
+        Assert.Contains("# Colors picked to match the logo", result);
         Assert.Contains("experimentalThing: yes please", result);
         Assert.Contains("title: New Name", result);
         Assert.DoesNotContain("Old Name", result);

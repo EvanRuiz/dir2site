@@ -15,7 +15,7 @@ public class Dir2SiteModel
 
     /// <summary>
     /// Background of the footer band. Empty follows <see cref="PrimaryColor"/>, so a project that
-    /// never sets it gets a footer matching its navbar rather than a colour it didn't choose.
+    /// never sets it gets a footer matching its navbar rather than a color it didn't choose.
     /// </summary>
     public string FooterColor     { get; set; } = string.Empty;
 
