@@ -216,19 +216,24 @@ public partial class MainWindowViewModel : ViewModelBase
     ///
     /// Nothing at all when no VS Code can be found or the current version is already installed —
     /// the button used to be permanent furniture offering people something they had.
+    ///
+    /// Someone still carrying the pre-rename extension counts as having something to update even if
+    /// the new one is already current beside it: installing is what clears the old one away, so
+    /// until it is gone there is a reason to press the button.
     /// </summary>
     private async Task RefreshVsCodeExtensionState()
     {
         var state = await VsCodeExtensionInstaller.DetectAsync();
 
-        CanInstallVsCodeExtension = state is { VsCodeFound: true, Installed: null };
-        VsCodeExtensionUpdateAvailable =
-            state.VsCodeFound && state.Installed != null &&
-            state.Installed < VsCodeExtensionInstaller.BundledVersion;
+        var outdated = state.Installed != null &&
+                       state.Installed < VsCodeExtensionInstaller.BundledVersion;
+
+        CanInstallVsCodeExtension = state is { VsCodeFound: true, Installed: null, HasLegacy: false };
+        VsCodeExtensionUpdateAvailable = state.VsCodeFound && (outdated || state.HasLegacy);
     }
 
     /// <summary>
-    /// Installs the bundled VS Code extension that previews dir2site's ^^^ figure syntax. Offered
+    /// Installs the bundled VS Code extension that makes the Markdown preview match dir2site. Offered
     /// here rather than hidden in a menu because the people writing articles are the ones who need
     /// it, and nothing else in the app tells them it exists.
     /// </summary>

@@ -13,7 +13,7 @@
 
 const assert = require('node:assert');
 const MarkdownIt = require('markdown-it');
-const plugin = require('./markdown-it-dir2site-figures');
+const plugin = require('./markdown-it-dir2site');
 
 // `breaks` mirrors dir2site's UseSoftlineBreakAsHardlineBreak, which the extension turns on.
 const md = new MarkdownIt({ html: true, breaks: true }).use(plugin);
@@ -124,9 +124,19 @@ check(
  */
 const Module = require('node:module');
 const load = Module._load;
+// inspect as well as get: the extension uses it to tell "set to true" from "never touched", which
+// is how the old dir2siteFigures key is still honoured without overriding the new one. A stub with
+// only get doesn't model VS Code, and the extension throws on it.
 Module._load = (request, ...rest) =>
   request === 'vscode'
-    ? { workspace: { getConfiguration: () => ({ get: (_, fallback) => fallback }) } }
+    ? {
+        workspace: {
+          getConfiguration: () => ({
+            get: (_, fallback) => fallback,
+            inspect: () => ({ globalValue: undefined }),
+          }),
+        },
+      }
     : load(request, ...rest);
 const extension = require('./extension');
 Module._load = load;
