@@ -83,7 +83,7 @@ url-text: See the archive record
 ```
 
 The link appears on the artifact's own page, under the credit line, with an "opens in a new window"
-icon and in your site's secondary colour. Leave `url-text` blank and the address itself is the link
+icon and in your site's secondary color. Leave `url-text` blank and the address itself is the link
 text — filling in only the address never means no link at all.
 
 Cards don't carry the link; the card's one job is to take you to the artifact.
@@ -293,12 +293,12 @@ something that isn't in the project is reported by Generate Site and left out of
 **`icon`** is a [Bootstrap Icons](https://icons.getbootstrap.com/) name, with or without its `bi-`
 prefix, and `iconColor` tints it.
 
-**Brand icons colour themselves.** `icon: bi-youtube` alone renders the real mark — red, with a
+**Brand icons color themselves.** `icon: bi-youtube` alone renders the real mark — red, with a
 white play triangle — and the same goes for Facebook, Instagram, LinkedIn, Mastodon, GitHub, Bluesky
 and the rest of Bootstrap's brand set. You don't have to know a brand's hex code, and you can't
 accidentally ship a logo that looks wrong.
 
-Naming either colour yourself turns that off, so a mark that should match the rest of the column
+Naming either color yourself turns that off, so a mark that should match the rest of the column
 rather than shout is one line:
 
 ```yaml
@@ -308,16 +308,16 @@ rather than shout is one line:
 
 **`iconBackground`** is what makes the above work, and is there if you need it directly. Bootstrap's
 brand icons are a single shape with the inner symbol cut out — `bi-youtube` is a rounded rectangle
-whose play triangle is a *hole* — so on a dark footer that triangle would show the band colour.
+whose play triangle is a *hole* — so on a dark footer that triangle would show the band color.
 `iconBackground` fills the cut-out, and the glyph itself masks everything around it. Ordinary
-single-colour icons don't need it.
+single-color icons don't need it.
 
 **`note`** is a caption line under the link — a maintainer's name, a view count. It is plain text;
 `footer:` remains the one field that takes HTML, which is where the copyright line with its `<br>`
 belongs.
 
-**`footerColor`** is the band's background, defaulting to the primary colour so the footer matches
-the navbar. Text and link colours follow from it: a dark colour gets light text, a light one dark.
+**`footerColor`** is the band's background, defaulting to the primary color so the footer matches
+the navbar. Text and link colors follow from it: a dark color gets light text, a light one dark.
 
 Pages that only belong in the footer want a [`--`-folder](#footer-only-sections---folders), which
 keeps them out of the menu as well as the cards.

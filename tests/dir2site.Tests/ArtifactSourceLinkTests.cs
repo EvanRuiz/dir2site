@@ -75,7 +75,7 @@ public class ArtifactSourceLinkTests : IDisposable
         Assert.Contains("bi-box-arrow-up-right", page);
     }
 
-    /// The icon has to sit inside the anchor, or it is neither the link's colour nor its click.
+    /// The icon has to sit inside the anchor, or it is neither the link's color nor its click.
     [AvaloniaFact]
     public void TheIconIsPartOfTheLink()
     {
@@ -156,7 +156,7 @@ public class ArtifactSourceLinkTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void TheLinkTakesTheSitesSecondaryColour()
+    public void TheLinkTakesTheSitesSecondaryColor()
     {
         MakePhoto("Apple.jpg", "url: https://example.org/apple\nurl-text: See the original");
         Generate();

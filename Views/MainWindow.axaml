@@ -21,7 +21,7 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <!-- Buttons sitting on the accent-coloured update banners. A plain Foreground="White" only
+    <!-- Buttons sitting on the accent-colored update banners. A plain Foreground="White" only
          holds for the resting state: the theme swaps the foreground for its own dark shade on
          hover and press, which on this background turned the label black mid-click. The states
          have to be set on the template's ContentPresenter, which is what the theme targets. -->
@@ -86,7 +86,7 @@
                            FontSize="12"
                            Foreground="White"
                            VerticalAlignment="Center"/>
-                <!-- The bar sits on the accent colour, and the theme's default fill is a shade of
+                <!-- The bar sits on the accent color, and the theme's default fill is a shade of
                      that same accent — so it read as an empty pill whatever the progress was.
                      White on a dimmed track matches the label and the button beside it. -->
                 <ProgressBar Value="{Binding UpdateProgress}"

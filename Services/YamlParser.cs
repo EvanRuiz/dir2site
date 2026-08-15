@@ -185,8 +185,8 @@ public static class YamlParser
 
     /// <summary>
     /// The same service for <c>dir2site.yaml</c>, which had none: the site config went through a
-    /// plain deserialize, so a misspelled <c>primaryColour</c> was as silent as a misspelled
-    /// artifact key used to be.
+    /// plain deserialize, so a misspelled <c>primary-color</c> — the site settings are camelCase
+    /// where an artifact's are hyphenated — was as silent as a misspelled artifact key used to be.
     /// </summary>
     /// <remarks>
     /// Descends one level into <c>footerItems</c>, where the misspellings will mostly be — it is the
