@@ -40,9 +40,9 @@
   <script>
     var br = new BookReader({
       data: {{ artifact.bookreader_data }},
-      bookTitle: "{{ artifact.caption | html.escape }}",
+      bookTitle: "{{ artifact.caption_js }}",
       {{ if artifact.author != "" -}}
-      metadata: [{ label: "Author", value: "{{ artifact.author | html.escape }}" }],
+      metadata: [{ label: "Author", value: "{{ artifact.author_js }}" }],
       {{- end }}
       imagesBaseURL: "{{ prefix }}js/bookreader/images/",
       ui: "full",
