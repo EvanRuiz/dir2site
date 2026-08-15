@@ -583,8 +583,10 @@ public static class SftpSyncService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // Nothing to undo: an upload that failed was never recorded as delivered, so the
-                // next run sees the file as it was and tries again.
+                // Not merely "don't add it": the record may already claim this file from an
+                // earlier run that did deliver it, and a send attempted now is one this run
+                // thought was needed. Failing it means we no longer know what is up there.
+                delivered.Failed(rel);
                 lock (errors) errors.Add($"Upload '{rel}': {ex.Message}");
             }
 
@@ -989,6 +991,22 @@ public static class SftpSyncService
         public void Delivered(string rel, SyncEntry entry)
         {
             lock (_files) _files[rel] = entry;
+        }
+
+        /// <summary>
+        /// Drops a file this run tried to send and couldn't, whatever the record said before.
+        /// </summary>
+        /// <remarks>
+        /// It was being sent because this run had decided it needed to be, so what is up there was
+        /// already in doubt — and a delivery an earlier run performed says nothing about a copy
+        /// that may have been removed since. Leaving the old entry standing is what let a failed
+        /// repair look like a success: the entry still matched the unchanged local file exactly,
+        /// so no later Quick Sync could ever see a difference to act on. Forgetting costs an
+        /// upload; claiming costs the file.
+        /// </remarks>
+        public void Failed(string rel)
+        {
+            lock (_files) _files.Remove(rel);
         }
 
         public SyncManifest Snapshot()
