@@ -14,8 +14,20 @@ public static class CredentialStoreFactory
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "dir2site", "credentials");
 
+    /// <summary>
+    /// Test seam. When set, <see cref="Create"/> hands back this store instead of the platform one.
+    /// </summary>
+    /// <remarks>
+    /// The view models build their store through <see cref="Create"/> rather than taking one as a
+    /// dependency, so without a seam there is no way to test how they behave when a read fails —
+    /// which is the case that silently deleted a user's saved password.
+    /// </remarks>
+    internal static ICredentialStore? CreateOverride;
+
     public static ICredentialStore Create()
     {
+        if (CreateOverride is { } stub) return stub;
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return new WindowsCredentialStore(CredentialsDir);
 

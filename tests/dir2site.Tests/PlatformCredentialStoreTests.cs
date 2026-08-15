@@ -105,6 +105,85 @@ public class PlatformCredentialStoreTests : IDisposable
         Assert.NotEqual(first, second);
     }
 
+    [SkippableFact]
+    public void Windows_MissingKeyReadsAsNotFound()
+    {
+        Skip.IfNot(OperatingSystem.IsWindows(), "DPAPI is Windows-only.");
+        if (!OperatingSystem.IsWindows()) return;
+
+        var result = new WindowsCredentialStore(_dir).Read(KeyPrefix + "absent");
+        Assert.Equal(CredentialStatus.NotFound, result.Status);
+        Assert.Null(result.Error);
+    }
+
+    [SkippableFact]
+    public void Windows_UndecryptableBlob_ReadsAsFailed_AndIsLeftOnDisk()
+    {
+        Skip.IfNot(OperatingSystem.IsWindows(), "DPAPI is Windows-only.");
+        if (!OperatingSystem.IsWindows()) return;
+
+        // Regression test for the incident this work came from: a user removed their Windows
+        // password, which destroys the DPAPI master key and orphans every CurrentUser blob. Get
+        // swallowed the CryptographicException and returned null, so the settings dialog showed an
+        // empty password box — and saving from that box then deleted the entry outright.
+        //
+        // Undecryptable-by-any-key stands in for a dead master key; the store can't tell them apart
+        // and shouldn't try.
+        var store = new WindowsCredentialStore(_dir);
+        store.Set(KeyPrefix + "k", "hunter2");
+
+        var path = Path.Combine(_dir, KeyPrefix + "k.bin");
+        var damaged = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+        File.WriteAllBytes(path, damaged);
+
+        var result = store.Read(KeyPrefix + "k");
+        Assert.Equal(CredentialStatus.Failed, result.Status);
+        Assert.Null(result.Secret);
+        Assert.False(string.IsNullOrWhiteSpace(result.Error));
+        Assert.Null(store.Get(KeyPrefix + "k"));
+
+        // The ciphertext stays put. Reading is not permitted to discard what it can't decrypt.
+        Assert.Equal(damaged, File.ReadAllBytes(path));
+    }
+
+    [SkippableFact]
+    public void Windows_Delete_AlsoRemovesAStrandedTempFile()
+    {
+        Skip.IfNot(OperatingSystem.IsWindows(), "DPAPI is Windows-only.");
+        if (!OperatingSystem.IsWindows()) return;
+
+        // Set writes to a temp file and renames. A crash in between leaves that temp holding a
+        // blob this same user can still unprotect, so deleting only the final path reports the
+        // secret as forgotten while a usable copy of it remains.
+        var store = new WindowsCredentialStore(_dir);
+        store.Set(KeyPrefix + "k", "hunter2");
+
+        var live = Path.Combine(_dir, KeyPrefix + "k.bin");
+        var stranded = live + ".tmp";
+        File.Copy(live, stranded);
+
+        store.Delete(KeyPrefix + "k");
+
+        Assert.False(File.Exists(live));
+        Assert.False(File.Exists(stranded));
+    }
+
+    [SkippableFact]
+    public void Windows_Set_LeavesNoTempFileBehind()
+    {
+        Skip.IfNot(OperatingSystem.IsWindows(), "DPAPI is Windows-only.");
+        if (!OperatingSystem.IsWindows()) return;
+
+        // Set writes to a temp file and renames, so that dying mid-write can't leave a truncated
+        // blob that would read back as the unrecoverable case above.
+        var store = new WindowsCredentialStore(_dir);
+        store.Set(KeyPrefix + "k", "first");
+        store.Set(KeyPrefix + "k", "second");
+
+        Assert.Empty(Directory.GetFiles(_dir, "*.tmp"));
+        Assert.Equal("second", store.Get(KeyPrefix + "k"));
+    }
+
     // ---- macOS (login Keychain) ---------------------------------------------
     //
     // These touch the real login Keychain — MacCredentialStore has no way to target another —
