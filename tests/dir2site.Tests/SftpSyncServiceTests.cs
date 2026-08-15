@@ -185,6 +185,48 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
         Assert.True(RemoteHas(d.RemoteDir, "index.html"));
     }
 
+    /// <summary>
+    /// A file that failed to upload must still be retried after the stale-file dialog has been
+    /// used in the same session.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="SftpSyncService.UploadFiles"/> drops a failed upload from the manifest so the
+    /// next sync picks it up again. DeleteRemote used to rebuild the manifest from the local
+    /// folder, which put it straight back as though it had arrived — and since the local copy
+    /// never changes, its size and mtime kept matching that record and every later Quick Sync
+    /// skipped it. The file stayed missing from the server indefinitely, with nothing said.
+    /// </remarks>
+    [SkippableFact]
+    public void AFailedUpload_IsStillRetriedAfterDeletingStaleFiles()
+    {
+        var d = Seeded(("index.html", "home"), ("gone.html", "temporary"));
+        SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        File.Delete(Path.Combine(d.SiteDir, "gone.html"));      // now stale on the server
+
+        // A file that cannot be uploaded: the server has a file where its folder needs to go.
+        // Stands in for any transient upload failure — a lock, a dropped link, a quota.
+        Write(d.SiteDir, "_media/figure.webp", "a figure");
+        File.WriteAllText(Path.Combine(d.RemoteDir, "_media"), "in the way");
+
+        var sync = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        Assert.Single(sync.Errors);
+        Assert.Contains("gone.html", sync.StaleRemote);
+
+        // The user accepts the stale-file dialog, in that same session.
+        SftpSyncService.DeleteRemote(d.SiteDir, d.Profile, null, sync.StaleRemote);
+        Assert.False(RemoteHas(d.RemoteDir, "gone.html"));
+
+        // Whatever blocked the upload goes away.
+        File.Delete(Path.Combine(d.RemoteDir, "_media"));
+
+        var next = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        Assert.Equal(1, next.Uploaded);
+        Assert.True(RemoteHas(d.RemoteDir, "_media/figure.webp"));
+
+        // And having arrived, it isn't sent again.
+        Assert.Equal(0, SftpSyncService.QuickSync(d.SiteDir, d.Profile, null).Uploaded);
+    }
+
     [SkippableFact]
     public void DeleteRemote_PrunesEmptiedNestedDirectories()
     {
