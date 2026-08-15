@@ -213,6 +213,19 @@ Because the markers are stripped, `Newspapers+` and a plain `Newspapers` beside 
 the same address and one would overwrite the other. Generate Site reports that rather than letting
 a folder's pages vanish quietly.
 
+### Breadcrumbs on cards
+
+A card featured on the home page carries the folders its item sits in — "Trips › Japan › Kyoto" — on
+a small quiet line above its name, using the same labels as that item's page shows in its breadcrumb
+bar. It is what makes such a card legible: something pulled onto the home page from three levels
+down otherwise arrives with nothing but its own name. This is not optional and needs no setting.
+
+Ordinary cards don't show a trail, because on a folder page it would be the breadcrumb bar directly
+above them, repeated once per card. If you want it anyway — every card self-describing wherever it
+appears — tick **Card Titles → Include Breadcrumbs** in Site Settings. The setting is stored in
+`dir2site.yaml` as `cardBreadcrumbs` and is off unless it says otherwise. Top-level cards never show
+a trail: the home page is their only ancestor.
+
 ### Static media (`_media` and other `_`-folders)
 
 To include images or other assets that should **not** become artifacts of their own, put them in a

@@ -280,6 +280,13 @@
                                     <RadioButton GroupName="NavbarStyle" Content="Dark" IsChecked="{Binding Dir2SiteConfig.NavbarDark}"/>
                                     <RadioButton GroupName="NavbarStyle" Content="Light" IsChecked="{Binding Dir2SiteConfig.NavbarDark, Converter={x:Static BoolConverters.Not}}"/>
                                 </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Label Width="140">Card Titles</Label>
+                                    <CheckBox Content="Include Breadcrumbs"
+                                              IsChecked="{Binding Dir2SiteConfig.CardBreadcrumbs}"
+                                              ToolTip.Tip="Shows the folders an item sits in above its card title — &quot;Archive › Newspapers&quot;. Cards featured on the home page always show theirs."/>
+                                </StackPanel>
                             </StackPanel>
 
                             <!-- Right column: PDF export settings -->

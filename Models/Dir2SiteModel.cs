@@ -20,6 +20,15 @@ public class Dir2SiteModel
     public string FooterColor     { get; set; } = string.Empty;
 
     public bool   NavbarDark      { get; set; } = true;
+
+    /// <summary>
+    /// Whether an ordinary card carries the folders its item sits in, on a line above its name. Off
+    /// by default, because on a folder page that trail is the breadcrumb bar directly above the
+    /// cards, said again once per card. A card promoted onto the home page keeps its trail either
+    /// way — nothing else on that page says where the thing lives.
+    /// </summary>
+    public bool   CardBreadcrumbs { get; set; } = false;
+
     public string SiteUrl         { get; set; } = string.Empty;
     public bool   PdfResizeEnabled { get; set; } = true;
     public int    PdfMaxWidth      { get; set; } = 1600;
