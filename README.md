@@ -311,6 +311,11 @@ white play triangle — and the same goes for Facebook, Instagram, LinkedIn, Mas
 and the rest of Bootstrap's brand set. You don't have to know a brand's hex code, and you can't
 accidentally ship a logo that looks wrong.
 
+Each mark is filled the way its own drawing needs. YouTube's triangle is cut out of the middle of a
+solid badge; Facebook's "f" runs through the bottom of its circle, so the white behind it has to be
+circular to cover the letter without spilling past the curve; and marks like X, TikTok and Bluesky
+are silhouettes with nothing cut out of them at all, so they get their color and nothing behind.
+
 Naming either color yourself turns that off, so a mark that should match the rest of the column
 rather than shout is one line:
 

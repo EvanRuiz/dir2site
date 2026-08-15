@@ -13,7 +13,7 @@
               {{- if item.href != "" }}
               <a class="footer-link d-flex align-items-center gap-2" href="{{ if item.absolute }}{{ item.href | html.escape }}{{ else }}{{ prefix }}{{ item.href | html.escape }}{{ end }}"{{ if item.new_tab }} target="_blank" rel="noopener noreferrer"{{ end }}>
                 {{- if item.icon != "" }}
-                <span class="footer-icon{{ if item.icon_background != "" }} footer-icon-knockout{{ end }}"{{ if item.icon_background != "" }} style="--knockout:{{ item.icon_background | html.escape }}"{{ end }}><i class="bi {{ item.icon | html.escape }} fs-5"{{ if item.icon_color != "" }} style="color:{{ item.icon_color | html.escape }}"{{ end }} aria-hidden="true"></i></span>
+                <span class="footer-icon{{ if item.icon_background != "" }} footer-icon-knockout{{ if item.icon_knockout_disc }} footer-icon-knockout-disc{{ end }}{{ end }}"{{ if item.icon_background != "" }} style="--knockout:{{ item.icon_background | html.escape }}"{{ end }}><i class="bi {{ item.icon | html.escape }} fs-5"{{ if item.icon_color != "" }} style="color:{{ item.icon_color | html.escape }}"{{ end }} aria-hidden="true"></i></span>
                 {{- end }}
                 <span>{{ item.title | html.escape }}</span>
               </a>
@@ -22,7 +22,7 @@
                   what was meant, and generating said why it doesn't go anywhere. ##}}
               <span class="footer-link footer-link-unlinked d-flex align-items-center gap-2">
                 {{- if item.icon != "" }}
-                <span class="footer-icon{{ if item.icon_background != "" }} footer-icon-knockout{{ end }}"{{ if item.icon_background != "" }} style="--knockout:{{ item.icon_background | html.escape }}"{{ end }}><i class="bi {{ item.icon | html.escape }} fs-5"{{ if item.icon_color != "" }} style="color:{{ item.icon_color | html.escape }}"{{ end }} aria-hidden="true"></i></span>
+                <span class="footer-icon{{ if item.icon_background != "" }} footer-icon-knockout{{ if item.icon_knockout_disc }} footer-icon-knockout-disc{{ end }}{{ end }}"{{ if item.icon_background != "" }} style="--knockout:{{ item.icon_background | html.escape }}"{{ end }}><i class="bi {{ item.icon | html.escape }} fs-5"{{ if item.icon_color != "" }} style="color:{{ item.icon_color | html.escape }}"{{ end }} aria-hidden="true"></i></span>
                 {{- end }}
                 <span>{{ item.title | html.escape }}</span>
               </span>
