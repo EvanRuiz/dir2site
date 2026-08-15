@@ -13,21 +13,20 @@ namespace dir2site.Tests;
 /// as an argument is a password disclosed. The stores feed secrets on stdin instead — this is the
 /// guard that keeps it that way.
 /// </summary>
-[Collection("ProcessHelperSeam")]
-public class SecretsNotInArgvTests : IDisposable
+public class SecretsNotInArgvTests
 {
     private readonly List<(string File, string[] Args, string? Stdin)> _calls = [];
 
-    public SecretsNotInArgvTests()
+    /// <summary>
+    /// Records every invocation instead of launching it. Opened inside each test rather than in the
+    /// constructor — it would reach the test from there too, but this way the scope's extent is
+    /// visible at the point it matters instead of resting on how xunit happens to invoke us.
+    /// </summary>
+    private IDisposable Recording() => ProcessHelper.UseForTesting((file, args, stdin) =>
     {
-        ProcessHelper.RunOverride = (file, args, stdin) =>
-        {
-            _calls.Add((file, args, stdin));
-            return new ProcessHelper.Result(0, "", "");
-        };
-    }
-
-    public void Dispose() => ProcessHelper.RunOverride = null;
+        _calls.Add((file, args, stdin));
+        return new ProcessHelper.Result(0, "", "");
+    });
 
     private const string Secret = "hunter2-with spaces-and-$pecials";
 
@@ -44,6 +43,8 @@ public class SecretsNotInArgvTests : IDisposable
     [Fact]
     public void MacStore_PassesTheSecretOnStdin_NeverAsAnArgument()
     {
+        using var _ = Recording();
+
         new MacCredentialStore().Set("some-key", Secret);
 
         AssertSecretNeverInArgv();
@@ -54,6 +55,8 @@ public class SecretsNotInArgvTests : IDisposable
     [Fact]
     public void LinuxStore_PassesTheSecretOnStdin_NeverAsAnArgument()
     {
+        using var _ = Recording();
+
         new LinuxCredentialStore().Set("some-key", Secret);
 
         AssertSecretNeverInArgv();
@@ -63,6 +66,8 @@ public class SecretsNotInArgvTests : IDisposable
     [Fact]
     public void ReadingBack_DoesNotPutTheKeyOrSecretOnTheCommandLineEither()
     {
+        using var _ = Recording();
+
         new MacCredentialStore().Get("some-key");
         new LinuxCredentialStore().Get("some-key");
 
