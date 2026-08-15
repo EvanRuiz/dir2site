@@ -348,6 +348,10 @@ public static class SftpSyncService
 
         WriteManifest(client, manifestPath, delivered.Snapshot(), errors);
 
+        // States the count even at zero, unlike Quick Sync, which stays silent because it only
+        // consulted its own records. This one listed the server, so "0 stale" is a finding it can
+        // stand behind — and confirming there is nothing up there that shouldn't be is most of the
+        // reason for running it.
         var summary = $"Verify & Repair: {diff.ToUpload.Count - errors.Count} repaired, " +
                       $"{diff.StaleRemote.Count} stale → {profile.Host}";
         client.Disconnect();
@@ -417,6 +421,11 @@ public static class SftpSyncService
         // Removing is all this can honestly do. The files being deleted are remote-only — that is
         // what made them stale — so they were never in the local manifest to begin with, and the
         // sync that just ran already wrote an accurate one.
+        //
+        // With no manifest present, nothing is written rather than one being invented from the
+        // local folder. That is deliberate: an absent manifest makes the next Quick Sync upload
+        // everything, which errs towards sending too much, while a made-up one would state as fact
+        // a delivery nobody performed.
         var manifestPath = ManifestRemotePath(profile);
         if (TryExists(client, manifestPath))
         {
@@ -926,25 +935,35 @@ public static class SftpSyncService
         var manifestPath = ManifestRemotePath(profile);
         var note = "";
 
-        SyncManifest reference;
-        if (forceFull)
-        {
-            reference = new SyncManifest();
-            note = " (forced full upload)";
-        }
-        else if (TryExists(client, manifestPath))
+        // What the server is believed to hold, read whether or not a full upload was asked for.
+        // Forcing is a statement about what to send, not about what is up there: a file this run
+        // doesn't touch is still on the server, and dropping it from the record would strand it
+        // published and unreportable — the very thing the record was corrected to stop.
+        var known = new SyncManifest();
+        if (TryExists(client, manifestPath))
         {
             progress?.Report(new SyncProgress(SyncPhase.Listing, "Reading remote manifest…"));
-            reference = DownloadManifest(client, manifestPath);
+            known = DownloadManifest(client, manifestPath);
         }
-        else
+        else if (!forceFull)
         {
-            reference = new SyncManifest();
             note = " (no remote manifest — uploaded everything; run Verify & Repair to confirm)";
         }
 
+        if (forceFull) note = " (forced full upload)";
+
+        // Comparing against nothing is what makes every file count as needing to be sent. Only the
+        // comparison is emptied; `known` keeps its separate job of saying what is already there.
+        var reference = forceFull ? new SyncManifest() : known;
+        var sending = SyncManifestBuilder.Compare(local, reference);
+
+        // Which leaves stale files, and they are not part of what forcing decides. Taken from
+        // `known` either way, so that a forced upload — the thing someone reaches for when they
+        // suspect the server has drifted — doesn't go quiet about the files that don't belong.
+        var stale = forceFull ? SyncManifestBuilder.Compare(local, known).StaleRemote : sending.StaleRemote;
+
         ct.ThrowIfCancellationRequested();
-        return (SyncManifestBuilder.Compare(local, reference), note, reference);
+        return (new SyncManifestBuilder.Diff(sending.ToUpload, stale), note, known);
     }
 
     /// <summary>
