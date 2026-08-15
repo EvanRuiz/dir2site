@@ -235,6 +235,39 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
     }
 
     /// <summary>
+    /// A failed upload has to take any earlier delivery claim down with it.
+    /// </summary>
+    /// <remarks>
+    /// The record is seeded from what the server was believed to hold, so a file an earlier run
+    /// delivered is already in it. Simply not adding it again on failure left that claim standing
+    /// — and because the entry was written from the same local file, which hasn't changed, it went
+    /// on matching exactly and no later Quick Sync could ever see a difference. A repair that
+    /// silently didn't happen, reported as one upload and one error.
+    /// </remarks>
+    [SkippableFact]
+    public void AFailedUpload_DropsWhatAnEarlierRunHadDelivered()
+    {
+        var d = Seeded(("index.html", "home"), ("big/thing.webp", "a big thing"));
+        SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        Assert.Contains("big/thing.webp", ManifestPaths(d.RemoteDir));
+
+        // The server loses it, and a full re-upload is forced to repair the damage — but that one
+        // file cannot be sent, its folder blocked by a file of the same name.
+        Directory.Delete(Path.Combine(d.RemoteDir, "big"), recursive: true);
+        File.WriteAllText(Path.Combine(d.RemoteDir, "big"), "in the way");
+
+        var forced = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null, forceFull: true);
+        Assert.Single(forced.Errors);
+        Assert.DoesNotContain("big/thing.webp", ManifestPaths(d.RemoteDir));
+
+        // So the repair actually happens once the obstruction goes, instead of never.
+        File.Delete(Path.Combine(d.RemoteDir, "big"));
+        var next = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        Assert.Equal(1, next.Uploaded);
+        Assert.True(RemoteHas(d.RemoteDir, "big/thing.webp"));
+    }
+
+    /// <summary>
     /// Forcing a full upload says what to send. It says nothing about what is already up there, so
     /// a file this run doesn't touch has to stay in the record — and stay reportable.
     /// </summary>
