@@ -21,7 +21,12 @@ public sealed partial class MacCredentialStore : ICredentialStore
         catch { return false; }
     }
 
-    public string? Get(string key)
+    /// <summary><c>errSecItemNotFound</c> — no such item, as opposed to a Keychain that failed us.</summary>
+    private const int ItemNotFound = 44;
+
+    public string? Get(string key) => Read(key).Secret;
+
+    public CredentialResult Read(string key)
     {
         try
         {
@@ -31,21 +36,34 @@ public sealed partial class MacCredentialStore : ICredentialStore
             // It reports on stderr.
             var r = ProcessHelper.Run("/usr/bin/security",
                 ["find-generic-password", "-g", "-s", Service, "-a", key]);
-            if (r.ExitCode != 0) return null;
+
+            if (r.ExitCode == ItemNotFound) return CredentialResult.NotFound;
+            if (r.ExitCode != 0)
+                return CredentialResult.Failed(Describe(r.StdErr, $"security exited {r.ExitCode}"));
 
             var m = PasswordLineRegex().Match(r.StdErr);
-            if (!m.Success) return null;
+            if (!m.Success)
+                return CredentialResult.Failed("Could not read the secret out of the Keychain.");
 
             var hex = m.Groups["hex"].Value;
             if (hex.Length > 0)
-                return Encoding.UTF8.GetString(Convert.FromHexString(hex));
+                return CredentialResult.Found(Encoding.UTF8.GetString(Convert.FromHexString(hex)));
 
-            return m.Groups["text"].Value.Replace("\\\"", "\"").Replace("\\\\", "\\");
+            return CredentialResult.Found(
+                m.Groups["text"].Value.Replace("\\\"", "\"").Replace("\\\\", "\\"));
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            return CredentialResult.Failed($"Could not reach the Keychain: {ex.Message}");
         }
+    }
+
+    private static string Describe(string stderr, string fallback)
+    {
+        var first = stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries) is [var line, ..]
+            ? line.Trim()
+            : string.Empty;
+        return first.Length > 0 ? first : fallback;
     }
 
     public void Set(string key, string secret)
