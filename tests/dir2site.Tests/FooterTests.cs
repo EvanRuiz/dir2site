@@ -430,6 +430,65 @@ public class FooterTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void ARoundBrandMarkGetsAKnockoutShapedLikeIt()
+    {
+        MakeCollection("Photographs");
+
+        // Facebook's "f" descends through the bottom of its circle, so the square patch that suits
+        // YouTube left the stem showing the band. This one is the circle inscribed in the glyph.
+        Generate(Config(new FooterItem { Title = "FB", Icon = "bi-facebook", Link = "https://example.test/a" }));
+
+        var footer = ReadFooter();
+        Assert.Contains("footer-icon-knockout-disc", footer);
+        Assert.Contains("--knockout:#ffffff", footer);
+
+        var css = File.ReadAllText(Path.Combine(_root, "_site", "css", "site.css"));
+        Assert.Contains("border-radius: 50%", css);
+    }
+
+    [AvaloniaFact]
+    public void ASquareBrandMarkKeepsTheInsetPatch()
+    {
+        MakeCollection("Photographs");
+
+        Generate(Config(new FooterItem { Title = "YT", Icon = "bi-youtube", Link = "https://example.test/a" }));
+
+        var footer = ReadFooter();
+        Assert.Contains("footer-icon-knockout", footer);
+        Assert.DoesNotContain("footer-icon-knockout-disc", footer);
+    }
+
+    [AvaloniaFact]
+    public void ASilhouetteBrandMarkGetsNothingBehindIt()
+    {
+        MakeCollection("Photographs");
+
+        // Nothing is cut out of these, so a patch behind one is a white shape sticking out from
+        // behind the mark. They still take their brand color.
+        Generate(Config(
+            new FooterItem { Title = "X", Icon = "bi-twitter-x", Link = "https://example.test/a" },
+            new FooterItem { Title = "Sky", Icon = "bi-bluesky", Link = "https://example.test/b" }));
+
+        var footer = ReadFooter();
+        Assert.DoesNotContain("footer-icon-knockout", footer);
+        Assert.Contains("color:#0285ff", footer);
+    }
+
+    [AvaloniaFact]
+    public void TheFooterKeepsClearSpaceAboveIt()
+    {
+        MakeCollection("Photographs");
+
+        Generate(Config(new FooterItem { Title = "Row", Link = "https://example.test/a" }));
+
+        // A transparent border rather than a margin: margin-top is already pushing the footer down
+        // a short page and cannot also hold a minimum gap.
+        var css = File.ReadAllText(Path.Combine(_root, "_site", "css", "site.css"));
+        Assert.Contains("border-top: 2.5rem solid transparent", css);
+        Assert.Contains("background-clip: padding-box", css);
+    }
+
+    [AvaloniaFact]
     public void ARowWithNoIconBackgroundCarriesNoKnockoutMarkup()
     {
         MakeCollection("Photographs");
@@ -493,7 +552,7 @@ public class FooterTests : IDisposable
         // The color is on the qualified selector, so a footer without columns cannot pick it up.
         Assert.Contains(".site-footer.has-columns { background-color:", css);
         // And the footer is pushed down, so a short page has no white left under it.
-        Assert.Contains(".site-footer { margin-top: auto; }", css);
+        Assert.Contains("margin-top: auto;", css);
     }
 
     [AvaloniaFact]
