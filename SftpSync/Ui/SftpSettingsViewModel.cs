@@ -48,7 +48,9 @@ public partial class SftpSettingsViewModel : ViewModelBase
         _selectedTarget = DeployTargets.Active(_deploy) ?? _deploy.Targets[0];
         LoadFrom(_selectedTarget);
 
-        if (!_credentials.IsSecure)
+        // LoadFrom may already have reported an unreadable secret, which is the more urgent of the
+        // two — don't overwrite it with the standing note about the fallback store.
+        if (!_credentials.IsSecure && string.IsNullOrEmpty(_status))
             _status = "Note: no OS keychain available — the secret is stored in an encrypted file.";
     }
 
@@ -65,7 +67,9 @@ public partial class SftpSettingsViewModel : ViewModelBase
     {
         LoadFrom(value);
         CanCreateRemotePath = false;   // says nothing about the newly selected server
-        Status = string.Empty;
+        // Clearing unconditionally would wipe the warning LoadFrom just raised about an
+        // unreadable secret — the one thing on this dialog the user has to act on.
+        if (!_secretReadFailed) Status = string.Empty;
     }
 
     private void LoadFrom(DeployTarget t)
@@ -86,10 +90,20 @@ public partial class SftpSettingsViewModel : ViewModelBase
         OnPropertyChanged(nameof(HostKeyFingerprintDisplay));
         OnPropertyChanged(nameof(HasPinnedHostKey));
 
-        var secret = _credentials.Get(DeployTargets.CredentialKey(_projectRoot, t));
+        // Read, not Get: an unreadable secret must not look like an absent one, or Save below
+        // deletes it on the user's behalf.
+        var result = _credentials.Read(DeployTargets.CredentialKey(_projectRoot, t));
+        _secretReadFailed = result.Status == CredentialStatus.Failed;
+        if (_secretReadFailed) Status = result.Error ?? "Could not read the saved secret.";
+
+        var secret = result.Secret;
         if (IsKeyAuth) { Passphrase = secret ?? string.Empty; Password = string.Empty; }
         else { Password = secret ?? string.Empty; Passphrase = string.Empty; }
     }
+
+    // True when the selected target has a stored secret we could not read. Set per target by
+    // LoadFrom, so switching the dropdown re-evaluates it.
+    private bool _secretReadFailed;
 
     // What each target was called, and which keychain entry held its secret, when the dialog opened.
     // The credential key is a hash of host, port and username, so editing any of those changes where
@@ -112,9 +126,17 @@ public partial class SftpSettingsViewModel : ViewModelBase
             // Move rather than drop: the user edited a hostname, they didn't ask to forget the
             // password. The selected target's secret is rewritten from the form right after this,
             // which harmlessly overwrites what we carry across here.
-            var carried = _credentials.Get(was.CredentialKey);
-            if (!string.IsNullOrEmpty(carried)) _credentials.Set(nowKey, carried);
-            try { _credentials.Delete(was.CredentialKey); } catch { }
+            var carried = _credentials.Read(was.CredentialKey);
+            if (carried.Status == CredentialStatus.Found && !string.IsNullOrEmpty(carried.Secret))
+                _credentials.Set(nowKey, carried.Secret);
+
+            // Only retire the old entry once we know what was in it. A failed read here used to
+            // skip the Set and delete anyway, turning an unreadable secret into a deleted one.
+            // The cost is that a failed read strands the old entry under a key nothing looks up
+            // any more, with no way for the user to clear it — worth it, because the alternative
+            // is destroying a secret that a retry might have read.
+            if (carried.Status != CredentialStatus.Failed)
+                try { _credentials.Delete(was.CredentialKey); } catch { }
         }
 
         if (!string.Equals(was.Name, t.Name, StringComparison.Ordinal))
@@ -386,10 +408,14 @@ public partial class SftpSettingsViewModel : ViewModelBase
             DeployLocalStore.SetPrivateKeyPath(_projectRoot, SelectedTarget.Name, PrivateKeyPath.Trim());
 
             var key = DeployTargets.CredentialKey(_projectRoot, SelectedTarget);
-            if (string.IsNullOrEmpty(CurrentSecret))
-                _credentials.Delete(key);
-            else
+            if (!string.IsNullOrEmpty(CurrentSecret))
                 _credentials.Set(key, CurrentSecret);
+            else if (!_secretReadFailed)
+                // An empty box means "forget the secret" only when we know the box started empty.
+                // If the stored secret was there but unreadable, the box is empty because we
+                // couldn't fill it — deleting here would destroy it on the user's behalf, for a
+                // failure that may well be transient (a file lock, a half-finished write).
+                _credentials.Delete(key);
 
             _window.Close(true);
         }

@@ -109,6 +109,78 @@ public class CredentialStoreTests : IDisposable
     }
 
     [Fact]
+    public void EncryptedFile_MissingKey_ReadsAsNotFound()
+    {
+        var result = new EncryptedFileCredentialStore(_dir).Read("nope");
+        Assert.Equal(CredentialStatus.NotFound, result.Status);
+        Assert.Null(result.Secret);
+        Assert.Null(result.Error);
+    }
+
+    [Fact]
+    public void EncryptedFile_RoundTrip_ReadsAsFound()
+    {
+        var store = new EncryptedFileCredentialStore(_dir);
+        store.Set("key1", "hunter2");
+
+        var result = store.Read("key1");
+        Assert.Equal(CredentialStatus.Found, result.Status);
+        Assert.Equal("hunter2", result.Secret);
+    }
+
+    [Fact]
+    public void EncryptedFile_DamagedFile_ReadsAsFailed_AndIsLeftAlone()
+    {
+        // A secret that exists but won't decrypt must never look like one that was never saved:
+        // the settings dialog deletes on an empty box, so conflating the two destroys the secret.
+        var store = new EncryptedFileCredentialStore(_dir);
+        store.Set("key1", "hunter2");
+
+        var file = Assert.Single(Directory.GetFiles(_dir, "*.aes"));
+        var damaged = new byte[] { 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9 };
+        File.WriteAllBytes(file, damaged);
+
+        var result = store.Read("key1");
+        Assert.Equal(CredentialStatus.Failed, result.Status);
+        Assert.False(string.IsNullOrWhiteSpace(result.Error));
+        Assert.Null(store.Get("key1"));
+
+        // The store must not have "cleaned up" what it couldn't read.
+        Assert.Equal(damaged, File.ReadAllBytes(file));
+    }
+
+    [Fact]
+    public void EncryptedFile_Delete_AlsoRemovesAStrandedTempFile()
+    {
+        // Set writes to a temp file and renames. A crash in between leaves that temp holding a
+        // perfectly decryptable secret, so deleting only the final path tells the user the secret
+        // is forgotten while a copy of it is still on disk.
+        var store = new EncryptedFileCredentialStore(_dir);
+        store.Set("key1", "hunter2");
+
+        var live = Assert.Single(Directory.GetFiles(_dir, "*.aes"));
+        var stranded = live + ".tmp";
+        File.Copy(live, stranded);
+
+        store.Delete("key1");
+
+        Assert.False(File.Exists(live));
+        Assert.False(File.Exists(stranded));
+        Assert.Empty(Directory.GetFiles(_dir));
+    }
+
+    [Fact]
+    public void EncryptedFile_Set_LeavesNoTempFileBehind()
+    {
+        var store = new EncryptedFileCredentialStore(_dir);
+        store.Set("key1", "hunter2");
+        store.Set("key1", "hunter3");
+
+        Assert.Empty(Directory.GetFiles(_dir, "*.tmp"));
+        Assert.Equal("hunter3", store.Get("key1"));
+    }
+
+    [Fact]
     public void Factory_ReturnsAUsableStore()
     {
         // The platform store (Keychain/DPAPI/libsecret or the encrypted-file fallback) must be non-null.
