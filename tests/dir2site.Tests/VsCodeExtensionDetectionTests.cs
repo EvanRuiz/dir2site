@@ -37,10 +37,20 @@ public class VsCodeExtensionDetectionTests : IDisposable
     /// <summary>An installed extension: the folder VS Code makes, and the manifest inside it.</summary>
     private static string Installed(string root, string version, string? manifestVersion = null)
     {
+        var dir = Path.Combine(root, $"dir2site.dir2site-markdown-{version}");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "package.json"),
+            $$"""{"name":"dir2site-markdown","publisher":"dir2site","version":"{{manifestVersion ?? version}}"}""");
+        return dir;
+    }
+
+    /// <summary>The extension as it was before the rename, which VS Code keeps as a separate one.</summary>
+    private static string LegacyInstalled(string root, string version = "0.1.3")
+    {
         var dir = Path.Combine(root, $"dir2site.dir2site-figures-{version}");
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "package.json"),
-            $$"""{"name":"dir2site-figures","publisher":"dir2site","version":"{{manifestVersion ?? version}}"}""");
+            $$"""{"name":"dir2site-figures","publisher":"dir2site","version":"{{version}}"}""");
         return dir;
     }
 
@@ -96,7 +106,7 @@ public class VsCodeExtensionDetectionTests : IDisposable
         // Windows and Linux disagree about what a directory search pattern matches, so the match is
         // made in code. This is the case that would silently stop finding anything on Linux.
         var root = Root("vscode");
-        var dir = Path.Combine(root, "DIR2SITE.dir2site-figures-0.1.0");
+        var dir = Path.Combine(root, "DIR2SITE.dir2site-markdown-0.1.0");
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "package.json"), """{"version":"0.1.0"}""");
 
@@ -145,7 +155,7 @@ public class VsCodeExtensionDetectionTests : IDisposable
         var root = Root("vscode");
         Installed(root, "0.1.0");
         File.WriteAllText(Path.Combine(root, ".obsolete"),
-            """{"dir2site.dir2site-figures-0.1.0":true}""");
+            """{"dir2site.dir2site-markdown-0.1.0":true}""");
 
         Assert.Null(Scan([root]).Installed);
     }
@@ -192,6 +202,23 @@ public class VsCodeExtensionDetectionTests : IDisposable
     }
 
     [Fact]
+    public void ACliThatSaidNothingIsNotTreatedAsAnAnswer()
+    {
+        // An empty extension list and a read that came back empty look identical from here, and the
+        // second one happened: the stdout task hadn't been observed as complete, so a full listing
+        // arrived as "". Believing it ends detection at "nothing installed" and offers a fresh
+        // install to someone who has the extension. Handing to the folders costs a listing and is
+        // right either way — a genuinely empty VS Code has empty folders too.
+        var root = Root("vscode");
+        Installed(root, "0.1.0");
+
+        var state = VsCodeExtensionInstaller.Detect(
+            [root], () => new VsCodeExtensionInstaller.CliExtensions(true, false, null));
+
+        Assert.Equal(new Version(0, 1, 0), state.Installed);
+    }
+
+    [Fact]
     public void ACliThatErroredHandsBackToTheFolders()
     {
         // It ran, so there is a VS Code; it just couldn't say what was in it.
@@ -213,6 +240,92 @@ public class VsCodeExtensionDetectionTests : IDisposable
 
         Assert.True(state.VsCodeFound);
         Assert.Null(state.Installed);
+    }
+
+    [Fact]
+    public void ThePreRenameExtensionReadsAsSomethingToUpdate()
+    {
+        // It is a different extension as far as VS Code is concerned, so it does not show up as an
+        // old version of the new one. It still has to be found, or nobody ever gets migrated off it.
+        var root = Root("vscode");
+        LegacyInstalled(root);
+
+        var state = Scan([root]);
+
+        Assert.True(state.HasLegacy);
+        Assert.Null(state.Installed);
+    }
+
+    [Fact]
+    public void ThePreRenameExtensionCountsEvenBesideACurrentInstall()
+    {
+        // Installing puts the new one in and takes the old one out. If the old one survived that —
+        // a copy-route install that could not delete it — there is still something to do.
+        var root = Root("vscode");
+        Installed(root, "0.2.0");
+        LegacyInstalled(root);
+
+        var state = Scan([root]);
+
+        Assert.True(state.HasLegacy);
+        Assert.Equal(new Version(0, 2, 0), state.Installed);
+    }
+
+    [Fact]
+    public void ThePreRenameExtensionIsFoundThroughTheCliToo()
+    {
+        var state = VsCodeExtensionInstaller.Detect(
+            [], () => new VsCodeExtensionInstaller.CliExtensions(true, true, null, HasLegacy: true));
+
+        Assert.True(state.HasLegacy);
+        Assert.Null(state.Installed);
+    }
+
+    [Fact]
+    public void APreRenameFolderMarkedObsoleteIsNotCounted()
+    {
+        var root = Root("vscode");
+        LegacyInstalled(root);
+        File.WriteAllText(Path.Combine(root, ".obsolete"),
+            """{"dir2site.dir2site-figures-0.1.3":true}""");
+
+        Assert.False(Scan([root]).HasLegacy);
+    }
+
+    [Fact]
+    public void RemovingTheOldExtensionLeavesOtherEditorsAlone()
+    {
+        // The copy route writes into one directory, so it may only clear the old extension out of
+        // that one. A user running VS Code and Cursor with the old extension in both would
+        // otherwise be left with a second editor that has neither — worse off for having installed.
+        var code = Root("vscode");
+        var cursor = Root("cursor");
+        var installedInto = LegacyInstalled(code);
+        var untouched = LegacyInstalled(cursor);
+
+        VsCodeExtensionInstaller.RemoveLegacyFolders(code);
+
+        Assert.False(Directory.Exists(installedInto));
+        Assert.True(Directory.Exists(untouched));
+    }
+
+    [Fact]
+    public void RemovingTheOldExtensionSparesTheNewOne()
+    {
+        var root = Root("vscode");
+        var current = Installed(root, "0.2.0");
+        LegacyInstalled(root);
+
+        VsCodeExtensionInstaller.RemoveLegacyFolders(root);
+
+        Assert.True(Directory.Exists(current));
+        Assert.False(Scan([root]).HasLegacy);
+    }
+
+    [Fact]
+    public void RemovingFromADirectoryThatIsNotThereIsNotAnError()
+    {
+        VsCodeExtensionInstaller.RemoveLegacyFolders(Path.Combine(_scratch, "never-created"));
     }
 
     [Fact]

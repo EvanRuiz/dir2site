@@ -5,11 +5,17 @@
 # The .vsix is committed rather than built during the normal build, so packaging needs no node
 # toolchain in CI. The cost is that it goes stale the moment the extension source changes, which
 # BundledVsCodeExtensionTests catches — run this when it does.
+#
+# Versioning: the extension carries the app release it ships in, so a branch that changes it sets
+# package.json and VsCodeExtensionInstaller.Version to the *next* release tag once, then repackages
+# as often as it likes at that number. Re-running this script is not a reason to bump — an unshipped
+# version names whatever the branch finally merges. Bumping per rebuild burns versions that were
+# never released and reads as a gap in the history.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${(%):-%x}")/.." && pwd)"
-SOURCE_DIR="$REPO_ROOT/editors/vscode-dir2site-figures"
-OUTPUT="$REPO_ROOT/Assets/editors/dir2site-figures.vsix"
+SOURCE_DIR="$REPO_ROOT/editors/vscode-dir2site-markdown"
+OUTPUT="$REPO_ROOT/Assets/editors/dir2site-markdown.vsix"
 
 if ! command -v npx >/dev/null 2>&1; then
   echo "npx not found — install Node.js to repackage the extension." >&2

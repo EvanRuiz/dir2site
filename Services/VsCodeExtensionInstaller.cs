@@ -18,11 +18,13 @@ public sealed record InstallResult(bool Succeeded, string Message, string? Revea
 /// <summary>What the machine already has, which decides whether to offer the extension at all.</summary>
 /// <param name="VsCodeFound">An extensions folder exists — there is something to install into.</param>
 /// <param name="Installed">The highest version of our extension found there, or null.</param>
-public sealed record ExtensionState(bool VsCodeFound, Version? Installed);
+/// <param name="HasLegacy">The pre-rename <c>dir2site-figures</c> extension is still installed, so
+/// there is something to do even when <paramref name="Installed"/> is current.</param>
+public sealed record ExtensionState(bool VsCodeFound, Version? Installed, bool HasLegacy = false);
 
 /// <summary>
-/// Installs the bundled VS Code extension that renders dir2site's <c>^^^</c> figure blocks in the
-/// Markdown preview.
+/// Installs the bundled VS Code extension that makes the Markdown preview render the way dir2site
+/// does — <c>^^^</c> figure blocks, <c>{.figure-right}</c> attributes, and hard line breaks.
 ///
 /// Three routes, in descending order of how good the outcome is:
 /// <list type="number">
@@ -38,9 +40,30 @@ public static class VsCodeExtensionInstaller
 {
     // internal so BundledVsCodeExtensionTests can check these against the packaged manifest rather
     // than against a literal that has to be remembered separately at every version bump.
-    internal const string PublisherAndName = "dir2site.dir2site-figures";
-    internal const string Version = "0.1.3";
-    private const string BundledVsix = "avares://dir2site/Assets/editors/dir2site-figures.vsix";
+    internal const string PublisherAndName = "dir2site.dir2site-markdown";
+
+    /// <summary>
+    /// The extension's version, which tracks the app release it ships in — 0.1.2 shipped in v0.1.2,
+    /// 0.1.3 in v0.1.3, and it sat at 0.1.3 through v0.1.4 because that release didn't touch it.
+    ///
+    /// A branch that changes the extension picks the *next* app release once, at the start, and
+    /// keeps it however many times the vsix is repackaged along the way: nothing has shipped, so a
+    /// rebuild replaces the build this version names rather than making a second one. What must
+    /// never happen is a version reaching a user twice with different contents, because
+    /// <see cref="Detect"/> reads an installed 0.1.5 as current and would never offer the other.
+    ///
+    /// So: never reuse an already-tagged version, and never burn a second one mid-branch.
+    /// </summary>
+    internal const string Version = "0.1.5";
+    private const string BundledVsix = "avares://dir2site/Assets/editors/dir2site-markdown.vsix";
+
+    /// <summary>
+    /// What the extension was called before it grew past figures. VS Code keys an extension by
+    /// publisher.name, so the rename makes a new extension rather than a new version of this one:
+    /// left alone it stays installed and goes on rendering, and the user ends up running both.
+    /// Every install removes it, and detection counts it as something to update.
+    /// </summary>
+    internal const string LegacyPublisherAndName = "dir2site.dir2site-figures";
 
     /// <summary>A CLI that never returns shouldn't leave the button disabled for the session.</summary>
     private const int CliTimeoutMs = 60_000;
@@ -64,7 +87,8 @@ public static class VsCodeExtensionInstaller
     /// <param name="Ran">A CLI was found and started — which itself proves there is a VS Code.</param>
     /// <param name="Answered">It also succeeded, so <paramref name="Installed"/> is the whole truth.
     /// A CLI that ran and errored knows, but didn't say.</param>
-    internal sealed record CliExtensions(bool Ran, bool Answered, System.Version? Installed);
+    internal sealed record CliExtensions(bool Ran, bool Answered, System.Version? Installed,
+                                         bool HasLegacy = false);
 
     /// <summary>
     /// Finds the installed version by asking whichever route would install it — the same order
@@ -90,9 +114,11 @@ public static class VsCodeExtensionInstaller
     internal static ExtensionState Detect(IReadOnlyList<string> extensionRoots, Func<CliExtensions> queryCli)
     {
         var cli = queryCli();
-        if (cli is { Ran: true, Answered: true }) return new ExtensionState(true, cli.Installed);
+        if (cli is { Ran: true, Answered: true })
+            return new ExtensionState(true, cli.Installed, cli.HasLegacy);
 
         System.Version? best = null;
+        var legacy = false;
 
         foreach (var root in extensionRoots)
         {
@@ -108,10 +134,17 @@ public static class VsCodeExtensionInstaller
                 foreach (var dir in Directory.EnumerateDirectories(root))
                 {
                     var name = Path.GetFileName(dir);
-                    if (!name.StartsWith($"{PublisherAndName}-", StringComparison.OrdinalIgnoreCase)) continue;
 
                     // A folder VS Code has already marked for removal is not an install.
                     if (obsolete.Contains(name)) continue;
+
+                    if (name.StartsWith($"{LegacyPublisherAndName}-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        legacy = true;
+                        continue;
+                    }
+
+                    if (!name.StartsWith($"{PublisherAndName}-", StringComparison.OrdinalIgnoreCase)) continue;
 
                     var found = ManifestVersion(dir)
                                 ?? ParseVersion(name[(PublisherAndName.Length + 1)..]);
@@ -126,7 +159,7 @@ public static class VsCodeExtensionInstaller
         }
 
         // A CLI that ran and failed still proves there is a VS Code here, whatever the folders say.
-        return new ExtensionState(cli.Ran || extensionRoots.Any(Directory.Exists), best);
+        return new ExtensionState(cli.Ran || extensionRoots.Any(Directory.Exists), best, legacy);
     }
 
     /// <summary>
@@ -148,17 +181,32 @@ public static class VsCodeExtensionInstaller
             if (!started) continue;
             if (exitCode != 0) return new CliExtensions(true, false, null);
 
+            // Nor does silence count as an answer. A VS Code with no extensions at all really does
+            // print nothing, but so does a read that went wrong, and the two are indistinguishable
+            // here — while treating them alike is not: believing an empty list ends detection with
+            // "nothing installed", where handing over to the folders costs a directory listing and
+            // reaches the same conclusion for anyone genuinely empty.
+            if (string.IsNullOrWhiteSpace(output)) return new CliExtensions(true, false, null);
+
             System.Version? best = null;
+            var legacy = false;
             foreach (var line in output.Split('\n'))
             {
                 var entry = line.Trim();
+
+                if (entry.StartsWith($"{LegacyPublisherAndName}@", StringComparison.OrdinalIgnoreCase))
+                {
+                    legacy = true;
+                    continue;
+                }
+
                 if (!entry.StartsWith($"{PublisherAndName}@", StringComparison.OrdinalIgnoreCase)) continue;
 
                 var found = ParseVersion(entry[(PublisherAndName.Length + 1)..]);
                 if (found != null && (best == null || found > best)) best = found;
             }
 
-            return new CliExtensions(true, true, best);
+            return new CliExtensions(true, true, best, legacy);
         }
 
         return new CliExtensions(false, false, null);
@@ -207,6 +255,54 @@ public static class VsCodeExtensionInstaller
     private static System.Version? ParseVersion(string? text) =>
         System.Version.TryParse(text, out var parsed) ? parsed : null;
 
+    /// <summary>
+    /// Uninstalls the pre-rename extension through the CLI, so it leaves the Extensions list the way
+    /// the user would have removed it themselves.
+    ///
+    /// Failure is silent on purpose: the install has already succeeded by the time this runs, and
+    /// "installed, but couldn't tidy up the old one" is not something to hand a user who asked for
+    /// an install. The worst case is the old extension staying put, which is where it was anyway.
+    /// </summary>
+    private static void RemoveLegacyViaCli()
+    {
+        foreach (var command in CliCandidates())
+        {
+            if (Path.IsPathRooted(command) && !File.Exists(command)) continue;
+
+            var run = RunCli(command, ["--uninstall-extension", LegacyPublisherAndName], CliTimeoutMs);
+            if (run.Started) return;
+        }
+    }
+
+    /// <summary>
+    /// Deletes the pre-rename extension's folders, for the machines where the copy route is what
+    /// installs. Same silence, for the same reason.
+    ///
+    /// One directory, and specifically the one the replacement was just written to. Detection looks
+    /// in every editor's folder, but removal must not: someone running VS Code and Cursor with the
+    /// old extension in both gets the new one copied into the first only, and sweeping both would
+    /// leave the second editor with neither — worse off for having pressed the button.
+    /// </summary>
+    /// <param name="extensionsDir">The directory the new extension was copied into.</param>
+    internal static void RemoveLegacyFolders(string extensionsDir)
+    {
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(extensionsDir))
+            {
+                var name = Path.GetFileName(dir);
+                if (!name.StartsWith($"{LegacyPublisherAndName}-", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                try { Directory.Delete(dir, recursive: true); } catch { }
+            }
+        }
+        catch
+        {
+            // An unreadable directory has nothing to remove that we could reach anyway.
+        }
+    }
+
     private static InstallResult Install()
     {
         string vsix;
@@ -221,14 +317,16 @@ public static class VsCodeExtensionInstaller
 
         if (TryCli(vsix, out var cliError))
         {
+            RemoveLegacyViaCli();
             return new InstallResult(true,
-                "Installed. Reload VS Code if it's open, then the preview will render ^^^ figures.");
+                "Installed. Reload VS Code if it's open, then the preview will match dir2site.");
         }
 
         string? copyError = null;
         var extensionsDir = ExtensionsDirectory();
         if (extensionsDir != null && TryCopyUnpacked(vsix, extensionsDir, out copyError))
         {
+            RemoveLegacyFolders(extensionsDir);
             return new InstallResult(true,
                 "Installed to your VS Code extensions folder. Restart VS Code to finish.");
         }
@@ -254,7 +352,7 @@ public static class VsCodeExtensionInstaller
         // directory is something another account can get in front of. CreateTempSubdirectory picks
         // an unguessable name and, on Unix, creates it 0700.
         var dir = Directory.CreateTempSubdirectory("dir2site-vscode-").FullName;
-        var path = Path.Combine(dir, "dir2site-figures.vsix");
+        var path = Path.Combine(dir, "dir2site-markdown.vsix");
 
         using var source = AssetLoader.Open(new Uri(BundledVsix));
         using var target = File.Create(path);
@@ -446,13 +544,19 @@ public static class VsCodeExtensionInstaller
             }
 
             // The overload taking a timeout returns on process exit; the argument-less one also
-            // waits for the redirected streams to finish, which is what makes the reads safe to
-            // take the result of.
+            // waits for the redirected streams to finish.
             p.WaitForExit();
 
+            // Wait on the read tasks rather than asking whether they have finished. The streams
+            // reaching EOF and the Task observing it are not the same instant, so testing
+            // IsCompletedSuccessfully here loses a race often enough to matter: it returned empty
+            // output for a CLI that had printed a full extension list, which reads as "answered,
+            // nothing installed" and put the install button in front of someone who already had
+            // the extension. Blocking is free — the process has exited and the pipes are closed,
+            // and this whole method runs on a background thread.
             return new CliRun(true, p.ExitCode,
-                stdout.IsCompletedSuccessfully ? stdout.Result : string.Empty,
-                stderr.IsCompletedSuccessfully ? stderr.Result.Trim() : string.Empty);
+                stdout.GetAwaiter().GetResult(),
+                stderr.GetAwaiter().GetResult().Trim());
         }
         catch (Exception ex)
         {
@@ -561,7 +665,7 @@ public static class VsCodeExtensionInstaller
                     Directory.CreateDirectory(dir);
                 }
 
-                var dest = Path.Combine(dir, "dir2site-figures.vsix");
+                var dest = Path.Combine(dir, "dir2site-markdown.vsix");
                 File.Copy(vsixPath, dest, overwrite: true);
                 return dest;
             }

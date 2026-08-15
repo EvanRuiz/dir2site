@@ -137,7 +137,7 @@ function imageAttrs(state) {
   }
 }
 
-module.exports = function dir2siteFigures(md) {
+module.exports = function dir2site(md) {
   md.block.ruler.before('fence', 'dir2site_figure', figureBlock, {
     alt: ['paragraph', 'reference', 'blockquote', 'list'],
   });
