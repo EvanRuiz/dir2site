@@ -267,7 +267,7 @@ public static class SftpSyncService
 
         var manifestPath = ManifestRemotePath(profile);
         var (diff, note, reference) = Diff(client, profile, local, forceFull, progress, ct);
-        var delivered = new ManifestUpdate(reference);
+        var delivered = new ManifestUpdate(reference, diff.ToUpload);
 
         List<string> errors;
         try
@@ -330,7 +330,7 @@ public static class SftpSyncService
 
         // The listing is the truth about the server, so it is what this run's manifest starts from
         // — including the stale files, which are still up there until someone removes them.
-        var delivered = new ManifestUpdate(remote);
+        var delivered = new ManifestUpdate(remote, diff.ToUpload);
 
         List<string> errors;
         try
@@ -380,6 +380,12 @@ public static class SftpSyncService
         var done = 0;
         var touchedDirs = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
 
+        // Which paths are known not to be up there any more — the ones this run removed, plus any
+        // that turned out to be gone already. Only these leave the record: a delete that failed
+        // leaves the file on the server, and forgetting it there would mean it could never be
+        // offered again, which is the same silence the record was corrected to stop.
+        var gone = new ConcurrentBag<string>();
+
         // Deleting costs two round trips a file, same as uploading, so it gets the same treatment
         // and the same per-target connection count.
         ForEachInParallel(client, () => Connect(profile, secret, hostKeyVerifier),
@@ -394,6 +400,9 @@ public static class SftpSyncService
                     worker.DeleteFile(full);
                     Interlocked.Increment(ref deleted);
                 }
+                // Reached only when the delete succeeded, or when there was nothing there to
+                // delete — both of which are knowing it is gone.
+                gone.Add(rel);
                 touchedDirs[ParentOf(full)] = 0;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -432,7 +441,7 @@ public static class SftpSyncService
             progress?.Report(new SyncProgress(SyncPhase.WritingManifest, "Updating the file list"));
             var manifest = DownloadManifest(client, manifestPath);
             var changed = false;
-            foreach (var rel in relPaths) changed |= manifest.Files.Remove(rel);
+            foreach (var rel in gone) changed |= manifest.Files.Remove(rel);
             if (changed) WriteManifest(client, manifestPath, manifest, errors);
         }
 
@@ -583,10 +592,8 @@ public static class SftpSyncService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // Not merely "don't add it": the record may already claim this file from an
-                // earlier run that did deliver it, and a send attempted now is one this run
-                // thought was needed. Failing it means we no longer know what is up there.
-                delivered.Failed(rel);
+                // Nothing to retract here: deciding to send it already took it out of the
+                // record, and only arriving puts it back.
                 lock (errors) errors.Add($"Upload '{rel}': {ex.Message}");
             }
 
@@ -982,31 +989,36 @@ public static class SftpSyncService
     /// Starting from the reference and applying outcomes keeps the manifest true at every moment,
     /// which is what lets it be written even when the run is cancelled part-way.
     /// </remarks>
-    private sealed class ManifestUpdate(SyncManifest reference)
+    private sealed class ManifestUpdate
     {
-        private readonly Dictionary<string, SyncEntry> _files =
-            new(reference.Files, StringComparer.Ordinal);
+        private readonly Dictionary<string, SyncEntry> _files;
+
+        /// <param name="sending">
+        /// Everything this run decided to send. All of it leaves the record immediately, and comes
+        /// back only by arriving.
+        /// </param>
+        /// <remarks>
+        /// Deciding a file needs sending is itself a statement that what is up there is not known
+        /// to be right — so the old entry, from whenever it was last delivered, has stopped being
+        /// evidence. Retracting up front rather than on each way a send can go wrong is what makes
+        /// this hold for all of them at once: one that failed, one abandoned when the run was
+        /// cancelled, and any future way of not arriving that nobody has thought of yet. Each was
+        /// its own silent bug while they were handled one at a time.
+        ///
+        /// Being wrong here costs an upload. Being wrong the other way costs the file: an entry
+        /// left standing is written from the local copy, which doesn't change, so it keeps
+        /// matching and no later Quick Sync can ever see anything to act on.
+        /// </remarks>
+        public ManifestUpdate(SyncManifest reference, IEnumerable<string> sending)
+        {
+            _files = new Dictionary<string, SyncEntry>(reference.Files, StringComparer.Ordinal);
+            foreach (var rel in sending) _files.Remove(rel);
+        }
 
         /// <summary>Records a file as now being on the server. Called from upload workers.</summary>
         public void Delivered(string rel, SyncEntry entry)
         {
             lock (_files) _files[rel] = entry;
-        }
-
-        /// <summary>
-        /// Drops a file this run tried to send and couldn't, whatever the record said before.
-        /// </summary>
-        /// <remarks>
-        /// It was being sent because this run had decided it needed to be, so what is up there was
-        /// already in doubt — and a delivery an earlier run performed says nothing about a copy
-        /// that may have been removed since. Leaving the old entry standing is what let a failed
-        /// repair look like a success: the entry still matched the unchanged local file exactly,
-        /// so no later Quick Sync could ever see a difference to act on. Forgetting costs an
-        /// upload; claiming costs the file.
-        /// </remarks>
-        public void Failed(string rel)
-        {
-            lock (_files) _files.Remove(rel);
         }
 
         public SyncManifest Snapshot()

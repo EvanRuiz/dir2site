@@ -235,6 +235,75 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
     }
 
     /// <summary>
+    /// Files a cancelled run meant to send but never reached must not keep an older delivery
+    /// claim, for the same reason a failed one must not.
+    /// </summary>
+    /// <remarks>
+    /// This is the case that made retracting up front, rather than on each way a send can go
+    /// wrong, the right shape: an abandoned attempt has no catch block to hang the retraction on.
+    /// Before, a cancelled repair left the record claiming everything it had planned to send —
+    /// entries written from local files that hadn't changed, so they went on matching and no later
+    /// Quick Sync ever saw anything to do.
+    /// </remarks>
+    [SkippableFact]
+    public void ACancelledRun_DoesNotKeepClaimingWhatItNeverReached()
+    {
+        var d = Seeded(("index.html", "home"));
+        for (var i = 0; i < 40; i++) Write(d.SiteDir, $"m/f{i}.webp", new string('x', 2000));
+        SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+
+        // The server loses them all, and a forced re-upload to repair it is cancelled part-way.
+        Directory.Delete(Path.Combine(d.RemoteDir, "m"), recursive: true);
+        var cts = new CancellationTokenSource();
+        var seen = 0;
+        var progress = new Progress<SyncProgress>(_ =>
+        {
+            if (Interlocked.Increment(ref seen) == 3) cts.Cancel();
+        });
+
+        Assert.Throws<OperationCanceledException>(() =>
+            SftpSyncService.QuickSync(d.SiteDir, d.Profile, null, true, progress, cts.Token));
+
+        var onServer = Directory.Exists(Path.Combine(d.RemoteDir, "m"))
+            ? Directory.EnumerateFiles(Path.Combine(d.RemoteDir, "m")).Count() : 0;
+        var claimed = ManifestPaths(d.RemoteDir).Count(k => k.StartsWith("m/"));
+
+        Assert.InRange(onServer, 1, 39);      // the cancel has to land mid-run for this to mean anything
+        Assert.Equal(onServer, claimed);      // and the record claims those and no others
+
+        // So finishing the job is simply the next sync, rather than never.
+        SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        Assert.Equal(40, Directory.EnumerateFiles(Path.Combine(d.RemoteDir, "m")).Count());
+    }
+
+    /// <summary>
+    /// A delete that failed leaves the file on the server, so the record has to go on naming it —
+    /// otherwise it becomes invisible to every later sync while still published, which is the
+    /// silence the record was corrected to stop.
+    /// </summary>
+    [SkippableFact]
+    public void AFailedDelete_KeepsTheFileReportable()
+    {
+        var d = Seeded(("index.html", "home"), ("old/index.html", "an old page"));
+        SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        File.Delete(Path.Combine(d.SiteDir, "old", "index.html"));
+        var stale = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null).StaleRemote;
+        Assert.Contains("old/index.html", stale);
+
+        // Make the delete fail: what the path names is now a directory, and not an empty one.
+        File.Delete(Path.Combine(d.RemoteDir, "old", "index.html"));
+        Directory.CreateDirectory(Path.Combine(d.RemoteDir, "old", "index.html"));
+        File.WriteAllText(Path.Combine(d.RemoteDir, "old", "index.html", "inside.txt"), "x");
+
+        var result = SftpSyncService.DeleteRemote(d.SiteDir, d.Profile, null, stale);
+        Assert.Single(result.Errors);
+
+        Assert.Contains("old/index.html", ManifestPaths(d.RemoteDir));
+        Assert.Contains("old/index.html",
+            SftpSyncService.QuickSync(d.SiteDir, d.Profile, null).StaleRemote);
+    }
+
+    /// <summary>
     /// A failed upload has to take any earlier delivery claim down with it.
     /// </summary>
     /// <remarks>
