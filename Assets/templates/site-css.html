@@ -202,8 +202,16 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
 /* Footer */
 
 /* Pushed to the bottom of short pages, so a page with little on it doesn't leave a band of white
-   underneath its footer. The body is the flex column that makes the auto margin mean anything. */
-.site-footer { margin-top: auto; }
+   underneath its footer. The body is the flex column that makes the auto margin mean anything.
+
+   The clear space above the band is a transparent border rather than a margin: margin-top is
+   already doing the pushing and cannot also hold a minimum, and without it the last card on a full
+   page sits right against the footer. background-clip keeps the band colour out of that border. */
+.site-footer {
+  margin-top: auto;
+  border-top: 2.5rem solid transparent;
+  background-clip: padding-box;
+}
 
 /* The band belongs to a footer with columns in it. A lone closing line reads better as a quiet
    line under the page than as a colored strip with one sentence marooned in it — which is what
@@ -248,6 +256,14 @@ body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
   inset: 22%;
   background: var(--knockout);
   z-index: -1;
+}
+
+/* A round mark whose cut-out runs to its boundary — Facebook's "f" descends through the bottom of
+   its circle. The patch has to reach the edge to cover it, and a square that big spills past the
+   curve, so this one is the circle inscribed in the glyph. */
+.footer-icon-knockout-disc::before {
+  inset: 0;
+  border-radius: 50%;
 }
 
 /* Markdown artifact */
