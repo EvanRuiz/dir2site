@@ -19,7 +19,6 @@ namespace dir2site.Tests;
 /// reporting the failure, the dialog showed an empty password box, and saving from that box
 /// deleted the entry — so a recoverable-looking situation became a permanent one.
 /// </summary>
-[Collection("CredentialStoreSeam")]
 public class UnreadableSecretTests : IDisposable
 {
     private readonly string _project = Path.Combine(
@@ -29,7 +28,6 @@ public class UnreadableSecretTests : IDisposable
 
     public void Dispose()
     {
-        CredentialStoreFactory.CreateOverride = null;
         try { Directory.Delete(_project, recursive: true); } catch { }
     }
 
@@ -39,9 +37,10 @@ public class UnreadableSecretTests : IDisposable
         public CredentialResult Result = CredentialResult.NotFound;
         public List<string> Deleted { get; } = [];
         public List<(string Key, string Secret)> Written { get; } = [];
+        public int Reads { get; private set; }
 
         public bool IsSecure => true;
-        public CredentialResult Read(string key) => Result;
+        public CredentialResult Read(string key) { Reads++; return Result; }
         public string? Get(string key) => Read(key).Secret;
         public void Set(string key, string secret) => Written.Add((key, secret));
         public void Delete(string key) => Deleted.Add(key);
@@ -60,7 +59,7 @@ public class UnreadableSecretTests : IDisposable
     public void AnUnreadableSecret_IsReportedInsteadOfShowingAnEmptyBox()
     {
         var stub = new StubStore { Result = CredentialResult.Failed("Windows can no longer decrypt this.") };
-        CredentialStoreFactory.CreateOverride = stub;
+        using var _ = CredentialStoreFactory.UseForTesting(stub);
 
         var (_, vm) = Show();
 
@@ -72,7 +71,7 @@ public class UnreadableSecretTests : IDisposable
     public void SavingWithAnEmptyBox_DoesNotDeleteASecretWeCouldNotRead()
     {
         var stub = new StubStore { Result = CredentialResult.Failed("unreadable") };
-        CredentialStoreFactory.CreateOverride = stub;
+        using var _ = CredentialStoreFactory.UseForTesting(stub);
 
         var (_, vm) = Show();
         vm.Host = "example.invalid";
@@ -85,6 +84,9 @@ public class UnreadableSecretTests : IDisposable
         vm.SaveCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
 
+        // "Nothing was deleted" is also trivially true of a stub nothing ever reached, so pin that
+        // the dialog really went through this store before trusting the assertion below.
+        Assert.True(stub.Reads > 0);
         Assert.Empty(stub.Deleted);
     }
 
@@ -94,7 +96,7 @@ public class UnreadableSecretTests : IDisposable
         // The other side of the same branch: when the read succeeded, an empty box does mean
         // "forget it", and that has to keep working.
         var stub = new StubStore { Result = CredentialResult.Found("hunter2") };
-        CredentialStoreFactory.CreateOverride = stub;
+        using var _ = CredentialStoreFactory.UseForTesting(stub);
 
         var (_, vm) = Show();
         vm.Host = "example.invalid";
@@ -115,7 +117,7 @@ public class UnreadableSecretTests : IDisposable
     {
         // The recovery path a user is told to take: retype the password and save.
         var stub = new StubStore { Result = CredentialResult.Failed("unreadable") };
-        CredentialStoreFactory.CreateOverride = stub;
+        using var _ = CredentialStoreFactory.UseForTesting(stub);
 
         var (_, vm) = Show();
         vm.Host = "example.invalid";
