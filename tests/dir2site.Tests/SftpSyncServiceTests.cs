@@ -3,6 +3,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using dir2site.SftpSync.Core;
 using Xunit;
 
@@ -183,6 +184,79 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
         Assert.Empty(r.Errors);
         Assert.False(RemoteHas(d.RemoteDir, "stray.html"));
         Assert.True(RemoteHas(d.RemoteDir, "index.html"));
+    }
+
+    private static string[] ManifestPaths(string remoteDir)
+    {
+        var p = Path.Combine(remoteDir, ".ht-dir2site");
+        if (!File.Exists(p)) return [];
+        return [.. System.Text.Json.JsonDocument.Parse(File.ReadAllText(p))
+            .RootElement.GetProperty("Files").EnumerateObject().Select(x => x.Name).Order()];
+    }
+
+    /// <summary>
+    /// A cancelled deploy has still put files on the server, and the manifest has to say so.
+    /// </summary>
+    /// <remarks>
+    /// It used to be written only after a run that finished, from the local folder rather than
+    /// from what arrived — so cancelling recorded nothing. Re-uploading is the harmless half of
+    /// that; the other half is that a file on the server which the manifest has never heard of can
+    /// never be reported stale either, so deleting it from the site later stranded it, published,
+    /// with nothing able to find it but Verify & Repair.
+    /// </remarks>
+    [SkippableFact]
+    public void ACancelledDeploy_StillRecordsWhatReachedTheServer()
+    {
+        var d = Seeded(("index.html", "home"));
+        SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        for (var i = 0; i < 40; i++) Write(d.SiteDir, $"_media/f{i}.webp", new string('x', 3000));
+
+        var cts = new CancellationTokenSource();
+        var seen = 0;
+        var progress = new Progress<SyncProgress>(_ =>
+        {
+            if (Interlocked.Increment(ref seen) == 5) cts.Cancel();
+        });
+
+        Assert.Throws<OperationCanceledException>(() =>
+            SftpSyncService.QuickSync(d.SiteDir, d.Profile, null, false, progress, cts.Token));
+
+        var onServer = Directory.EnumerateFiles(Path.Combine(d.RemoteDir, "_media"))
+            .Select(f => "_media/" + Path.GetFileName(f)).Order().ToArray();
+        var recorded = ManifestPaths(d.RemoteDir).Where(k => k.StartsWith("_media/")).Order().ToArray();
+
+        Assert.NotEmpty(onServer);                       // the cancel has to land mid-run
+        Assert.Equal(onServer, recorded);                // and the record matches, exactly
+
+        // Which is what lets them be found again once they leave the site.
+        Directory.Delete(Path.Combine(d.SiteDir, "_media"), recursive: true);
+        var after = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        Assert.Equal(onServer.Length, after.StaleRemote.Count);
+    }
+
+    /// <summary>
+    /// A file on the server that isn't in the site is a standing condition, not a one-off event.
+    /// Reporting it once and forgetting meant anyone who cancelled, or chose to keep them, or
+    /// closed the dialog, lost the offer for good while the file stayed published.
+    /// </summary>
+    [SkippableFact]
+    public void AStaleFile_KeepsBeingReportedUntilItIsDealtWith()
+    {
+        var d = Seeded(("index.html", "home"), ("_media/figure.webp", "a figure"));
+        SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        File.Delete(Path.Combine(d.SiteDir, "_media", "figure.webp"));
+
+        for (var i = 0; i < 3; i++)
+        {
+            var r = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+            Assert.Contains("_media/figure.webp", r.StaleRemote);
+        }
+
+        // And stops the moment it is actually gone.
+        var stale = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null).StaleRemote;
+        SftpSyncService.DeleteRemote(d.SiteDir, d.Profile, null, stale);
+
+        Assert.Empty(SftpSyncService.QuickSync(d.SiteDir, d.Profile, null).StaleRemote);
     }
 
     /// <summary>
