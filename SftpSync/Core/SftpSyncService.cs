@@ -329,7 +329,7 @@ public static class SftpSyncService
 
     /// <summary>
     /// Deletes the given relative paths from the server (used by the stale-file dialog), prunes
-    /// emptied directories, and rewrites the manifest from the current local site.
+    /// emptied directories, and takes the deleted paths out of the manifest.
     /// </summary>
     public static SyncResult DeleteRemote(
         string siteRoot,
@@ -377,11 +377,27 @@ public static class SftpSyncService
         // as they empty, and two workers doing that on overlapping paths would race.
         PruneEmptyDirs(client, touchedDirs.Keys, remoteRoot, errors, progress, ct);
 
-        // Rewrite the manifest to match what remains locally. Announced because on a big site the
-        // local walk and the upload are several silent seconds after the bar has filled.
-        progress?.Report(new SyncProgress(SyncPhase.WritingManifest, "Updating the file list"));
-        var local = SyncManifestBuilder.BuildLocal(siteRoot);
-        WriteManifest(client, ManifestRemotePath(profile), local, errors);
+        // Take the deleted paths out of the manifest, and change nothing else.
+        //
+        // This used to rebuild it from the local folder, which claimed every file in _site was on
+        // the server — including any the sync moments earlier had failed to upload and deliberately
+        // dropped from the manifest so it would be retried. Putting those back said "already
+        // uploaded" about a file that had never arrived, and because the local copy never changes,
+        // its size and mtime kept matching that record: every later Quick Sync skipped it, for
+        // good. Only Verify & Repair, which lists the server, could find it again.
+        //
+        // Removing is all this can honestly do. The files being deleted are remote-only — that is
+        // what made them stale — so they were never in the local manifest to begin with, and the
+        // sync that just ran already wrote an accurate one.
+        var manifestPath = ManifestRemotePath(profile);
+        if (TryExists(client, manifestPath))
+        {
+            progress?.Report(new SyncProgress(SyncPhase.WritingManifest, "Updating the file list"));
+            var manifest = DownloadManifest(client, manifestPath);
+            var changed = false;
+            foreach (var rel in relPaths) changed |= manifest.Files.Remove(rel);
+            if (changed) WriteManifest(client, manifestPath, manifest, errors);
+        }
 
         client.Disconnect();
         return new SyncResult($"Deleted {deleted} remote file(s).", 0, [], errors, []);
