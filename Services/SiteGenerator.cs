@@ -77,8 +77,8 @@ public static class SiteGenerator
         var homePromotions = CollectHomePromotions(rootItem, directoryRoot);
         var footerColumns = BuildFooterColumns(config, directoryRoot, rootItem, warnings);
         GeneratePage(rootItem, siteRoot, directoryRoot, config, menuFolders, 0,
-            [], templates, progress, errors, warnings, tracker, homePromotions, ledger, footerColumns,
-            colors);
+            [], templates, progress, errors, warnings, tracker, homePromotions, ledger,
+            footerColumns, colors);
 
         var copyJobs = new List<CopyJob>();
         CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs, ledger);
@@ -802,7 +802,7 @@ public static class SiteGenerator
     /// </param>
     private sealed record FooterLink(
         string Href, bool Absolute, bool NewTab,
-        string Icon, string IconColor, string IconBackground,
+        string Icon, string IconColor, string IconBackground, bool IconKnockoutIsDisc,
         string Title, string Note);
 
     /// <summary>The most columns a footer can have — past this the row stops reading as columns.</summary>
@@ -810,8 +810,25 @@ public static class SiteGenerator
 
     private static readonly Regex IconNamePattern = new(@"^bi-[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.Compiled);
 
+    /// <summary>How a brand mark's cut-out has to be filled, if at all.</summary>
+    /// <remarks>
+    /// Not one shape for all of them, because the glyphs are not one kind of drawing. Rendering each
+    /// with a patch behind it and looking at what shows through gives three:
+    ///
+    /// <list type="bullet">
+    /// <item><c>Box</c> — a solid mark with the symbol cut out of the middle, clear of the edges. A
+    /// small inset square covers it and stays well inside the mark. YouTube is the type.</item>
+    /// <item><c>Disc</c> — a round mark whose cut-out runs to the boundary. Facebook's "f" descends
+    /// through the bottom of its circle, so a patch has to reach the edge — and a square that big
+    /// spills past the curve. Only a circle inscribed in the glyph does both.</item>
+    /// <item><c>None</c> — a silhouette with nothing cut out of it. A patch behind one of these is
+    /// just a white shape sticking out from behind the mark.</item>
+    /// </list>
+    /// </remarks>
+    private enum Knockout { None, Box, Disc }
+
     /// <summary>
-    /// The house colors of the brand glyphs, and the fill their cut-out wants.
+    /// The house colors of the brand glyphs, and how each one's cut-out has to be filled.
     /// </summary>
     /// <remarks>
     /// A brand mark has one right answer and everybody knows what it is, so <c>icon: bi-youtube</c>
@@ -820,31 +837,37 @@ public static class SiteGenerator
     /// Setting either color on the row turns this off completely, so an author who wants the mark
     /// to match the rest of the column says so and gets exactly that.
     /// </remarks>
-    private static readonly IReadOnlyDictionary<string, (string Color, string Background)> BrandColors =
-        new Dictionary<string, (string, string)>(StringComparer.Ordinal)
+    private static readonly IReadOnlyDictionary<string, (string Color, Knockout Fill)> BrandMarks =
+        new Dictionary<string, (string, Knockout)>(StringComparer.Ordinal)
         {
-            { "bi-youtube",   ("#ff0000", "#ffffff") },
-            { "bi-facebook",  ("#1877f2", "#ffffff") },
-            { "bi-instagram", ("#e4405f", "#ffffff") },
-            { "bi-linkedin",  ("#0a66c2", "#ffffff") },
-            { "bi-twitter",   ("#1da1f2", "#ffffff") },
-            { "bi-twitter-x", ("#000000", "#ffffff") },
-            { "bi-github",    ("#181717", "#ffffff") },
-            { "bi-mastodon",  ("#6364ff", "#ffffff") },
-            { "bi-tiktok",    ("#000000", "#ffffff") },
-            { "bi-whatsapp",  ("#25d366", "#ffffff") },
-            { "bi-telegram",  ("#26a5e4", "#ffffff") },
-            { "bi-pinterest", ("#bd081c", "#ffffff") },
-            { "bi-reddit",    ("#ff4500", "#ffffff") },
-            { "bi-vimeo",     ("#1ab7ea", "#ffffff") },
-            { "bi-twitch",    ("#9146ff", "#ffffff") },
-            { "bi-discord",   ("#5865f2", "#ffffff") },
-            { "bi-spotify",   ("#1db954", "#ffffff") },
-            { "bi-threads",   ("#000000", "#ffffff") },
-            { "bi-bluesky",   ("#0285ff", "#ffffff") },
-            { "bi-slack",     ("#4a154b", "#ffffff") },
-            { "bi-medium",    ("#000000", "#ffffff") },
+            // Solid, with the symbol cut out of the middle.
+            { "bi-youtube",   ("#ff0000", Knockout.Box)  },
+            { "bi-linkedin",  ("#0a66c2", Knockout.Box)  },
+            { "bi-instagram", ("#e4405f", Knockout.Box)  },
+            { "bi-vimeo",     ("#1ab7ea", Knockout.Box)  },
+            { "bi-discord",   ("#5865f2", Knockout.Box)  },
+            { "bi-twitch",    ("#9146ff", Knockout.Box)  },
+            { "bi-mastodon",  ("#6364ff", Knockout.Box)  },
+            { "bi-whatsapp",  ("#25d366", Knockout.Box)  },
+
+            // Round, and the cut-out runs to the edge.
+            { "bi-facebook",  ("#1877f2", Knockout.Disc) },
+            { "bi-github",    ("#181717", Knockout.Disc) },
+            { "bi-telegram",  ("#26a5e4", Knockout.Disc) },
+            { "bi-pinterest", ("#bd081c", Knockout.Disc) },
+            { "bi-reddit",    ("#ff4500", Knockout.Disc) },
+            { "bi-spotify",   ("#1db954", Knockout.Disc) },
+            { "bi-threads",   ("#000000", Knockout.Disc) },
+
+            // Silhouettes: nothing is cut out, so nothing goes behind them.
+            { "bi-twitter",   ("#1da1f2", Knockout.None) },
+            { "bi-twitter-x", ("#000000", Knockout.None) },
+            { "bi-tiktok",    ("#000000", Knockout.None) },
+            { "bi-bluesky",   ("#0285ff", Knockout.None) },
+            { "bi-slack",     ("#4a154b", Knockout.None) },
+            { "bi-medium",    ("#000000", Knockout.None) },
         };
+
     /// <summary>
     /// Whether this is a color dir2site can both publish and read. There is no escape for a value
     /// going into CSS that leaves it meaning what it says — an escaped "#fff" is not a color any
@@ -932,12 +955,19 @@ public static class SiteGenerator
 
             // Only when the row says nothing about color at all: naming either one is the author
             // taking charge of how the mark looks, and half a brand's colors is nobody's intent.
-            if (color.Length == 0 && background.Length == 0 && BrandColors.TryGetValue(icon, out var brand))
-                (color, background) = brand;
+            var disc = false;
+            if (color.Length == 0 && background.Length == 0 && BrandMarks.TryGetValue(icon, out var brand))
+            {
+                color = brand.Color;
+                // A silhouette gets its color and nothing behind it; the other two get white in the
+                // shape their cut-out needs.
+                background = brand.Fill == Knockout.None ? string.Empty : "#ffffff";
+                disc = brand.Fill == Knockout.Disc;
+            }
 
             rows.Add(new FooterLink(
                 href, absolute, newTab,
-                icon, color, background,
+                icon, color, background, disc,
                 title,
                 item.Note ?? string.Empty));
         }
@@ -1203,6 +1233,7 @@ public static class SiteGenerator
             obj.SetValue("icon", link.Icon, readOnly: true);
             obj.SetValue("icon_color", link.IconColor, readOnly: true);
             obj.SetValue("icon_background", link.IconBackground, readOnly: true);
+            obj.SetValue("icon_knockout_disc", link.IconKnockoutIsDisc, readOnly: true);
             obj.SetValue("title", link.Title, readOnly: true);
             obj.SetValue("note", link.Note, readOnly: true);
             return (object)obj;
