@@ -32,10 +32,15 @@ public sealed class EncryptedFileCredentialStore : ICredentialStore
 
     private string PathFor(string key) => Path.Combine(_dir, key + ".aes");
 
-    public string? Get(string key)
+    /// <summary>Where <see cref="Set"/> stages a write before renaming it over the real path.</summary>
+    private static string TempFor(string path) => path + ".tmp";
+
+    public string? Get(string key) => Read(key).Secret;
+
+    public CredentialResult Read(string key)
     {
         var path = PathFor(key);
-        if (!File.Exists(path)) return null;
+        if (!File.Exists(path)) return CredentialResult.NotFound;
         try
         {
             var blob   = File.ReadAllBytes(path);
@@ -45,11 +50,14 @@ public sealed class EncryptedFileCredentialStore : ICredentialStore
             var plain  = new byte[cipher.Length];
             using var aes = new AesGcm(_key, TagSize);
             aes.Decrypt(nonce, cipher, tag, plain);
-            return Encoding.UTF8.GetString(plain);
+            return CredentialResult.Found(Encoding.UTF8.GetString(plain));
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            // A truncated file trips the AsSpan slicing, a tampered one fails the GCM tag, and a
+            // changed username or machine name derives a different key. All of them mean "there is
+            // a secret here we can't read", never "there is no secret".
+            return CredentialResult.Failed($"Could not read the saved secret: {ex.Message}");
         }
     }
 
@@ -74,17 +82,28 @@ public sealed class EncryptedFileCredentialStore : ICredentialStore
     {
         var path = PathFor(key);
         if (File.Exists(path)) File.Delete(path);
+
+        // A write interrupted before its rename leaves the temp file holding the secret, fully
+        // decryptable. Forgetting a secret has to mean forgetting every copy of it — someone
+        // clearing a credential because it leaked, or because they're passing the machine on, has
+        // been told it is gone.
+        var tmp = TempFor(path);
+        if (File.Exists(tmp)) File.Delete(tmp);
     }
 
     // The key is derived from non-secret material, so the file's own permissions are what keeps
     // other accounts on the machine out. Create it empty and lock it down before the ciphertext
     // goes in, so it is never briefly world-readable.
+    //
+    // Write to a temp file and rename over the target: dying midway through would otherwise leave a
+    // truncated blob, which reads back as a secret that exists but can't be decrypted.
     private static void WriteRestricted(string path, byte[] bytes)
     {
-        if (!File.Exists(path))
-            File.Create(path).Dispose();
-        RestrictToOwner(path);
-        File.WriteAllBytes(path, bytes);
+        var tmp = TempFor(path);
+        File.Create(tmp).Dispose();
+        RestrictToOwner(tmp);
+        File.WriteAllBytes(tmp, bytes);
+        File.Move(tmp, path, overwrite: true);
     }
 
     private static void CreateDirRestricted(string dir)

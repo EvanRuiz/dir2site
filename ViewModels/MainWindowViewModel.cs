@@ -760,8 +760,18 @@ public partial class MainWindowViewModel : ViewModelBase
         var profile = DeployTargets.ToProfile(DirectoryRoot, target);
 
         var siteRoot = Path.Combine(DirectoryRoot, "_site");
-        var secret = CredentialStoreFactory.Create()
-            .Get(DeployTargets.CredentialKey(DirectoryRoot, target));
+
+        // A secret that exists but can't be read is not the same as no secret. Deploying anyway
+        // would fail at the server as an opaque authentication error, telling the user nothing
+        // about the real problem or how to fix it.
+        var stored = CredentialStoreFactory.Create()
+            .Read(DeployTargets.CredentialKey(DirectoryRoot, target));
+        if (stored.Status == CredentialStatus.Failed)
+        {
+            AppendError(stored.Error ?? "Could not read the saved secret for this deploy target.");
+            return;
+        }
+        var secret = stored.Secret;
         var verifier = CreateHostKeyVerifier(target, profile);
 
         // Verify & Repair reconciles against the live server rather than uploading a computed
