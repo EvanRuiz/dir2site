@@ -1435,7 +1435,7 @@ public static class SiteGenerator
                 var osdSrc = WithAssetPrefix(assetPrefix, GetImageSrc(artifact, stem));
                 if (string.IsNullOrEmpty(osdSrc))
                     osdSrc = previewLargeSrc;
-                artifactObj.SetValue("image_src", osdSrc, readOnly: true);
+                artifactObj.SetValue("image_src_js", JsString(osdSrc), readOnly: true);
                 templateName = "artifact-photo";
                 break;
 
@@ -1508,6 +1508,15 @@ public static class SiteGenerator
         if (artifact is not Photo photo || photo.Image == null) return "";
         return StripDir2SitePrefix(photo.Image, stem);
     }
+
+    /// <summary>
+    /// A path safe to drop between the quotes of a javascript string in a page. Escaping it as HTML
+    /// would corrupt it — a viewer would ask for "&amp;" where the file has "&" — so the three
+    /// characters that could end the string, or the script around it, are escaped as javascript
+    /// escapes instead. A filename is allowed all three.
+    /// </summary>
+    private static string JsString(string src) =>
+        src.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("<", "\\x3C");
 
     private static string WithAssetPrefix(string assetPrefix, string src) =>
         assetPrefix.Length == 0 || src.Length == 0 ? src : assetPrefix + src;
