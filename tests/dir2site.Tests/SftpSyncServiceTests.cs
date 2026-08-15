@@ -235,6 +235,36 @@ public class SftpSyncServiceTests : IClassFixture<SftpServerFixture>
     }
 
     /// <summary>
+    /// Forcing a full upload says what to send. It says nothing about what is already up there, so
+    /// a file this run doesn't touch has to stay in the record — and stay reportable.
+    /// </summary>
+    /// <remarks>
+    /// Forcing works by comparing against an empty reference, so everything counts as needing to
+    /// be sent. Once that same empty reference became the manifest's starting point, a forced run
+    /// recorded only what it uploaded and forgot every other file on the server — reintroducing,
+    /// through the one button someone presses when they suspect the server has drifted, exactly
+    /// the fault the record was corrected to remove.
+    /// </remarks>
+    [SkippableFact]
+    public void AForcedFullUpload_StillRemembersWhatItDidNotSend()
+    {
+        var d = Seeded(("index.html", "home"), ("old/index.html", "an old page"));
+        SftpSyncService.QuickSync(d.SiteDir, d.Profile, null);
+        File.Delete(Path.Combine(d.SiteDir, "old", "index.html"));   // stale on the server now
+
+        var forced = SftpSyncService.QuickSync(d.SiteDir, d.Profile, null, forceFull: true);
+
+        // Forcing decides what is sent, not what is reported as not belonging.
+        Assert.Contains("old/index.html", forced.StaleRemote);
+        Assert.True(RemoteHas(d.RemoteDir, "old/index.html"));
+        Assert.Contains("old/index.html", ManifestPaths(d.RemoteDir));
+
+        // And it is still there to be offered afterwards, rather than stranded and invisible.
+        Assert.Contains("old/index.html",
+            SftpSyncService.QuickSync(d.SiteDir, d.Profile, null).StaleRemote);
+    }
+
+    /// <summary>
     /// A file on the server that isn't in the site is a standing condition, not a one-off event.
     /// Reporting it once and forgetting meant anyone who cancelled, or chose to keep them, or
     /// closed the dialog, lost the offer for good while the file stayed published.
