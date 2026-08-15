@@ -33,7 +33,7 @@ public class FigureWidthCssTests
         Path.Combine(RepoRoot(), "Assets", "templates", "site-css.html")));
 
     private static string ExtensionCss() => Strip(File.ReadAllText(
-        Path.Combine(RepoRoot(), "editors", "vscode-dir2site-figures", "media", "dir2site-figures.css")));
+        Path.Combine(RepoRoot(), "editors", "vscode-dir2site-markdown", "media", "preview.css")));
 
     /// Comments explain these very rules, so they have to go before anything is matched.
     private static string Strip(string css) =>

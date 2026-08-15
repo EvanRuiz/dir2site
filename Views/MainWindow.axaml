@@ -126,7 +126,7 @@
                 Padding="10,6"
                 IsVisible="{Binding VsCodeExtensionUpdateAvailable}">
             <StackPanel Orientation="Horizontal" Spacing="10">
-                <TextBlock Text="{Binding VsCodeExtensionVersion, StringFormat='VS Code figures extension update available: v{0}'}"
+                <TextBlock Text="{Binding VsCodeExtensionVersion, StringFormat='VS Code extension update available: v{0}'}"
                            FontSize="12"
                            Foreground="White"
                            VerticalAlignment="Center"/>
@@ -384,7 +384,7 @@
                                         Content="Install VS Code Extension"
                                         Command="{Binding InstallVsCodeExtensionCommand}"
                                         IsVisible="{Binding CanInstallVsCodeExtension}"
-                                        ToolTip.Tip="Adds ^^^ figure preview to VS Code's Markdown preview"
+                                        ToolTip.Tip="Makes VS Code's Markdown preview render the way dir2site does"
                                         FontSize="11" Padding="6,3"/>
                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                     <TextBlock Text="Deploy:" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
