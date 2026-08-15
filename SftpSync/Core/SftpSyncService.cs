@@ -200,7 +200,7 @@ public static class SftpSyncService
         using var client = Connect(profile, secret, hostKeyVerifier);
         try
         {
-            var (diff, note) = Diff(client, profile, local, forceFull, progress, ct);
+            var (diff, note, _) = Diff(client, profile, local, forceFull, progress, ct);
             var bytes = diff.ToUpload.Sum(rel => local.Files.TryGetValue(rel, out var e) ? e.Size : 0);
             return new SyncPlan(diff.ToUpload, diff.StaleRemote, bytes, note.Trim());
         }
@@ -266,15 +266,34 @@ public static class SftpSyncService
         using var client = Connect(profile, secret, hostKeyVerifier);
 
         var manifestPath = ManifestRemotePath(profile);
-        var (diff, note) = Diff(client, profile, local, forceFull, progress, ct);
-        var errors = UploadFiles(
-            client, () => Connect(profile, secret, hostKeyVerifier),
-            siteRoot, profile, local, diff.ToUpload, progress, ct);
+        var (diff, note, reference) = Diff(client, profile, local, forceFull, progress, ct);
+        var delivered = new ManifestUpdate(reference, diff.ToUpload);
 
-        WriteManifest(client, manifestPath, local, errors);
+        List<string> errors;
+        try
+        {
+            errors = UploadFiles(
+                client, () => Connect(profile, secret, hostKeyVerifier),
+                siteRoot, profile, local, delivered, diff.ToUpload, progress, ct);
+        }
+        catch
+        {
+            // Cancelled or dropped part-way. What did arrive is on the server whatever happens
+            // next, so it has to be written down — a manifest that forgets it is as wrong as one
+            // that invents it, and the files it forgot could never be reported stale again.
+            WriteManifest(client, manifestPath, delivered.Snapshot(), []);
+            throw;
+        }
 
-        var summary = $"Quick Sync: {diff.ToUpload.Count - errors.Count} uploaded, " +
-                      $"{diff.StaleRemote.Count} stale → {profile.Host}{note}";
+        WriteManifest(client, manifestPath, delivered.Snapshot(), errors);
+
+        // "0 stale" was a promise Quick Sync is in no position to make: it compares against the
+        // file list it wrote last time, never against the server, so all it really knows is that
+        // its own records name nothing extra. A count is only stated when there is something to
+        // count; silence claims nothing.
+        var stale = diff.StaleRemote.Count > 0 ? $", {diff.StaleRemote.Count} stale" : "";
+        var summary = $"Quick Sync: {diff.ToUpload.Count - errors.Count} uploaded{stale} " +
+                      $"→ {profile.Host}{note}";
         client.Disconnect();
         return new SyncResult(
             summary, diff.ToUpload.Count - errors.Count, diff.StaleRemote, errors, diff.ToUpload);
@@ -308,13 +327,31 @@ public static class SftpSyncService
         // Treat the listed remote tree as the reference: anything local that's missing or
         // mismatched needs (re)uploading; anything remote-only is stale.
         var diff = SyncManifestBuilder.Compare(local, remote);
-        var errors = UploadFiles(
-            client, () => Connect(profile, secret, hostKeyVerifier),
-            siteRoot, profile, local, diff.ToUpload, progress, ct);
+
+        // The listing is the truth about the server, so it is what this run's manifest starts from
+        // — including the stale files, which are still up there until someone removes them.
+        var delivered = new ManifestUpdate(remote, diff.ToUpload);
+
+        List<string> errors;
+        try
+        {
+            errors = UploadFiles(
+                client, () => Connect(profile, secret, hostKeyVerifier),
+                siteRoot, profile, local, delivered, diff.ToUpload, progress, ct);
+        }
+        catch
+        {
+            WriteManifest(client, manifestPath, delivered.Snapshot(), []);
+            throw;
+        }
         errors.InsertRange(0, listErrors);
 
-        WriteManifest(client, manifestPath, local, errors);
+        WriteManifest(client, manifestPath, delivered.Snapshot(), errors);
 
+        // States the count even at zero, unlike Quick Sync, which stays silent because it only
+        // consulted its own records. This one listed the server, so "0 stale" is a finding it can
+        // stand behind — and confirming there is nothing up there that shouldn't be is most of the
+        // reason for running it.
         var summary = $"Verify & Repair: {diff.ToUpload.Count - errors.Count} repaired, " +
                       $"{diff.StaleRemote.Count} stale → {profile.Host}";
         client.Disconnect();
@@ -324,7 +361,7 @@ public static class SftpSyncService
 
     /// <summary>
     /// Deletes the given relative paths from the server (used by the stale-file dialog), prunes
-    /// emptied directories, and rewrites the manifest from the current local site.
+    /// emptied directories, and takes the deleted paths out of the manifest.
     /// </summary>
     public static SyncResult DeleteRemote(
         string siteRoot,
@@ -343,6 +380,12 @@ public static class SftpSyncService
         var done = 0;
         var touchedDirs = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
 
+        // Which paths are known not to be up there any more — the ones this run removed, plus any
+        // that turned out to be gone already. Only these leave the record: a delete that failed
+        // leaves the file on the server, and forgetting it there would mean it could never be
+        // offered again, which is the same silence the record was corrected to stop.
+        var gone = new ConcurrentBag<string>();
+
         // Deleting costs two round trips a file, same as uploading, so it gets the same treatment
         // and the same per-target connection count.
         ForEachInParallel(client, () => Connect(profile, secret, hostKeyVerifier),
@@ -357,6 +400,9 @@ public static class SftpSyncService
                     worker.DeleteFile(full);
                     Interlocked.Increment(ref deleted);
                 }
+                // Reached only when the delete succeeded, or when there was nothing there to
+                // delete — both of which are knowing it is gone.
+                gone.Add(rel);
                 touchedDirs[ParentOf(full)] = 0;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -372,11 +418,32 @@ public static class SftpSyncService
         // as they empty, and two workers doing that on overlapping paths would race.
         PruneEmptyDirs(client, touchedDirs.Keys, remoteRoot, errors, progress, ct);
 
-        // Rewrite the manifest to match what remains locally. Announced because on a big site the
-        // local walk and the upload are several silent seconds after the bar has filled.
-        progress?.Report(new SyncProgress(SyncPhase.WritingManifest, "Updating the file list"));
-        var local = SyncManifestBuilder.BuildLocal(siteRoot);
-        WriteManifest(client, ManifestRemotePath(profile), local, errors);
+        // Take the deleted paths out of the manifest, and change nothing else.
+        //
+        // This used to rebuild it from the local folder, which claimed every file in _site was on
+        // the server — including any the sync moments earlier had failed to upload and deliberately
+        // dropped from the manifest so it would be retried. Putting those back said "already
+        // uploaded" about a file that had never arrived, and because the local copy never changes,
+        // its size and mtime kept matching that record: every later Quick Sync skipped it, for
+        // good. Only Verify & Repair, which lists the server, could find it again.
+        //
+        // Removing is all this can honestly do. The files being deleted are remote-only — that is
+        // what made them stale — so they were never in the local manifest to begin with, and the
+        // sync that just ran already wrote an accurate one.
+        //
+        // With no manifest present, nothing is written rather than one being invented from the
+        // local folder. That is deliberate: an absent manifest makes the next Quick Sync upload
+        // everything, which errs towards sending too much, while a made-up one would state as fact
+        // a delivery nobody performed.
+        var manifestPath = ManifestRemotePath(profile);
+        if (TryExists(client, manifestPath))
+        {
+            progress?.Report(new SyncProgress(SyncPhase.WritingManifest, "Updating the file list"));
+            var manifest = DownloadManifest(client, manifestPath);
+            var changed = false;
+            foreach (var rel in gone) changed |= manifest.Files.Remove(rel);
+            if (changed) WriteManifest(client, manifestPath, manifest, errors);
+        }
 
         client.Disconnect();
         return new SyncResult($"Deleted {deleted} remote file(s).", 0, [], errors, []);
@@ -488,6 +555,7 @@ public static class SftpSyncService
         string siteRoot,
         SftpProfile profile,
         SyncManifest local,
+        ManifestUpdate delivered,
         IReadOnlyList<string> toUpload,
         IProgress<SyncProgress>? progress,
         CancellationToken ct)
@@ -516,15 +584,17 @@ public static class SftpSyncService
                 // well as the setstat — SSH.NET reads the current attributes before writing them
                 // back, and there is no supported way to skip that.
                 client.SetLastWriteTimeUtc(remoteFull, File.GetLastWriteTimeUtc(localFull));
+
+                // Recorded here, on the file that actually arrived, rather than assumed later for
+                // the whole batch. It is what makes the manifest true at every moment of the run
+                // instead of only at the end of one that got to finish.
+                if (local.Files.TryGetValue(rel, out var entry)) delivered.Delivered(rel, entry);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                lock (errors)
-                {
-                    errors.Add($"Upload '{rel}': {ex.Message}");
-                    // Drop from the manifest snapshot so the next sync retries it.
-                    local.Files.Remove(rel);
-                }
+                // Nothing to retract here: deciding to send it already took it out of the
+                // record, and only arriving puts it back.
+                lock (errors) errors.Add($"Upload '{rel}': {ex.Message}");
             }
 
             // Counted on completion, not on start: with several in flight, the index a worker
@@ -862,32 +932,99 @@ public static class SftpSyncService
     /// The upload/stale diff against the reference manifest, shared by Preview and QuickSync so
     /// the plan a user is shown is produced by the same code that acts on it.
     /// </summary>
-    private static (SyncManifestBuilder.Diff Diff, string Note) Diff(
+    /// <param name="Reference">
+    /// What the server was believed to hold before this run. Handed back because it is the
+    /// starting point for the manifest this run will write: a deploy changes what is up there, it
+    /// does not replace it, and the files it never touched are still there.
+    /// </param>
+    private static (SyncManifestBuilder.Diff Diff, string Note, SyncManifest Reference) Diff(
         SftpClient client, SftpProfile profile, SyncManifest local,
         bool forceFull, IProgress<SyncProgress>? progress, CancellationToken ct)
     {
         var manifestPath = ManifestRemotePath(profile);
         var note = "";
 
-        SyncManifest reference;
-        if (forceFull)
-        {
-            reference = new SyncManifest();
-            note = " (forced full upload)";
-        }
-        else if (TryExists(client, manifestPath))
+        // What the server is believed to hold, read whether or not a full upload was asked for.
+        // Forcing is a statement about what to send, not about what is up there: a file this run
+        // doesn't touch is still on the server, and dropping it from the record would strand it
+        // published and unreportable — the very thing the record was corrected to stop.
+        var known = new SyncManifest();
+        if (TryExists(client, manifestPath))
         {
             progress?.Report(new SyncProgress(SyncPhase.Listing, "Reading remote manifest…"));
-            reference = DownloadManifest(client, manifestPath);
+            known = DownloadManifest(client, manifestPath);
         }
-        else
+        else if (!forceFull)
         {
-            reference = new SyncManifest();
             note = " (no remote manifest — uploaded everything; run Verify & Repair to confirm)";
         }
 
+        if (forceFull) note = " (forced full upload)";
+
+        // Comparing against nothing is what makes every file count as needing to be sent. Only the
+        // comparison is emptied; `known` keeps its separate job of saying what is already there.
+        var reference = forceFull ? new SyncManifest() : known;
+        var sending = SyncManifestBuilder.Compare(local, reference);
+
+        // Which leaves stale files, and they are not part of what forcing decides. Taken from
+        // `known` either way, so that a forced upload — the thing someone reaches for when they
+        // suspect the server has drifted — doesn't go quiet about the files that don't belong.
+        var stale = forceFull ? SyncManifestBuilder.Compare(local, known).StaleRemote : sending.StaleRemote;
+
         ct.ThrowIfCancellationRequested();
-        return (SyncManifestBuilder.Compare(local, reference), note);
+        return (new SyncManifestBuilder.Diff(sending.ToUpload, stale), note, known);
+    }
+
+    /// <summary>
+    /// The manifest this run should leave behind: what the server was believed to hold, updated
+    /// with what actually arrived. Successful uploads are recorded into it as they happen.
+    /// </summary>
+    /// <remarks>
+    /// Deriving it from the local folder instead — "assume it all arrived" — made it wrong in
+    /// three ways at once. A file whose upload failed was recorded as delivered. A run that was
+    /// cancelled recorded files it never attempted. And every file on the server that isn't in the
+    /// site was dropped from the record, so it could be reported stale exactly once and then never
+    /// again, while it stayed published.
+    ///
+    /// Starting from the reference and applying outcomes keeps the manifest true at every moment,
+    /// which is what lets it be written even when the run is cancelled part-way.
+    /// </remarks>
+    private sealed class ManifestUpdate
+    {
+        private readonly Dictionary<string, SyncEntry> _files;
+
+        /// <param name="sending">
+        /// Everything this run decided to send. All of it leaves the record immediately, and comes
+        /// back only by arriving.
+        /// </param>
+        /// <remarks>
+        /// Deciding a file needs sending is itself a statement that what is up there is not known
+        /// to be right — so the old entry, from whenever it was last delivered, has stopped being
+        /// evidence. Retracting up front rather than on each way a send can go wrong is what makes
+        /// this hold for all of them at once: one that failed, one abandoned when the run was
+        /// cancelled, and any future way of not arriving that nobody has thought of yet. Each was
+        /// its own silent bug while they were handled one at a time.
+        ///
+        /// Being wrong here costs an upload. Being wrong the other way costs the file: an entry
+        /// left standing is written from the local copy, which doesn't change, so it keeps
+        /// matching and no later Quick Sync can ever see anything to act on.
+        /// </remarks>
+        public ManifestUpdate(SyncManifest reference, IEnumerable<string> sending)
+        {
+            _files = new Dictionary<string, SyncEntry>(reference.Files, StringComparer.Ordinal);
+            foreach (var rel in sending) _files.Remove(rel);
+        }
+
+        /// <summary>Records a file as now being on the server. Called from upload workers.</summary>
+        public void Delivered(string rel, SyncEntry entry)
+        {
+            lock (_files) _files[rel] = entry;
+        }
+
+        public SyncManifest Snapshot()
+        {
+            lock (_files) return new SyncManifest { Files = new Dictionary<string, SyncEntry>(_files) };
+        }
     }
 
     /// <summary>Trailing-slash-free directory path; empty/"." becomes ".".</summary>
