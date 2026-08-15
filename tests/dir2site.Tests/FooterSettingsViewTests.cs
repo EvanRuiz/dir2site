@@ -119,7 +119,7 @@ public class FooterSettingsViewTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void TheFooterColourPlaceholderIsTheColourAnEmptyBoxActuallyGives()
+    public void TheFooterColorPlaceholderIsTheColorAnEmptyBoxActuallyGives()
     {
         var config = new Dir2SiteModel { PrimaryColor = "#223355", FooterColor = string.Empty };
         var (view, vm) = Show(config);
@@ -390,7 +390,7 @@ public class FooterSettingsViewTests : IDisposable
     [AvaloniaFact]
     public void ARowIsTrimmedOnItsWayBackToTheConfig()
     {
-        // Stray spaces around a hex colour or an icon name would fail the generator's checks and be
+        // Stray spaces around a hex color or an icon name would fail the generator's checks and be
         // dropped with a warning, which is a baffling result for something typed into a text box.
         var row = new FooterItemRow
         {

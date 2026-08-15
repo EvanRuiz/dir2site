@@ -20,7 +20,7 @@
 
     {{ if artifact.preview_src != "" }}
     <div class="artifact-preview mb-3">
-      <img src="{{ artifact.preview_src }}" alt="{{ artifact.caption | html.escape }}">
+      <img src="{{ artifact.preview_src | html.escape }}" alt="{{ artifact.caption | html.escape }}">
     </div>
     {{ end }}
 

@@ -33,7 +33,7 @@ public static class VsCodeExtensionInstaller
     // internal so BundledVsCodeExtensionTests can check these against the packaged manifest rather
     // than against a literal that has to be remembered separately at every version bump.
     internal const string PublisherAndName = "dir2site.dir2site-figures";
-    internal const string Version = "0.1.2";
+    internal const string Version = "0.1.3";
     private const string BundledVsix = "avares://dir2site/Assets/editors/dir2site-figures.vsix";
 
     /// <summary>A CLI that never returns shouldn't leave the button disabled for the session.</summary>

@@ -34,6 +34,7 @@ public class SaveDir2SiteConfigTests : IDisposable
         SecondaryColor = "#666666",
         BackgroundColor = "#ffffff",
         NavbarDark = true,
+        CardBreadcrumbs = true,
         PdfResizeEnabled = true,
         PdfMaxWidth = 1600,
         PdfQuality = 80,
@@ -58,11 +59,12 @@ public class SaveDir2SiteConfigTests : IDisposable
             title: Old Name
             footer: © 2026
 
-            # Colours picked to match the logo
+            # Colors picked to match the logo
             primaryColor: '#333333'
             secondaryColor: '#666666'
             backgroundColor: '#ffffff'
             navbarDark: true
+            cardBreadcrumbs: true
             pdfResizeEnabled: true
             pdfMaxWidth: 1600
             pdfQuality: 80
@@ -75,7 +77,7 @@ public class SaveDir2SiteConfigTests : IDisposable
 
         var result = File.ReadAllText(Path_);
         Assert.Contains("# My site config — please don't eat my notes", result);
-        Assert.Contains("# Colours picked to match the logo", result);
+        Assert.Contains("# Colors picked to match the logo", result);
         Assert.Contains("experimentalThing: yes please", result);
         Assert.Contains("title: New Name", result);
         Assert.DoesNotContain("Old Name", result);
@@ -87,18 +89,21 @@ public class SaveDir2SiteConfigTests : IDisposable
         YamlParser.SaveDir2SiteConfig(Path_, Sample());
         var config = Sample();
         config.NavbarDark = false;
+        config.CardBreadcrumbs = false;
         config.PdfMaxWidth = 1200;
 
         YamlParser.SaveDir2SiteConfig(Path_, config);
 
         var result = File.ReadAllText(Path_);
         Assert.Contains("navbarDark: false", result);
+        Assert.Contains("cardBreadcrumbs: false", result);
         Assert.Contains("pdfMaxWidth: 1200", result);
         Assert.DoesNotContain("\"false\"", result);
         Assert.DoesNotContain("'1200'", result);
 
         var loaded = YamlParser.DeserializeAs<Dir2SiteModel>(result);
         Assert.False(loaded.NavbarDark);
+        Assert.False(loaded.CardBreadcrumbs);
         Assert.Equal(1200, loaded.PdfMaxWidth);
     }
 

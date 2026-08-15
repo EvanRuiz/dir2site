@@ -2,7 +2,7 @@
   "name": "dir2site-figures",
   "displayName": "dir2site figures",
   "description": "Renders dir2site's ^^^ figure blocks and {.figure-right} image attributes in VS Code's Markdown preview.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "dir2site",
   "license": "AGPL-3.0-or-later",
   "repository": {

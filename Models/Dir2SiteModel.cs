@@ -15,11 +15,20 @@ public class Dir2SiteModel
 
     /// <summary>
     /// Background of the footer band. Empty follows <see cref="PrimaryColor"/>, so a project that
-    /// never sets it gets a footer matching its navbar rather than a colour it didn't choose.
+    /// never sets it gets a footer matching its navbar rather than a color it didn't choose.
     /// </summary>
     public string FooterColor     { get; set; } = string.Empty;
 
     public bool   NavbarDark      { get; set; } = true;
+
+    /// <summary>
+    /// Whether an ordinary card carries the folders its item sits in, on a line above its name. Off
+    /// by default, because on a folder page that trail is the breadcrumb bar directly above the
+    /// cards, said again once per card. A card promoted onto the home page keeps its trail either
+    /// way — nothing else on that page says where the thing lives.
+    /// </summary>
+    public bool   CardBreadcrumbs { get; set; } = false;
+
     public string SiteUrl         { get; set; } = string.Empty;
     public bool   PdfResizeEnabled { get; set; } = true;
     public int    PdfMaxWidth      { get; set; } = 1600;

@@ -1,7 +1,7 @@
 {{~ # The artifact's link out to wherever it came from — included by every artifact page, silent ~}}
 {{~ # when there is no url. Just the anchor: it shares the credit's line, so the page owns the ~}}
 {{~ # wrapper and this can't impose one. The icon sits inside the anchor so it takes the link's ~}}
-{{~ # colour and its click. ~}}
+{{~ # color and its click. ~}}
 {{~ if artifact.url != "" ~}}
 <a class="artifact-link" href="{{ artifact.url | html.escape }}" target="_blank" rel="noopener noreferrer">{{ artifact.url_text | html.escape }}<i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
 {{~ end ~}}
