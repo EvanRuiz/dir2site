@@ -192,6 +192,43 @@ public class HomePromotionTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void APromotedCardSaysWhereTheThingLives()
+    {
+        // The home page is not on the item's path, so the card is the only chance to say what it is:
+        // "Zebra" alone could be anything, and the folder it was pulled out of is the answer.
+        var nested = MakeFolder("Photographs", "1890s");
+        MakePhoto(nested, "Apple.jpg", "Apple");
+        MakePhoto(nested, "Zebra.jpg", "Zebra", home: true);
+        MakePhoto(MakeFolder("Archive", "Newspapers+"), "Gazette.jpg", "The Gazette");
+
+        Generate();
+        var home = ReadPage();
+
+        // Each promoted card carries its own trail; the top-level cards beside them carry none.
+        Assert.Contains(">Photographs › 1890s</p>", home);
+        Assert.Contains(">Archive</p>", home);
+        Assert.Contains(">Zebra</a></h5>", home);
+        Assert.Contains(">Newspapers</a></h5>", home);
+    }
+
+    [AvaloniaFact]
+    public void APromotedSoleArtifactShowsTheTrailToWhereItStands()
+    {
+        // Published as its folder's own index, it stands where the folder stood — so its trail stops
+        // one level up, at what the breadcrumbs on that page show.
+        var about = MakeFolder("Pages", "About");
+        File.WriteAllText(Path.Combine(about, "Story.md"), "# Story\n\nHello.\n");
+        File.WriteAllText(Path.Combine(about, "Story.md.yaml"),
+            "type: markdown\ncaption: Our Story\nhome: true\n");
+
+        Generate();
+        var home = ReadPage();
+
+        Assert.Contains(">Pages</p>", home);
+        Assert.Contains(">Our Story</a></h5>", home);
+    }
+
+    [AvaloniaFact]
     public void TwoSiblingsThatPublishToTheSamePlaceAreReported()
     {
         // The markers are stripped from the published name, so these both become /Archive/News/

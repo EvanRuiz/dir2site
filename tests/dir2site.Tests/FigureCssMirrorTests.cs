@@ -16,7 +16,7 @@ namespace dir2site.Tests;
 /// as a figure that looks right while writing and wrong once published.
 ///
 /// Only the <c>figure</c> rules are compared: the container (<c>:::figure-*</c>) and caption
-/// typography rules differ on purpose, the extension taking its colours from VS Code theme
+/// typography rules differ on purpose, the extension taking its colors from VS Code theme
 /// variables so captions stay readable in a dark theme.
 ///
 /// When one of these fails, copy the changed rule across — <c>Assets/templates/site-css.html</c>

@@ -28,7 +28,7 @@
     {{~ end }}
     {{ if artifact.date != "" }}<p class="text-muted small mb-1">{{ artifact.date | html.escape }}</p>{{ end }}
     {{~ # Empty unless the source PDF was published, so there is never a link to a missing file. ~}}
-    {{ if artifact.original_src != "" }}<p class="mb-1"><a href="{{ artifact.original_src }}" download><i class="bi bi-download" aria-hidden="true"></i> Download PDF</a></p>{{ end }}
+    {{ if artifact.original_src != "" }}<p class="mb-1"><a href="{{ artifact.original_src | html.escape }}" download><i class="bi bi-download" aria-hidden="true"></i> Download PDF</a></p>{{ end }}
   </div>
 
   {{ include 'footer' }}
@@ -40,9 +40,9 @@
   <script>
     var br = new BookReader({
       data: {{ artifact.bookreader_data }},
-      bookTitle: "{{ artifact.caption | html.escape }}",
+      bookTitle: "{{ artifact.caption_js }}",
       {{ if artifact.author != "" -}}
-      metadata: [{ label: "Author", value: "{{ artifact.author | html.escape }}" }],
+      metadata: [{ label: "Author", value: "{{ artifact.author_js }}" }],
       {{- end }}
       imagesBaseURL: "{{ prefix }}js/bookreader/images/",
       ui: "full",

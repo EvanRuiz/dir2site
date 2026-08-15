@@ -36,7 +36,10 @@
       OpenSeadragon({
         id: "osd-viewer",
         prefixUrl: "{{ prefix }}js/openseadragon/images/",
-        tileSources: { type: "image", url: "{{ artifact.image_src }}" },
+        {{- # A javascript string, not an attribute: html.escape would corrupt the path, not guard }}
+        {{- # it. The _js field is the same path with what would end this string — or the script — }}
+        {{- # already neutralised. }}
+        tileSources: { type: "image", url: "{{ artifact.image_src_js }}" },
         showNavigationControl: true,
         gestureSettingsMouse: { scrollToZoom: true },
         constrainDuringPan: true,

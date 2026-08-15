@@ -19,15 +19,15 @@ public class FooterItem
     /// </summary>
     public string Icon { get; set; } = string.Empty;
 
-    /// <summary>Hex colour for the glyph. Empty inherits the footer's link colour.</summary>
+    /// <summary>Hex color for the glyph. Empty inherits the footer's link color.</summary>
     public string IconColor { get; set; } = string.Empty;
 
     /// <summary>
-    /// Hex colour shown through a brand glyph's knockout — the white in a YouTube mark.
+    /// Hex color shown through a brand glyph's knockout — the white in a YouTube mark.
     ///
     /// Bootstrap's brand glyphs are a single shape with the inner symbol cut out, so on a dark
     /// footer that cut-out shows the band rather than white and the logo reads as wrong. Setting
-    /// this paints a patch behind the glyph which the glyph's own ink then masks, leaving colour
+    /// this paints a patch behind the glyph which the glyph's own ink then masks, leaving color
     /// visible only in the cut-out. Empty leaves the knockout transparent.
     /// </summary>
     public string IconBackground { get; set; } = string.Empty;

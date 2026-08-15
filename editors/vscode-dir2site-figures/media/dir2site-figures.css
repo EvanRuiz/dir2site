@@ -4,7 +4,7 @@
 /* Mirrors the figure rules in Assets/templates/site-css.html so the preview matches the generated
    site. Kept in step by hand — if the site CSS changes, change this too.
 
-   Colours come from VS Code theme variables rather than the site's fixed values, so captions stay
+   Colors come from VS Code theme variables rather than the site's fixed values, so captions stay
    readable in dark themes; everything else is copied as-is. */
 
 /* Bare images carrying the class, with no ^^^ wrapper. Nothing boxes these in, so the 45% guard

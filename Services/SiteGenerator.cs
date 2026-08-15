@@ -11,6 +11,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Avalonia.Media;
 using Avalonia.Platform;
 using dir2site.Models;
 using dir2site.ViewModels;
@@ -61,18 +62,23 @@ public static class SiteGenerator
         CopyOpenSeaDragonAssets(siteRoot, ledger, progress);
         CopyBookReaderAssets(siteRoot, ledger, progress);
 
-        var loader = new AvaloniaTemplateLoader();
-        CopySiteAssets(siteRoot, config, loader, ledger, progress);
-        var templates = new TemplateSet(loader);
-
         var errors = new ConcurrentBag<string>();
         var warnings = new ConcurrentBag<string>();
+
+        // Before the stylesheet is written, which is the first thing the colors are used for.
+        var colors = SanitizeSiteColors(config, warnings);
+
+        var loader = new AvaloniaTemplateLoader();
+        CopySiteAssets(siteRoot, config, colors, loader, ledger, progress);
+        var templates = new TemplateSet(loader);
+
         ReportYamlNotes(rootItem, errors, warnings);
         tracker.SetPageTotal(CountPages(rootItem));
         var homePromotions = CollectHomePromotions(rootItem, directoryRoot);
         var footerColumns = BuildFooterColumns(config, directoryRoot, rootItem, warnings);
         GeneratePage(rootItem, siteRoot, directoryRoot, config, menuFolders, 0,
-            [], templates, progress, errors, warnings, tracker, homePromotions, ledger, footerColumns);
+            [], templates, progress, errors, warnings, tracker, homePromotions, ledger, footerColumns,
+            colors);
 
         var copyJobs = new List<CopyJob>();
         CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs, ledger);
@@ -157,7 +163,8 @@ public static class SiteGenerator
         GenerateProgressTracker tracker,
         IReadOnlyList<HomePromotion> homePromotions,
         SiteLedger ledger,
-        List<List<FooterLink>> footerColumns)
+        List<List<FooterLink>> footerColumns,
+        SiteColors colors)
     {
         // The site root always gets a home page, however little is in it.
         if (depth > 0 && SoleArtifact(node) is { } soleArtifact)
@@ -165,8 +172,8 @@ public static class SiteGenerator
             try
             {
                 var soleChange = GenerateArtifactPage(soleArtifact, outputDir, directoryRoot, config,
-                    menuFolders, depth, ancestorNames, templates, footerColumns, progress, ledger,
-                    atFolderIndex: true);
+                    menuFolders, depth, ancestorNames, templates, footerColumns, colors, progress,
+                    ledger, atFolderIndex: true);
                 tracker.PageDone(soleChange);
                 tracker.ArtifactChanged(soleChange);
             }
@@ -199,7 +206,7 @@ public static class SiteGenerator
         var pageTitle = depth == 0 ? config.Title : PublicName(node.Name);
         var prefix = RelativePrefix(depth);
 
-        var siteObj = BuildSiteObject(config, footerColumns);
+        var siteObj = BuildSiteObject(config, footerColumns, colors);
 
         var navFolders = menuFolders
             .Select(f =>
@@ -215,14 +222,19 @@ public static class SiteGenerator
 
         var items = node.Children
             .Where(child => !IsMenuOnly(child))
-            .Select(child => (object)BuildCardModel(child, prefix, directoryRoot))
+            // childAncestors is the chain this page's children live under — the same list their own
+            // pages take their breadcrumbs from, so a card's title and the page it opens agree.
+            .Select(child => (object)BuildCardModel(
+                child, prefix, directoryRoot, childAncestors, config.CardBreadcrumbs))
             .ToList();
 
         // Cards for things that live deeper but asked to be reachable from the front door. They go
         // after the root's own children so the home page still opens with what the site is.
         var promoted = depth == 0 ? homePromotions : [];
         foreach (var promotion in promoted)
-            items.Add(BuildCardModel(promotion.Item, prefix, directoryRoot, promotion.Href));
+            items.Add(BuildCardModel(
+                promotion.Item, prefix, directoryRoot, promotion.Ancestors, config.CardBreadcrumbs,
+                promotion.Href));
 
         // Only pages that actually embed a player pull in the YouTube glue.
         var hasVideo = node.Children.Concat(promoted.Select(p => p.Item))
@@ -262,7 +274,7 @@ public static class SiteGenerator
             var childOutputDir = Path.Combine(outputDir, PublicName(child.Name));
             GeneratePage(child, childOutputDir, directoryRoot, config, menuFolders,
                 depth + 1, childAncestors, templates, progress, errors, warnings, tracker,
-                homePromotions, ledger, footerColumns);
+                homePromotions, ledger, footerColumns, colors);
         }
 
         // Videos play inline on this page, so they get no page of their own — generating one would
@@ -275,7 +287,7 @@ public static class SiteGenerator
             try
             {
                 var change = GenerateArtifactPage(child, outputDir, directoryRoot, config, menuFolders,
-                    depth + 1, childAncestors, templates, footerColumns, progress, ledger);
+                    depth + 1, childAncestors, templates, footerColumns, colors, progress, ledger);
                 tracker.PageDone(change);
                 // What happened to an artifact's own page is what "new" and "updated" mean for the
                 // artifact: a photo the site had never rendered, or one whose page now reads
@@ -355,6 +367,22 @@ public static class SiteGenerator
         return crumbs;
     }
 
+    /// <summary>
+    /// The line above a card's title: the folders its item sits in, "Archive › Newspapers". A card on
+    /// the home page can be for something three levels down, and its own name alone doesn't say what
+    /// it is. The labels and their order are the breadcrumb bar's, so the trail a card shows is the
+    /// trail its page shows — with one deliberate exception, an artifact standing in for its folder,
+    /// whose card stops where the folder stood rather than naming a page it replaced.
+    /// </summary>
+    private static string CardBreadcrumb(IList<string> ancestors) => string.Join(" › ", ancestors);
+
+    /// <param name="ancestors">
+    /// The folders between the home page and this card's item, already published names. Empty for a
+    /// top-level item, whose only ancestor is Home.
+    /// </param>
+    /// <param name="cardBreadcrumbs">
+    /// Whether an ordinary card shows its trail. A promoted card shows one regardless — see below.
+    /// </param>
     /// <param name="hrefOverride">
     /// Where the card points when it isn't a sibling of the page showing it — a home page card for
     /// something further down the tree. A video keeps its empty href either way: it plays in place.
@@ -363,6 +391,8 @@ public static class SiteGenerator
         DirectoryTreeItem item,
         string prefix,
         string directoryRoot,
+        IList<string> ancestors,
+        bool cardBreadcrumbs,
         string? hrefOverride = null)
     {
         string caption, badge, badgeIcon, href, imgSrc;
@@ -394,6 +424,13 @@ public static class SiteGenerator
 
         var obj = new ScriptObject();
         obj.SetValue("caption", caption, readOnly: true);
+        // A promoted card keeps its trail whatever the setting says: the page showing it is not on
+        // its item's path, so nothing else there says what the thing is. What the setting turns off
+        // is the ordinary card's trail, which repeats the breadcrumb bar directly above it.
+        obj.SetValue(
+            "breadcrumb",
+            cardBreadcrumbs || hrefOverride != null ? CardBreadcrumb(ancestors) : "",
+            readOnly: true);
         obj.SetValue("badge", badge, readOnly: true);
         obj.SetValue("badge_icon", badgeIcon, readOnly: true);
         obj.SetValue("href", href, readOnly: true);
@@ -701,8 +738,10 @@ public static class SiteGenerator
     /// Something from deeper in the tree that the home page also shows, and the root-relative href
     /// that reaches it. The href has to be carried alongside because a card's own href is written
     /// for a sibling — "Japan/" means something different on the home page than it does in Trips.
+    /// The folders it sits under come along for the same reason: the home page is not on its path,
+    /// so it is the walk down here, not the page, that knows where the thing lives.
     /// </summary>
-    private sealed record HomePromotion(DirectoryTreeItem Item, string Href);
+    private sealed record HomePromotion(DirectoryTreeItem Item, string Href, IList<string> Ancestors);
 
     /// <summary>
     /// Everything below the root that asked to appear on the home page: folders marked with the
@@ -715,31 +754,38 @@ public static class SiteGenerator
         // The root's own children are the home page already; only what lies under them can be
         // promoted onto it, so the walk starts inside each of them rather than at them.
         foreach (var child in root.Children.Where(c => c.IsDirectory))
-            CollectHomePromotions(child, directoryRoot, promoted);
+            CollectHomePromotions(child, [], directoryRoot, promoted);
         return promoted;
     }
 
+    /// <param name="ancestors">
+    /// The published names of the folders above <paramref name="node"/>, home downwards, not
+    /// counting <paramref name="node"/> itself — what the breadcrumb bar on its page shows.
+    /// </param>
     private static void CollectHomePromotions(
-        DirectoryTreeItem node, string directoryRoot, List<HomePromotion> promoted)
+        DirectoryTreeItem node, IList<string> ancestors, string directoryRoot, List<HomePromotion> promoted)
     {
         // A folder published as its single artifact has no page beneath it, so a promoted artifact
         // there is reached at the folder's own address.
         var sole = SoleArtifact(node);
+        IList<string> childAncestors = [.. ancestors, PublicName(node.Name)];
 
         foreach (var child in node.Children)
         {
             if (child.IsDirectory)
             {
                 if (IsHomePromoted(child))
-                    promoted.Add(new HomePromotion(child, FolderHref(child, directoryRoot)));
-                CollectHomePromotions(child, directoryRoot, promoted);
+                    promoted.Add(new HomePromotion(child, FolderHref(child, directoryRoot), childAncestors));
+                CollectHomePromotions(child, childAncestors, directoryRoot, promoted);
             }
             else if (child.Artifact?.Home == true)
             {
-                var href = ReferenceEquals(child, sole)
+                // Standing in for its folder, it stands where the folder stood: one level up.
+                var atFolderIndex = ReferenceEquals(child, sole);
+                var href = atFolderIndex
                     ? FolderHref(node, directoryRoot)
                     : ArtifactHref(child, directoryRoot);
-                promoted.Add(new HomePromotion(child, href));
+                promoted.Add(new HomePromotion(child, href, atFolderIndex ? ancestors : childAncestors));
             }
         }
     }
@@ -765,13 +811,13 @@ public static class SiteGenerator
     private static readonly Regex IconNamePattern = new(@"^bi-[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.Compiled);
 
     /// <summary>
-    /// The house colours of the brand glyphs, and the fill their cut-out wants.
+    /// The house colors of the brand glyphs, and the fill their cut-out wants.
     /// </summary>
     /// <remarks>
     /// A brand mark has one right answer and everybody knows what it is, so <c>icon: bi-youtube</c>
     /// on its own produces it rather than a monochrome badge with the footer showing through the
     /// play triangle — which is the one result nobody wants and the easiest to get by accident.
-    /// Setting either colour on the row turns this off completely, so an author who wants the mark
+    /// Setting either color on the row turns this off completely, so an author who wants the mark
     /// to match the rest of the column says so and gets exactly that.
     /// </remarks>
     private static readonly IReadOnlyDictionary<string, (string Color, string Background)> BrandColors =
@@ -799,10 +845,58 @@ public static class SiteGenerator
             { "bi-slack",     ("#4a154b", "#ffffff") },
             { "bi-medium",    ("#000000", "#ffffff") },
         };
-    // The lengths CSS actually has: #rgb, #rgba, #rrggbb, #rrggbbaa. A flat 3-to-8 range also let
-    // through #12345, which is not a colour at all and which IsDarkColor could not read either.
-    private static readonly Regex HexColorPattern =
-        new(@"^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$", RegexOptions.Compiled);
+    /// <summary>
+    /// Whether this is a color dir2site can both publish and read. There is no escape for a value
+    /// going into CSS that leaves it meaning what it says — an escaped "#fff" is not a color any
+    /// more — so the guard has to be an allow-list. Reading it is the allow-list: a value that
+    /// resolves to three channels is a color, and one that doesn't would have been a color the
+    /// generator had to guess about.
+    /// </summary>
+    /// <remarks>
+    /// This makes the readers in <see cref="TryResolveColor"/> security-relevant and not merely
+    /// parsers: whatever they accept is published verbatim, so a pattern that ends early leaves the
+    /// rest of the value to be written into the stylesheet. A ";" or a "}" getting that far would
+    /// close the declaration it sits in and let a hand-edited dir2site.yaml write rules of its own
+    /// onto every page of the site. They are strict, and the blanket check in front of them is
+    /// there so that a future one which isn't costs a wrong color rather than that.
+    /// </remarks>
+    private static bool IsColor(string value) => TryResolveColor(value, out _, out _, out _);
+
+    /// <summary>The colors the site is drawn in, each one already known to be a color.</summary>
+    private sealed record SiteColors(string Primary, string Secondary, string Background, string Footer);
+
+    /// <summary>
+    /// Checks the four colors the stylesheet is built from, once per run rather than once per page.
+    /// A color that isn't one falls back to the default and says so: written straight through, it
+    /// produced a stylesheet the browser dropped on the floor, and a site rendering in colors
+    /// nobody chose with nothing anywhere saying why.
+    /// </summary>
+    private static SiteColors SanitizeSiteColors(Dir2SiteModel config, ConcurrentBag<string> warnings)
+    {
+        var fallbacks = new Dir2SiteModel();
+        var primary = SiteColor(config.PrimaryColor, "primaryColor", fallbacks.PrimaryColor, warnings);
+        return new SiteColors(
+            primary,
+            SiteColor(config.SecondaryColor, "secondaryColor", fallbacks.SecondaryColor, warnings),
+            SiteColor(config.BackgroundColor, "backgroundColor", fallbacks.BackgroundColor, warnings),
+            // Empty is how a project says "follow the navbar", so it is not a mistake to report.
+            string.IsNullOrWhiteSpace(config.FooterColor)
+                ? primary
+                : SiteColor(config.FooterColor, "footerColor", primary, warnings));
+    }
+
+    private static string SiteColor(
+        string? value, string setting, string fallback, ConcurrentBag<string> warnings)
+    {
+        var color = (value ?? string.Empty).Trim();
+        if (color.Length == 0) return fallback;
+        if (IsColor(color)) return color;
+
+        warnings.Add(
+            $"dir2site.yaml: {setting} is \"{color}\", which is not a color like #ff0000 or " +
+            $"rebeccapurple, so {fallback} was used instead.");
+        return fallback;
+    }
 
     /// <summary>
     /// The configured footer rows, grouped into columns and resolved to hrefs. Empty columns close
@@ -836,8 +930,8 @@ public static class SiteGenerator
             var color = SanitizeColor(item.IconColor, "iconColor", title, warnings);
             var background = SanitizeColor(item.IconBackground, "iconBackground", title, warnings);
 
-            // Only when the row says nothing about colour at all: naming either one is the author
-            // taking charge of how the mark looks, and half a brand's colours is nobody's intent.
+            // Only when the row says nothing about color at all: naming either one is the author
+            // taking charge of how the mark looks, and half a brand's colors is nobody's intent.
             if (color.Length == 0 && background.Length == 0 && BrandColors.TryGetValue(icon, out var brand))
                 (color, background) = brand;
 
@@ -951,57 +1045,148 @@ public static class SiteGenerator
         return string.Empty;
     }
 
-    /// <summary>A hex colour, or empty. Stricter than the icon check because it lands in a style attribute.</summary>
+    /// <summary>A color, or empty. The same allow-list the site's own colors go through.</summary>
     private static string SanitizeColor(string? color, string setting, string title, ConcurrentBag<string> warnings)
     {
         var value = (color ?? string.Empty).Trim();
         if (value.Length == 0) return string.Empty;
-        if (HexColorPattern.IsMatch(value)) return value;
+        if (IsColor(value)) return value;
 
-        warnings.Add($"Footer item \"{title}\" has a {setting} of \"{color}\", which is not a hex colour like #ff0000, so it was left off.");
+        warnings.Add($"Footer item \"{title}\" has a {setting} of \"{color}\", which is not a color like #ff0000 or rebeccapurple, so it was left off.");
         return string.Empty;
     }
 
     /// <summary>
     /// Whether the footer band needs light text on it. The navbar settles this with an explicit
-    /// setting; the footer takes a colour instead, so it has to work the answer out.
+    /// setting; the footer takes a color instead, so it has to work the answer out.
     /// </summary>
-    private static bool IsDarkColor(string hex)
+    private static bool IsDarkColor(string color)
     {
-        var value = hex.TrimStart('#');
-        // Shorthand doubles each digit; the alpha one expands to eight, whose first six are the
-        // colour. Opacity doesn't change which way the text has to go, so it is ignored either way.
-        if (value.Length is 3 or 4)
-            value = string.Concat(value.Select(c => new string(c, 2)));
-        if (value.Length < 6 ||
-            !int.TryParse(value[..2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r) ||
-            !int.TryParse(value.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g) ||
-            !int.TryParse(value.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
-            return true;   // The default primary colour is dark, so dark is the safer guess.
+        // Every color that reaches here has been through TryResolveColor already, so the fallback
+        // is unreachable rather than load-bearing: the default primary color is dark, so is it.
+        if (!TryResolveColor(color, out var r, out var g, out var b)) return true;
 
         // Rec. 601 luma — enough to answer "does this want white text on it".
         return (0.299 * r) + (0.587 * g) + (0.114 * b) < 140;
     }
 
     /// <summary>
+    /// A CSS name Avalonia's parser doesn't know. Its list is the old HTML one; CSS has added to it
+    /// since, and a color we accept but can't read is a footer whose text color is a guess.
+    /// </summary>
+    private static readonly Dictionary<string, string> ExtraColorNames =
+        new(StringComparer.OrdinalIgnoreCase) { ["rebeccapurple"] = "#663399" };
+
+    // The alpha slot is the part of these that has to be written carefully: it is optional and it is
+    // last, so a lazy tail there ends the match while leaving the rest of the string to be published
+    // — which is the whole payload. It has been the weak spot twice; it takes digits and nothing.
+    private static readonly Regex RgbPattern = new(
+        @"^rgba?\(\s*([0-9.]+%?)[\s,]+([0-9.]+%?)[\s,]+([0-9.]+%?)\s*(?:[,/][0-9.%\s]*)?\)$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex HslPattern = new(
+        @"^hsla?\(\s*([0-9.+-]+)(?:deg)?[\s,]+([0-9.]+)%[\s,]+([0-9.]+)%\s*(?:[,/][0-9.%\s]*)?\)$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    // Nothing a color is written with, and everything a CSS rule is. A value carrying any of these
+    // is refused before a reader sees it, so a reader that turns out to be looser than it looked
+    // costs a wrong color rather than a stylesheet somebody else wrote.
+    // Brackets are left out: rgb() and hsl() are written with them, and the readers below anchor
+    // both ends, so there is nowhere for a second pair to hide.
+    private static readonly char[] CssSyntax = [';', '{', '}', '<', '>', '"', '\'', '\\', ':', '@', '!'];
+
+    /// <summary>
+    /// Reads a written color into the three channels, or says it can't. This is both halves of the
+    /// guard at once, which is the point: what the generator accepts is exactly what it can reason
+    /// about. Accepting a form it couldn't read is how "footerColor: white" became white text on a
+    /// white band — allowed, unreadable, and unwarned.
+    /// </summary>
+    /// <remarks>
+    /// Hex is read here rather than by Avalonia's parser, which takes eight digits as #AARRGGBB
+    /// while CSS — and so a site's stylesheet — takes them as #RRGGBBAA. Alpha is dropped either
+    /// way: opacity doesn't change which way the text has to go.
+    /// </remarks>
+    private static bool TryResolveColor(string color, out int r, out int g, out int b)
+    {
+        r = g = b = 0;
+        var value = (color ?? string.Empty).Trim();
+        if (value.Length == 0) return false;
+        if (value.IndexOfAny(CssSyntax) >= 0 || value.Contains("/*", StringComparison.Ordinal))
+            return false;
+
+        if (value[0] == '#')
+        {
+            var digits = value[1..];
+            // Shorthand doubles each digit; the alpha one expands to eight, whose first six are the
+            // color.
+            if (digits.Length is 3 or 4)
+                digits = string.Concat(digits.Select(c => new string(c, 2)));
+            return digits.Length is 6 or 8
+                && TryHex(digits[..2], out r) && TryHex(digits.Substring(2, 2), out g)
+                && TryHex(digits.Substring(4, 2), out b);
+        }
+
+        if (RgbPattern.Match(value) is { Success: true } rgb)
+            return TryChannel(rgb.Groups[1].Value, out r)
+                && TryChannel(rgb.Groups[2].Value, out g)
+                && TryChannel(rgb.Groups[3].Value, out b);
+
+        if (HslPattern.Match(value) is { Success: true } hsl
+            && double.TryParse(hsl.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var h)
+            && double.TryParse(hsl.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var s)
+            && double.TryParse(hsl.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var l))
+        {
+            var rgbFromHsl = new HslColor(1, h, s / 100.0, l / 100.0).ToRgb();
+            (r, g, b) = (rgbFromHsl.R, rgbFromHsl.G, rgbFromHsl.B);
+            return true;
+        }
+
+        if (ExtraColorNames.TryGetValue(value, out var named)) value = named;
+        if (value[0] == '#') return TryResolveColor(value, out r, out g, out b);
+
+        // Names only: anything with a '#' or a bracket has had its chance above, and Avalonia's
+        // parser would read some of those by rules that aren't the stylesheet's.
+        if (!value.All(char.IsAsciiLetter) || !Color.TryParse(value, out var parsed)) return false;
+        (r, g, b) = (parsed.R, parsed.G, parsed.B);
+        return true;
+
+        static bool TryHex(string pair, out int channel) =>
+            int.TryParse(pair, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out channel);
+
+        // "255" or "100%", the two ways a channel is written.
+        static bool TryChannel(string text, out int channel)
+        {
+            channel = 0;
+            var percent = text.EndsWith('%');
+            if (!double.TryParse(
+                    percent ? text[..^1] : text, NumberStyles.Float, CultureInfo.InvariantCulture,
+                    out var number))
+                return false;
+            channel = (int)Math.Clamp(Math.Round(percent ? number * 255 / 100 : number), 0, 255);
+            return true;
+        }
+    }
+
+    /// <summary>
     /// The <c>site</c> object every template gets. One builder because a page and an artifact page
     /// have to agree about what the site is; they used to hold two copies of this list.
     /// </summary>
-    private static ScriptObject BuildSiteObject(Dir2SiteModel config, List<List<FooterLink>> footerColumns)
+    /// <param name="colors">
+    /// Checked by <see cref="SanitizeSiteColors"/> once for the run. They go into the stylesheet as
+    /// written, so this is the one route by which they may reach it.
+    /// </param>
+    private static ScriptObject BuildSiteObject(
+        Dir2SiteModel config, List<List<FooterLink>> footerColumns, SiteColors colors)
     {
-        var footerColor = string.IsNullOrWhiteSpace(config.FooterColor)
-            ? config.PrimaryColor
-            : config.FooterColor;
-
         var siteObj = new ScriptObject();
         siteObj.SetValue("title", config.Title, readOnly: true);
         siteObj.SetValue("footer", config.Footer, readOnly: true);
         siteObj.SetValue("logo", config.Logo, readOnly: true);
-        siteObj.SetValue("primary_color", config.PrimaryColor, readOnly: true);
-        siteObj.SetValue("secondary_color", config.SecondaryColor, readOnly: true);
-        siteObj.SetValue("background_color", config.BackgroundColor, readOnly: true);
-        siteObj.SetValue("footer_color", footerColor, readOnly: true);
-        siteObj.SetValue("footer_dark", IsDarkColor(footerColor), readOnly: true);
+        siteObj.SetValue("primary_color", colors.Primary, readOnly: true);
+        siteObj.SetValue("secondary_color", colors.Secondary, readOnly: true);
+        siteObj.SetValue("background_color", colors.Background, readOnly: true);
+        siteObj.SetValue("footer_color", colors.Footer, readOnly: true);
+        siteObj.SetValue("footer_dark", IsDarkColor(colors.Footer), readOnly: true);
         siteObj.SetValue("navbar_dark", config.NavbarDark, readOnly: true);
         siteObj.SetValue("url", config.SiteUrl.TrimEnd('/'), readOnly: true);
         siteObj.SetValue("footer_columns", ToScriptColumns(footerColumns), readOnly: true);
@@ -1321,6 +1506,7 @@ public static class SiteGenerator
         IList<string> ancestorNames,
         TemplateSet templates,
         List<List<FooterLink>> footerColumns,
+        SiteColors colors,
         IProgress<string>? progress,
         SiteLedger ledger,
         bool atFolderIndex = false)
@@ -1344,7 +1530,7 @@ public static class SiteGenerator
 
         var prefix = RelativePrefix(depth);
 
-        var siteObj = BuildSiteObject(config, footerColumns);
+        var siteObj = BuildSiteObject(config, footerColumns, colors);
 
         var navFolders = menuFolders
             .Select(f =>
@@ -1396,12 +1582,18 @@ public static class SiteGenerator
                 var osdSrc = WithAssetPrefix(assetPrefix, GetImageSrc(artifact, stem));
                 if (string.IsNullOrEmpty(osdSrc))
                     osdSrc = previewLargeSrc;
-                artifactObj.SetValue("image_src", osdSrc, readOnly: true);
+                artifactObj.SetValue("image_src_js", JsString(osdSrc), readOnly: true);
                 templateName = "artifact-photo";
                 break;
 
             case ArtifactType.Pdf:
-                artifactObj.SetValue("author", (artifact as Document)?.Author ?? "", readOnly: true);
+                // The reader is configured in javascript, so both of the strings it is given need
+                // escaping as javascript. Escaped as HTML they were safe but wrong: an author of
+                // "Tom & Jerry" reached the panel spelled "Tom &amp; Jerry", entity and all.
+                var author = (artifact as Document)?.Author ?? "";
+                artifactObj.SetValue("author", author, readOnly: true);
+                artifactObj.SetValue("author_js", JsString(author), readOnly: true);
+                artifactObj.SetValue("caption_js", JsString(caption), readOnly: true);
                 artifactObj.SetValue(
                     "bookreader_data", BuildBookReaderData(artifact, stem, assetPrefix), readOnly: true);
                 // Empty unless the source PDF was published alongside the page images, so the
@@ -1469,6 +1661,29 @@ public static class SiteGenerator
         if (artifact is not Photo photo || photo.Image == null) return "";
         return StripDir2SitePrefix(photo.Image, stem);
     }
+
+    /// <summary>
+    /// A path safe to drop between the quotes of a javascript string in a page. Escaping it as HTML
+    /// would corrupt it — a viewer would ask for "&amp;" where the file has "&" — so the three
+    /// characters that could end the string, or the script around it, are escaped as javascript
+    /// escapes instead. A filename is allowed all three.
+    /// </summary>
+    /// <remarks>
+    /// A newline ends a javascript string as surely as a quote does — not a way out of it, but a
+    /// syntax error that takes the whole script with it, and so the viewer that was to be set up in
+    /// it. A caption is free text from a yaml, and a filename may hold a newline too. U+2028 and
+    /// U+2029 are line terminators to older parsers for the same reason. Both quotes are escaped so
+    /// that which one the template chose isn't load-bearing.
+    /// </remarks>
+    private static string JsString(string src) =>
+        src.Replace("\\", "\\\\")
+           .Replace("\"", "\\\"")
+           .Replace("'", "\\'")
+           .Replace("\r", "\\r")
+           .Replace("\n", "\\n")
+           .Replace("\u2028", "\\u2028")
+           .Replace("\u2029", "\\u2029")
+           .Replace("<", "\\x3C");
 
     private static string WithAssetPrefix(string assetPrefix, string src) =>
         assetPrefix.Length == 0 || src.Length == 0 ? src : assetPrefix + src;
@@ -1559,13 +1774,13 @@ public static class SiteGenerator
     }
 
     private static void CopySiteAssets(
-        string siteRoot, Dir2SiteModel config, AvaloniaTemplateLoader loader,
+        string siteRoot, Dir2SiteModel config, SiteColors colors, AvaloniaTemplateLoader loader,
         SiteLedger ledger, IProgress<string>? progress)
     {
-        // The stylesheet needs the colours, not the footer's rows — but it does need the footer
-        // colour and whether that colour is dark, so it goes through the same builder as the pages
+        // The stylesheet needs the colors, not the footer's rows — but it does need the footer
+        // color and whether that color is dark, so it goes through the same builder as the pages
         // rather than keeping a third hand-maintained copy of what "site" means.
-        var siteObj = BuildSiteObject(config, []);
+        var siteObj = BuildSiteObject(config, [], colors);
 
         var globals = new ScriptObject();
         globals.SetValue("site", siteObj, readOnly: true);

@@ -3,7 +3,7 @@
       <div class="container-fluid">
         <a class="navbar-brand" href="{{ prefix }}">
           {{- if site.logo != "" }}
-          <img src="{{ prefix }}{{ site.logo }}" height="40" alt="{{ site.title | html.escape }}">
+          <img src="{{ prefix }}{{ site.logo | html.escape }}" height="40" alt="{{ site.title | html.escape }}">
           {{- else }}
           {{ site.title | html.escape }}
           {{- end }}
@@ -15,7 +15,7 @@
           <ul class="navbar-nav ms-auto">
             {{ for folder in nav_folders -}}
             <li class="nav-item">
-              <a class="nav-link" href="{{ folder.href }}">{{ folder.name | html.escape }}</a>
+              <a class="nav-link" href="{{ folder.href | html.escape }}">{{ folder.name | html.escape }}</a>
             </li>
             {{ end -}}
           </ul>
@@ -31,7 +31,7 @@
           {{ if crumb.is_active }}
           <li class="breadcrumb-item active" aria-current="page">{{ crumb.name | html.escape }}</li>
           {{ else }}
-          <li class="breadcrumb-item"><a href="{{ crumb.href }}">{{ crumb.name | html.escape }}</a></li>
+          <li class="breadcrumb-item"><a href="{{ crumb.href | html.escape }}">{{ crumb.name | html.escape }}</a></li>
           {{ end -}}
           {{ end }}
         </ol>
