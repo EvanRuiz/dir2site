@@ -21,6 +21,11 @@
           </div>
           {{- end }}
           <div class="card-body">
+            {{- # Where the item sits, above its name and quieter than it: the card can say what the }}
+            {{- # thing is without the trail crowding out the one word that tells two of them apart. }}
+            {{- if item.breadcrumb != "" }}
+            <p class="card-breadcrumb text-body-secondary small mb-1">{{ item.breadcrumb | html.escape }}</p>
+            {{- end }}
             {{- if item.is_video }}
             {{- # The card is the player, so there is no stretched-link to swallow clicks on it. }}
             <h5 class="card-title">{{ item.caption | html.escape }}</h5>

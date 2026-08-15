@@ -34,6 +34,7 @@ public class SaveDir2SiteConfigTests : IDisposable
         SecondaryColor = "#666666",
         BackgroundColor = "#ffffff",
         NavbarDark = true,
+        CardBreadcrumbs = true,
         PdfResizeEnabled = true,
         PdfMaxWidth = 1600,
         PdfQuality = 80,
@@ -63,6 +64,7 @@ public class SaveDir2SiteConfigTests : IDisposable
             secondaryColor: '#666666'
             backgroundColor: '#ffffff'
             navbarDark: true
+            cardBreadcrumbs: true
             pdfResizeEnabled: true
             pdfMaxWidth: 1600
             pdfQuality: 80
@@ -87,18 +89,21 @@ public class SaveDir2SiteConfigTests : IDisposable
         YamlParser.SaveDir2SiteConfig(Path_, Sample());
         var config = Sample();
         config.NavbarDark = false;
+        config.CardBreadcrumbs = false;
         config.PdfMaxWidth = 1200;
 
         YamlParser.SaveDir2SiteConfig(Path_, config);
 
         var result = File.ReadAllText(Path_);
         Assert.Contains("navbarDark: false", result);
+        Assert.Contains("cardBreadcrumbs: false", result);
         Assert.Contains("pdfMaxWidth: 1200", result);
         Assert.DoesNotContain("\"false\"", result);
         Assert.DoesNotContain("'1200'", result);
 
         var loaded = YamlParser.DeserializeAs<Dir2SiteModel>(result);
         Assert.False(loaded.NavbarDark);
+        Assert.False(loaded.CardBreadcrumbs);
         Assert.Equal(1200, loaded.PdfMaxWidth);
     }
 

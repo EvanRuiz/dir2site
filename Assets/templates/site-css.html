@@ -66,6 +66,14 @@ body {
 .card-img-placeholder { aspect-ratio: 4/3; background-color: {{ site.secondary_color }}; }
 /* Sized in rem so the stand-in glyph keeps its proportions against the card, not the viewport. */
 .card-img-placeholder-icon { font-size: 3rem; opacity: 0.75; }
+/* The trail above a card's name is context, not the name: smaller than Bootstrap's .small, and it
+   stays on one line rather than pushing the titles in a row of cards out of alignment. */
+.card-breadcrumb {
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Artifact shared */
 

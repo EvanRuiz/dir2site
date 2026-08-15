@@ -509,6 +509,7 @@ public static class YamlParser
         editor.Set("backgroundColor", c.BackgroundColor) &&
         editor.Set("footerColor", c.FooterColor) &&
         editor.Set("navbarDark", c.NavbarDark) &&
+        editor.Set("cardBreadcrumbs", c.CardBreadcrumbs) &&
         editor.Set("siteUrl", c.SiteUrl) &&
         editor.Set("pdfResizeEnabled", c.PdfResizeEnabled) &&
         editor.Set("pdfMaxWidth", c.PdfMaxWidth) &&

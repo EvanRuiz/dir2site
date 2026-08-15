@@ -215,14 +215,19 @@ public static class SiteGenerator
 
         var items = node.Children
             .Where(child => !IsMenuOnly(child))
-            .Select(child => (object)BuildCardModel(child, prefix, directoryRoot))
+            // childAncestors is the chain this page's children live under — the same list their own
+            // pages take their breadcrumbs from, so a card's title and the page it opens agree.
+            .Select(child => (object)BuildCardModel(
+                child, prefix, directoryRoot, childAncestors, config.CardBreadcrumbs))
             .ToList();
 
         // Cards for things that live deeper but asked to be reachable from the front door. They go
         // after the root's own children so the home page still opens with what the site is.
         var promoted = depth == 0 ? homePromotions : [];
         foreach (var promotion in promoted)
-            items.Add(BuildCardModel(promotion.Item, prefix, directoryRoot, promotion.Href));
+            items.Add(BuildCardModel(
+                promotion.Item, prefix, directoryRoot, promotion.Ancestors, config.CardBreadcrumbs,
+                promotion.Href));
 
         // Only pages that actually embed a player pull in the YouTube glue.
         var hasVideo = node.Children.Concat(promoted.Select(p => p.Item))
@@ -355,6 +360,22 @@ public static class SiteGenerator
         return crumbs;
     }
 
+    /// <summary>
+    /// The line above a card's title: the folders its item sits in, "Archive › Newspapers". A card on
+    /// the home page can be for something three levels down, and its own name alone doesn't say what
+    /// it is. The labels and their order are the breadcrumb bar's, so the trail a card shows is the
+    /// trail its page shows — with one deliberate exception, an artifact standing in for its folder,
+    /// whose card stops where the folder stood rather than naming a page it replaced.
+    /// </summary>
+    private static string CardBreadcrumb(IList<string> ancestors) => string.Join(" › ", ancestors);
+
+    /// <param name="ancestors">
+    /// The folders between the home page and this card's item, already published names. Empty for a
+    /// top-level item, whose only ancestor is Home.
+    /// </param>
+    /// <param name="cardBreadcrumbs">
+    /// Whether an ordinary card shows its trail. A promoted card shows one regardless — see below.
+    /// </param>
     /// <param name="hrefOverride">
     /// Where the card points when it isn't a sibling of the page showing it — a home page card for
     /// something further down the tree. A video keeps its empty href either way: it plays in place.
@@ -363,6 +384,8 @@ public static class SiteGenerator
         DirectoryTreeItem item,
         string prefix,
         string directoryRoot,
+        IList<string> ancestors,
+        bool cardBreadcrumbs,
         string? hrefOverride = null)
     {
         string caption, badge, badgeIcon, href, imgSrc;
@@ -394,6 +417,13 @@ public static class SiteGenerator
 
         var obj = new ScriptObject();
         obj.SetValue("caption", caption, readOnly: true);
+        // A promoted card keeps its trail whatever the setting says: the page showing it is not on
+        // its item's path, so nothing else there says what the thing is. What the setting turns off
+        // is the ordinary card's trail, which repeats the breadcrumb bar directly above it.
+        obj.SetValue(
+            "breadcrumb",
+            cardBreadcrumbs || hrefOverride != null ? CardBreadcrumb(ancestors) : "",
+            readOnly: true);
         obj.SetValue("badge", badge, readOnly: true);
         obj.SetValue("badge_icon", badgeIcon, readOnly: true);
         obj.SetValue("href", href, readOnly: true);
@@ -701,8 +731,10 @@ public static class SiteGenerator
     /// Something from deeper in the tree that the home page also shows, and the root-relative href
     /// that reaches it. The href has to be carried alongside because a card's own href is written
     /// for a sibling — "Japan/" means something different on the home page than it does in Trips.
+    /// The folders it sits under come along for the same reason: the home page is not on its path,
+    /// so it is the walk down here, not the page, that knows where the thing lives.
     /// </summary>
-    private sealed record HomePromotion(DirectoryTreeItem Item, string Href);
+    private sealed record HomePromotion(DirectoryTreeItem Item, string Href, IList<string> Ancestors);
 
     /// <summary>
     /// Everything below the root that asked to appear on the home page: folders marked with the
@@ -715,31 +747,38 @@ public static class SiteGenerator
         // The root's own children are the home page already; only what lies under them can be
         // promoted onto it, so the walk starts inside each of them rather than at them.
         foreach (var child in root.Children.Where(c => c.IsDirectory))
-            CollectHomePromotions(child, directoryRoot, promoted);
+            CollectHomePromotions(child, [], directoryRoot, promoted);
         return promoted;
     }
 
+    /// <param name="ancestors">
+    /// The published names of the folders above <paramref name="node"/>, home downwards, not
+    /// counting <paramref name="node"/> itself — what the breadcrumb bar on its page shows.
+    /// </param>
     private static void CollectHomePromotions(
-        DirectoryTreeItem node, string directoryRoot, List<HomePromotion> promoted)
+        DirectoryTreeItem node, IList<string> ancestors, string directoryRoot, List<HomePromotion> promoted)
     {
         // A folder published as its single artifact has no page beneath it, so a promoted artifact
         // there is reached at the folder's own address.
         var sole = SoleArtifact(node);
+        IList<string> childAncestors = [.. ancestors, PublicName(node.Name)];
 
         foreach (var child in node.Children)
         {
             if (child.IsDirectory)
             {
                 if (IsHomePromoted(child))
-                    promoted.Add(new HomePromotion(child, FolderHref(child, directoryRoot)));
-                CollectHomePromotions(child, directoryRoot, promoted);
+                    promoted.Add(new HomePromotion(child, FolderHref(child, directoryRoot), childAncestors));
+                CollectHomePromotions(child, childAncestors, directoryRoot, promoted);
             }
             else if (child.Artifact?.Home == true)
             {
-                var href = ReferenceEquals(child, sole)
+                // Standing in for its folder, it stands where the folder stood: one level up.
+                var atFolderIndex = ReferenceEquals(child, sole);
+                var href = atFolderIndex
                     ? FolderHref(node, directoryRoot)
                     : ArtifactHref(child, directoryRoot);
-                promoted.Add(new HomePromotion(child, href));
+                promoted.Add(new HomePromotion(child, href, atFolderIndex ? ancestors : childAncestors));
             }
         }
     }
