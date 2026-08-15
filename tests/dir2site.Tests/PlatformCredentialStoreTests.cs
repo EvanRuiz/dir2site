@@ -11,7 +11,6 @@ namespace dir2site.Tests;
 /// Round-trips for the OS-backed credential stores. Each skips off its own platform, so the
 /// CI matrix is what gives these coverage: Windows exercises DPAPI, macOS the Keychain.
 /// </summary>
-[Collection("ProcessHelperSeam")]
 public class PlatformCredentialStoreTests : IDisposable
 {
     // Distinctive enough to identify as test residue if a run is killed before cleanup.
