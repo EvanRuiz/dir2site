@@ -56,10 +56,4 @@ public static class SftpProfileStore
         File.WriteAllText(PathFor(projectRoot), JsonSerializer.Serialize(profile, JsonOptions));
     }
 
-    /// <summary>
-    /// Stable key used to store/look up the secret in the platform credential store.
-    /// Bound to the project, host and username so distinct targets don't collide.
-    /// </summary>
-    public static string CredentialKey(string projectRoot, SftpProfile profile) =>
-        Hash($"{NormalizeProject(projectRoot)}|{profile.Host}|{profile.Port}|{profile.Username}");
 }

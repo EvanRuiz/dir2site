@@ -6,6 +6,7 @@ using System.IO;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using dir2site.Models;
+using dir2site.Services;
 using dir2site.SftpSync.Core.Credentials;
 using dir2site.SftpSync.Ui;
 using Xunit;
@@ -46,13 +47,40 @@ public class UnreadableSecretTests : IDisposable
         public void Delete(string key) => Deleted.Add(key);
     }
 
-    private (SftpSettingsView view, SftpSettingsViewModel vm) Show()
+    private (SftpSettingsView view, SftpSettingsViewModel vm) Show(Dir2SiteModel? config = null)
     {
         var view = new SftpSettingsView(
-            _project, new Dir2SiteModel(), Path.Combine(_project, "dir2site.yaml"));
+            _project, config ?? new Dir2SiteModel(), Path.Combine(_project, "dir2site.yaml"));
         view.Show();
         Dispatcher.UIThread.RunJobs();
         return (view, (SftpSettingsViewModel)view.DataContext!);
+    }
+
+    [AvaloniaFact]
+    public void OpeningTheDialog_ReadsTheStoreOncePerLoad_NotOncePerFormField()
+    {
+        // LoadFrom assigns Host, Username and the key path one at a time, and each asks to reload
+        // the secret. Unguarded, opening the dialog costs a round of store reads per field — on
+        // macOS every read spawns /usr/bin/security — and the middle ones run against a half-filled
+        // form, briefly putting a different account's password on screen.
+        //
+        // The target has to be already configured for this to bite: assigning a field its existing
+        // value raises no change notification, so a blank target would exercise none of it.
+        var config = new Dir2SiteModel { Deploy = new DeployConfig() };
+        config.Deploy.Targets.Add(new DeployTarget
+        {
+            Name = "production", Host = "example.invalid", Username = "deploy", RemotePath = "/var/www",
+        });
+
+        var stub = new StubStore { Result = CredentialResult.NotFound };
+        using var _ = CredentialStoreFactory.UseForTesting(stub);
+
+        var (_, vm) = Show(config);
+
+        Assert.Equal("example.invalid", vm.Host);
+
+        // Two reads for one load: the account's own key, and the legacy key migration must check.
+        Assert.Equal(2, stub.Reads);
     }
 
     [AvaloniaFact]
@@ -68,7 +96,7 @@ public class UnreadableSecretTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void SavingWithAnEmptyBox_DoesNotDeleteASecretWeCouldNotRead()
+    public void SavingWithAnEmptyBox_DoesNotOverwriteASecretWeCouldNotRead()
     {
         var stub = new StubStore { Result = CredentialResult.Failed("unreadable") };
         using var _ = CredentialStoreFactory.UseForTesting(stub);
@@ -84,17 +112,19 @@ public class UnreadableSecretTests : IDisposable
         vm.SaveCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
 
-        // "Nothing was deleted" is also trivially true of a stub nothing ever reached, so pin that
-        // the dialog really went through this store before trusting the assertion below.
+        // "Nothing was written" is also trivially true of a stub nothing ever reached, so pin that
+        // the dialog really went through this store before trusting the assertions below.
         Assert.True(stub.Reads > 0);
+        Assert.Empty(stub.Written);
         Assert.Empty(stub.Deleted);
     }
 
     [AvaloniaFact]
-    public void SavingWithAnEmptyBox_StillClearsASecretTheUserActuallyRemoved()
+    public void SavingWithAnEmptyBox_RecordsAnEmptySecretRatherThanNone()
     {
         // The other side of the same branch: when the read succeeded, an empty box does mean
-        // "forget it", and that has to keep working.
+        // "forget it". It is stored as an empty value rather than removed, so that the next read
+        // doesn't take "nothing here" as a cue to migrate the old value back in.
         var stub = new StubStore { Result = CredentialResult.Found("hunter2") };
         using var _ = CredentialStoreFactory.UseForTesting(stub);
 
@@ -109,7 +139,8 @@ public class UnreadableSecretTests : IDisposable
         vm.SaveCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
 
-        Assert.NotEmpty(stub.Deleted);
+        Assert.Contains(stub.Written, w => w.Secret == string.Empty);
+        Assert.Empty(stub.Deleted);
     }
 
     [AvaloniaFact]

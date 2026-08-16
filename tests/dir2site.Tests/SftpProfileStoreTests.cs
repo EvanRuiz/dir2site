@@ -63,24 +63,6 @@ public class SftpProfileStoreTests : IDisposable
         Assert.Equal(saved.PrivateKeyPath, loaded.PrivateKeyPath);
     }
 
-    [Fact]
-    public void CredentialKey_IsStableForSameInputs()
-    {
-        var p = Sample();
-        Assert.Equal(
-            SftpProfileStore.CredentialKey(_projectRoot, p),
-            SftpProfileStore.CredentialKey(_projectRoot, p));
-    }
-
-    [Fact]
-    public void CredentialKey_DiffersByHostAndUser()
-    {
-        var a = Sample();
-        var b = Sample(); b.Host = "other.example.com";
-        var c = Sample(); c.Username = "someoneelse";
-
-        var ka = SftpProfileStore.CredentialKey(_projectRoot, a);
-        Assert.NotEqual(ka, SftpProfileStore.CredentialKey(_projectRoot, b));
-        Assert.NotEqual(ka, SftpProfileStore.CredentialKey(_projectRoot, c));
-    }
+    // Credential keys are no longer derived here — a secret is addressed by what it belongs to
+    // rather than by the project holding the profile. See CredentialKeysTests.
 }
