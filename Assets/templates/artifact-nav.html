@@ -1,0 +1,23 @@
+{{~ # One side of a folder's prev/next, included twice — the two ends of the caption row, with ~}}
+{{~ # the caption between them. $1 is the address, $2 which side. ~}}
+{{~ # ~}}
+{{~ # Silent without an address, which is how both "this page isn't on the chain" and "this is ~}}
+{{~ # the first of them" arrive: no link and no placeholder either, so the caption beside it ~}}
+{{~ # takes the space back. ~}}
+{{~ # ~}}
+{{~ # No title attribute, and no neighbour's caption anywhere else here either. Reading a folder ~}}
+{{~ # means clicking Next over and over, so the pointer sits on this link the whole way through ~}}
+{{~ # and a tooltip would pop up on every photo. It would also put one artifact's metadata on ~}}
+{{~ # another artifact's page, so retitling a photo would rewrite three pages and report three ~}}
+{{~ # artifacts updated — not what the person who edited one caption did. The address is ~}}
+{{~ # structural; the caption is not. ~}}
+{{~ # ~}}
+{{~ # The side is only ever read by the branch below, never written into the page, so the classes ~}}
+{{~ # and the rel each side carries are spelled out rather than built. ~}}
+{{~ if $1 != "" ~}}
+{{~ if $2 == "prev" ~}}
+<a class="artifact-nav-link artifact-nav-prev" href="{{ $1 | html.escape }}" rel="prev"><i class="bi bi-arrow-left" aria-hidden="true"></i> Prev</a>
+{{~ else ~}}
+<a class="artifact-nav-link artifact-nav-next" href="{{ $1 | html.escape }}" rel="next">Next <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+{{~ end ~}}
+{{~ end ~}}

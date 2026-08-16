@@ -12,19 +12,33 @@
 <body>
   {{ include 'header' }}
 
-  <div id="osd-viewer"></div>
-
-  <div class="container artifact-meta">
-    <div class="d-flex align-items-center gap-2 mb-1">
-      <h4 class="mb-0">{{ artifact.caption | html.escape }}</h4>
-      {{ include 'badge' artifact.badge artifact.badge_icon }}
+  {{~ # The row count sits on the stage rather than on the caption because the viewer reads it too, ~}}
+  {{~ # to know how much of the window to leave — and a custom property reaches a sibling only by ~}}
+  {{~ # way of a shared parent. It is the folder's count, not this photo's: every page in an album ~}}
+  {{~ # reserves the same caption height so the picture doesn't resize as you arrow through it. ~}}
+  {{~ # Written as a branch rather than as the number, so nothing from the generator lands in a ~}}
+  {{~ # class attribute. ~}}
+  <div class="artifact-stage{{ if artifact.fits_viewport }} artifact-stage-fit{{ end }} {{ if artifact.meta_rows == 2 }}artifact-meta-rows-2{{ else }}artifact-meta-rows-1{{ end }}">
+    {{~ # Wrapped for the same reason as the reader in artifact-pdf: the class the layout hangs on ~}}
+    {{~ # lives on a box no library owns. OpenSeadragon happens to append children and leave this ~}}
+    {{~ # element's class attribute alone, so a class on #osd-viewer survives today — but that is ~}}
+    {{~ # a property of the version we ship rather than anything the page arranges, and it is the ~}}
+    {{~ # same bet BookReader lost. There it failed silently, as a viewer with no height. ~}}
+    <div class="artifact-viewer">
+      <div id="osd-viewer"></div>
     </div>
-    {{~ if artifact.credit != "" || artifact.url != "" }}
-    <p class="text-muted small mb-1">{{ artifact.credit | html.escape
-      }}{{ if artifact.credit != "" && artifact.url != "" }}<span class="artifact-meta-sep">·</span>{{ end
-      }}{{ include 'artifact-link' }}</p>
-    {{~ end }}
-    {{ if artifact.date != "" }}<p class="text-muted small mb-1">{{ artifact.date | html.escape }}</p>{{ end }}
+
+    {{~ # container-fluid, not container: the viewer above runs edge to edge, and a centred column ~}}
+    {{~ # here would strand the buttons a hundred pixels inside the picture they belong to. The ~}}
+    {{~ # header sets its own bars in a container-fluid for the same reason. ~}}
+    <div class="container-fluid artifact-meta artifact-meta-row">
+      {{ include 'artifact-nav' artifact.prev_href "prev" }}
+      <div class="artifact-meta-body">
+        <h4 class="mb-1">{{ artifact.caption | html.escape }}</h4>
+        {{ include 'artifact-subtitle' }}
+      </div>
+      {{ include 'artifact-nav' artifact.next_href "next" }}
+    </div>
   </div>
 
   {{ include 'footer' }}
