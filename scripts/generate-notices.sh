@@ -10,11 +10,18 @@ OUTPUT_APP="$REPO_ROOT/Assets/app/about/THIRD_PARTY_NOTICES.md"
 mkdir -p "$REPO_ROOT/Assets/app/about"
 
 # ---------------------------------------------------------------------------
-# 1. NuGet packages — try dotnet-project-licenses, fall back to dotnet list
+# 1. NuGet packages — dotnet-project-licenses
 # ---------------------------------------------------------------------------
+# The tool ships as net7.0 and no .NET 7 runtime is installed any more, so it needs the same
+# roll-forward the release scripts use for vpk. Without it the run failed, the failure was hidden,
+# and the notices were quietly built from a table of name-prefix guesses instead — which had
+# drifted (it recorded NetVips.Native as LGPL-2.1 where the package says LGPL-3.0-or-later). A
+# notices file that is silently wrong is worse than one that fails to build, so there is no
+# fallback now: if the tool cannot run, the script stops.
 
 # Add ~/.dotnet/tools to PATH for this session
 export PATH="$PATH:$HOME/.dotnet/tools"
+export DOTNET_ROLL_FORWARD=LatestMajor
 
 TMP_DIR="/tmp/notices-$$"
 mkdir -p "$TMP_DIR"
@@ -27,13 +34,17 @@ if ! command -v dotnet-project-licenses &>/dev/null; then
 fi
 
 if command -v dotnet-project-licenses &>/dev/null; then
+  JSON_FILE="$TMP_DIR/licenses.json"
+  # --include-transitive because what the licenses cover is what we distribute, and a package
+  # pulled in by another ships in the installer just the same. Without it the file lists 22 of the
+  # 174 packages in the build — including, until this was put back, Svg.Custom, the one MS-PL
+  # licence in the tree.
   if dotnet-project-licenses \
-      --input "$REPO_ROOT" \
-      --output-directory "$TMP_DIR" \
-      --output-file-type json \
-      --include-transitive 2>/dev/null; then
-    JSON_FILE="$(find "$TMP_DIR" -name '*.json' | head -1)"
-    if [[ -n "$JSON_FILE" && -s "$JSON_FILE" ]]; then
+      --input "$REPO_ROOT/dir2site.csproj" \
+      --json \
+      --outfile "$JSON_FILE" \
+      --include-transitive >/dev/null; then
+    if [[ -s "$JSON_FILE" ]]; then
       NUGET_ROWS="$(python3 - "$JSON_FILE" <<'PYEOF'
 import json, sys
 
@@ -53,72 +64,37 @@ for p in items:
     version = p.get("PackageVersion") or p.get("packageVersion") or p.get("version") or ""
     lic     = p.get("License") or p.get("license") or p.get("LicenseType") or ""
     url     = p.get("PackageUrl") or p.get("packageUrl") or p.get("licenseUrl") or p.get("LicenseUrl") or ""
+    # Packages that declare a licenseUrl but no SPDX id, each read from the project's own LICENSE
+    # file. Anything not listed here and not declared stops the run below.
+    lic = lic or {
+        "EmbedIO": "MIT",
+        "Unosquare.Swan.Lite": "MIT",  # EmbedIO's own dependency, same house, same licence
+    }.get(name, "")
     if name:
         packages.append((name.strip(), version.strip(), lic.strip(), url.strip()))
 
 packages.sort(key=lambda x: x[0].lower())
+
+undeclared = [f"{n} {v}" for n, v, lic, _ in packages if not lic]
+if undeclared:
+    print("error: these packages declare no license:", file=sys.stderr)
+    for item in undeclared:
+        print(f"  - {item}", file=sys.stderr)
+    sys.exit(1)
+
 for name, version, lic, url in packages:
     print(f"{name}\t{version}\t{lic}\t{url}")
 PYEOF
-)" 2>/dev/null || NUGET_ROWS=""
+)"
     fi
   fi
 fi
 
-# Fallback: parse `dotnet list package` with hardcoded license map
+# No fallback: guessing licenses is how this file went wrong in the first place.
 if [[ -z "$NUGET_ROWS" ]]; then
-  echo "Falling back to dotnet list package + hardcoded license map..." >&2
-  DOTNET_LIST_TMP="$TMP_DIR/dotnet-list.txt"
-  dotnet list "$REPO_ROOT/dir2site.csproj" package --include-transitive 2>/dev/null \
-    | grep '^\s*>' > "$DOTNET_LIST_TMP" || true
-  NUGET_ROWS="$(python3 /dev/stdin "$DOTNET_LIST_TMP" <<'PYEOF'
-import sys, re
-
-LICENSE_MAP = [
-    # (prefix, license, url) — longest prefix wins
-    ("NetVips.Native",          "LGPL-2.1",    "https://github.com/libvips/libvips"),
-    ("NetVips",                 "MIT",          "https://github.com/kleisauke/net-vips"),
-    ("Magick.NET",              "Apache-2.0",   "https://github.com/dlemstra/Magick.NET"),
-    ("SkiaSharp",               "MIT",          "https://github.com/mono/SkiaSharp"),
-    ("HarfBuzzSharp",           "MIT",          "https://github.com/mono/SkiaSharp"),
-    ("Avalonia",                "MIT",          "https://github.com/AvaloniaUI/Avalonia"),
-    ("CommunityToolkit.Mvvm",   "MIT",          "https://github.com/CommunityToolkit/dotnet"),
-    ("PDFtoImage",              "MIT",          "https://github.com/sungaila/PDFtoImage"),
-    ("PdfPig",                  "Apache-2.0",   "https://github.com/UglyToad/PdfPig"),
-    ("Scriban",                 "BSD-2-Clause", "https://github.com/scriban/scriban"),
-    ("YamlDotNet",              "MIT",          "https://github.com/aaubry/YamlDotNet"),
-    ("Mapster",                 "MIT",          "https://github.com/MapsterMapper/Mapster"),
-    ("EmbedIO",                 "MIT",          "https://github.com/unosquare/embedio"),
-    ("MessageBox.Avalonia",     "MIT",          "https://github.com/AvaloniaCommunity/MessageBox.Avalonia"),
-    ("bblanchon.PDFium",        "Apache-2.0",   "https://github.com/bblanchon/pdfium-binaries"),
-    ("runtime.",                "MIT",          "(runtime packages)"),
-]
-
-def lookup(pkg):
-    best = ("", "Unknown", "")
-    for prefix, lic, url in LICENSE_MAP:
-        if pkg.startswith(prefix) and len(prefix) > len(best[0]):
-            best = (prefix, lic, url)
-    return best[1], best[2]
-
-seen = {}
-packages = []
-with open(sys.argv[1]) as fh:
-    for line in fh:
-        m = re.match(r'\s*>\s+(\S+)\s+\S+\s+(\S+)', line)
-        if m:
-            pkg, ver = m.group(1), m.group(2)
-            key = f"{pkg}@{ver}"
-            if key not in seen:
-                seen[key] = True
-                lic, url = lookup(pkg)
-                packages.append((pkg, ver, lic, url))
-
-packages.sort(key=lambda x: x[0].lower())
-for pkg, ver, lic, url in packages:
-    print(f"{pkg}\t{ver}\t{lic}\t{url}")
-PYEOF
-)"
+  echo "error: could not read package licenses via dotnet-project-licenses." >&2
+  echo "Nothing was written." >&2
+  exit 1
 fi
 
 rm -rf "$TMP_DIR"
@@ -186,6 +162,14 @@ PYEOF
 
 VENDOR_ROWS="$(scan_vendor_dirs)"
 
+# The version lives in the test that pins rclone's hashes, so the two cannot disagree.
+RCLONE_SOURCE="$REPO_ROOT/tests/dir2site.Tests/RcloneTool.cs"
+RCLONE_VERSION="$(sed -n 's/.*public const string Version = "v\{0,1\}\([^"]*\)".*/\1/p' "$RCLONE_SOURCE" | head -1)"
+if [[ -z "$RCLONE_VERSION" ]]; then
+  echo "error: could not read the rclone version from $RCLONE_SOURCE." >&2
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # 3. Assemble Markdown
 # ---------------------------------------------------------------------------
@@ -234,6 +218,22 @@ VENDOR_HEADER
     [[ -z "$name" ]] && continue
     echo "| ${name} | ${ver} | ${lic} | \`${loc}\` | [${src}](${src}) |"
   done <<< "$VENDOR_ROWS"
+
+  # rclone is downloaded by the integration tests rather than vendored, so it has no folder to
+  # scan. This section was hand-written into the generated file, where every run deleted it again.
+  cat <<TOOLS_HEADER
+
+---
+
+## Test-Only Tools
+
+Not shipped with dir2site and not distributed in this repository. Fetched on demand by the test
+suite and verified against hashes pinned in \`tests/dir2site.Tests/RcloneTool.cs\`.
+
+| Tool | Version | License | Source |
+|------|---------|---------|--------|
+| rclone | ${RCLONE_VERSION} | MIT | [https://github.com/rclone/rclone](https://github.com/rclone/rclone) |
+TOOLS_HEADER
 }
 
 printf '%s\n' "$(generate_md true)"  > "$OUTPUT_ROOT"

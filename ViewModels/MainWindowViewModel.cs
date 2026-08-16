@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,6 +37,8 @@ public partial class MainWindowViewModel : ViewModelBase
     public TopLevel? TopLevel { get; set; }
 
     private readonly PreviewServerService _previewServer = new();
+
+    private readonly RecentProjectsStore _recentProjects = RecentProjectsStore.Default;
 
     // Null when Velopack isn't initialised — a test host, or anything that didn't run
     // VelopackApp.Build(). Auto-update is then simply unavailable, rather than the whole view
@@ -85,6 +88,7 @@ public partial class MainWindowViewModel : ViewModelBase
         // — no project open — would show disabled buttons and no explanation.
         RefreshSyncBlockedReason();
         _ = CheckForUpdatesAsync();
+        _ = LoadRecentProjectsAsync();
         VsCodeExtensionStateReady = RefreshVsCodeExtensionState();
     }
 
@@ -469,10 +473,92 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (folders.Count == 0) return;
 
-        DirectoryRoot = folders[0].Path.LocalPath;
+        await OpenProject(folders[0].Path.LocalPath);
+    }
+
+    /// <summary>The one way a project is opened, whether picked from disk or from a recent tile.</summary>
+    private async Task OpenProject(string path)
+    {
+        DirectoryRoot = path;
         await LoadDirectory();
     }
-    
+
+    /// <summary>Project folders offered on the welcome screen, newest first.</summary>
+    [ObservableProperty] public partial ObservableCollection<RecentProjectItem> RecentProjectItems { get; set; } = [];
+
+    [ObservableProperty] private bool _hasRecentProjects;
+
+    /// <summary>
+    /// Rebuilds the welcome-screen tiles: reads the remembered folders, drops the ones that are
+    /// gone, and decodes their logos — all on a background thread, so a slow or unmounted volume
+    /// delays a shortcut rather than the window appearing.
+    /// </summary>
+    private async Task LoadRecentProjectsAsync()
+    {
+        try
+        {
+            var prepared = await Task.Run(() => _recentProjects.Load()
+                .Select(entry => RecentProjectItem.Prepare(entry.Path))
+                .OfType<RecentProjectItem.Prepared>()
+                .ToList());
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                // The tiles themselves are built here rather than above: their brushes and any SVG
+                // logo are Avalonia objects, which refuse to be constructed off the UI thread.
+                var items = prepared.Select(RecentProjectItem.Create).ToList();
+
+                // Swap first, dispose after: no tile is ever bound to a bitmap that has already
+                // been released.
+                var stale = RecentProjectItems;
+                RecentProjectItems = new ObservableCollection<RecentProjectItem>(items);
+                HasRecentProjects = items.Count > 0;
+                foreach (var item in stale) item.Dispose();
+            });
+        }
+        catch
+        {
+            // A shortcut list that won't build is not worth an error banner on startup.
+        }
+    }
+
+    [RelayCommand]
+    private async Task OpenRecentProject(RecentProjectItem? item)
+    {
+        if (item == null) return;
+
+        // The tiles were built when the window opened; the folder may have gone since.
+        if (!Directory.Exists(item.Path))
+        {
+            RemoveRecentProjectTile(item);
+            AppendWarning($"{item.Path} is no longer available.");
+            return;
+        }
+
+        await OpenProject(item.Path);
+    }
+
+    /// <summary>
+    /// Drops a project from the welcome screen. Only the shortcut goes — the project itself is
+    /// untouched, and opening it again puts the tile back, so there is nothing to confirm.
+    /// </summary>
+    [RelayCommand]
+    private async Task ForgetRecentProject(RecentProjectItem? item)
+    {
+        if (item == null) return;
+
+        var path = item.Path;
+        RemoveRecentProjectTile(item);
+        await Task.Run(() => _recentProjects.Forget(path));
+    }
+
+    private void RemoveRecentProjectTile(RecentProjectItem item)
+    {
+        RecentProjectItems.Remove(item);
+        HasRecentProjects = RecentProjectItems.Count > 0;
+        item.Dispose();
+    }
+
     private async Task LoadDirectory()
     {
         DirItems.Clear();
@@ -501,6 +587,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
             await LoadOrCreateDir2SiteConfig();
             ReloadDeployTargets();
+
+            // Remembered only once the project has actually opened, so a folder that failed to
+            // scan doesn't earn a tile — and so its dir2site.yaml is known to exist by now, which
+            // is what the resolver uses to decide the folder is still a project.
+            var opened = DirectoryRoot;
+            await Task.Run(() => _recentProjects.Remember(opened));
+            _ = LoadRecentProjectsAsync();
 
             IsLoading = false;
             StatusText = $"{files.Count:N0} files · {artifacts.Count:N0} artifacts";
