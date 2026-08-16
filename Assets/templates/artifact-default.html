@@ -13,10 +13,7 @@
   {{ include 'header' }}
 
   <div class="container pt-4">
-    <div class="d-flex align-items-center gap-2 mb-3">
-      <h2 class="mb-0">{{ artifact.caption | html.escape }}</h2>
-      {{ include 'badge' artifact.badge artifact.badge_icon }}
-    </div>
+    <h2 class="mb-3">{{ artifact.caption | html.escape }}</h2>
 
     {{ if artifact.preview_src != "" }}
     <div class="artifact-preview mb-3">
@@ -24,12 +21,18 @@
     </div>
     {{ end }}
 
-    {{~ if artifact.credit != "" || artifact.url != "" }}
-    <p class="text-muted">{{ artifact.credit | html.escape
-      }}{{ if artifact.credit != "" && artifact.url != "" }}<span class="artifact-meta-sep">·</span>{{ end
-      }}{{ include 'artifact-link' }}</p>
-    {{~ end }}
-    {{ if artifact.date != "" }}<p class="text-muted small">{{ artifact.date | html.escape }}</p>{{ end }}
+    <div class="artifact-meta-row">
+      {{ include 'artifact-nav' artifact.prev_href "prev" }}
+      <div class="artifact-meta-body">
+        {{~ if artifact.credit != "" || artifact.url != "" }}
+        <p class="text-muted">{{ artifact.credit | html.escape
+          }}{{ if artifact.credit != "" && artifact.url != "" }}<span class="artifact-meta-sep">·</span>{{ end
+          }}{{ include 'artifact-link' }}</p>
+        {{~ end }}
+        {{ if artifact.date != "" }}<p class="text-muted small">{{ artifact.date | html.escape }}</p>{{ end }}
+      </div>
+      {{ include 'artifact-nav' artifact.next_href "next" }}
+    </div>
   </div>
 
   {{ include 'footer' }}

@@ -17,12 +17,18 @@
       {{ artifact.html_content }}
     </article>
 
-    <div class="artifact-meta border-top mt-4 pt-3">
-      {{ include 'badge' artifact.badge artifact.badge_icon }}
-      {{ if artifact.credit != "" }}<span class="text-muted small ms-2">{{ artifact.credit | html.escape }}</span>{{ end }}
-      {{ if artifact.url != "" }}<span class="small ms-2">{{ include 'artifact-link' }}</span>{{ end }}
-      {{ if artifact.date != "" }}<span class="text-muted small ms-2">{{ artifact.date | html.escape }}</span>{{ end }}
+    {{~ # The type badge used to hold this strip up on its own. Without it, an article naming no ~}}
+    {{~ # credit, source or date has nothing to put here, and the rule above would be a line ~}}
+    {{~ # ruled under nothing. ~}}
+    {{~ if artifact.credit != "" || artifact.url != "" || artifact.date != "" || artifact.prev_href != "" || artifact.next_href != "" }}
+    <div class="artifact-meta artifact-meta-row border-top mt-4 pt-3">
+      {{ include 'artifact-nav' artifact.prev_href "prev" }}
+      <div class="artifact-meta-body">
+        {{ include 'artifact-subtitle' }}
+      </div>
+      {{ include 'artifact-nav' artifact.next_href "next" }}
     </div>
+    {{~ end }}
   </div>
 
   {{ include 'footer' }}

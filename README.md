@@ -14,7 +14,7 @@ Dir2Site is a open-source cross-platform desktop application that walks your loc
 
 ## Features
 
-- **Photo galleries** — full-screen browsing with deep-zoom viewer (OpenSeadragon), optional overlay annotations
+- **Photo galleries** — full-screen browsing with deep-zoom viewer (OpenSeadragon), prev/next through a folder, optional overlay annotations
 - **PDF viewer** — embedded document reader (BookReader)
 - **Markdown articles** — render `.md` files as clean web pages
 - **Videos** — drop in a YouTube `.url` shortcut; plays inline on the collection page
@@ -97,6 +97,35 @@ An address is published only if it's one a browser would follow to another page 
 `mailto` or somewhere within your own site. Anything else is left off, rather than turned into a
 link that runs when clicked, and generating says which file it was so a perfectly innocent `ftp://`
 doesn't just quietly vanish.
+
+## Photo pages
+
+A photo's page sizes the viewer to whatever the window has left once room is set aside for the
+caption, so an ordinary caption — its credit, its date — is on screen without scrolling, and the
+footer is what sits below the fold instead. PDFs get the same treatment; an article doesn't, since
+an article is read by scrolling.
+
+The room set aside is the same on every photo in a folder, so the picture doesn't resize as you move
+between them. Two cases scroll rather than shrink the picture: a caption longer than the room
+reserved for it, and a phone held sideways, where dividing up the height would leave a letterbox
+with more caption than picture.
+
+### Moving between photos (`Prev` / `Next`)
+
+Every photo page carries **← Prev** and **Next →** at the two ends of its caption, so a folder of
+scans can be read straight through without going back up to the collection between each one. They
+appear on their own; there is nothing to switch on.
+
+The order is the one the folder's own page shows: alphabetical by filename. Two things worth
+knowing:
+
+- **The arrows step over everything that isn't a photo.** A video, a PDF or an article filed
+  alphabetically between two photos is skipped, so arrowing through a mixed folder shows you the
+  pictures and nothing else. Those pages carry no arrows of their own — landing somewhere with no
+  way onward is what this avoids. Subfolders aren't on the chain either: the arrows stay in one
+  folder, and going deeper is the breadcrumb's job.
+- **The chain doesn't wrap.** The first photo has no Prev and the last has no Next; the missing one
+  isn't greyed out, it simply isn't there. A folder holding a single photo gets neither.
 
 ## Markdown articles
 
