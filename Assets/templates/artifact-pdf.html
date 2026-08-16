@@ -13,22 +13,27 @@
 <body class="artifact-pdf">
   {{ include 'header' }}
 
-  <div id="BookReader"></div>
-
-  <div class="container artifact-meta">
-    <div class="d-flex align-items-center gap-2 mb-1">
-      <h4 class="mb-0">{{ artifact.caption | html.escape }}</h4>
-      {{ include 'badge' artifact.badge artifact.badge_icon }}
+  {{~ # Row count on the stage, reserved to the folder's caption height — see artifact-photo. ~}}
+  <div class="artifact-stage{{ if artifact.fits_viewport }} artifact-stage-fit{{ end }} {{ if artifact.meta_rows == 2 }}artifact-meta-rows-2{{ else }}artifact-meta-rows-1{{ end }}">
+    {{~ # The wrapper is not decoration: BookReader writes its own list over this element's class ~}}
+    {{~ # attribute when it initialises, so a class put on #BookReader itself is gone by the time ~}}
+    {{~ # the stylesheet needs it and the reader lays out with no height at all. The class the ~}}
+    {{~ # layout depends on goes on a box the library never touches. ~}}
+    <div class="artifact-viewer">
+      <div id="BookReader"></div>
     </div>
-    {{ if artifact.author != "" }}<p class="text-muted small mb-1">{{ artifact.author | html.escape }}</p>{{ end }}
-    {{~ if artifact.credit != "" || artifact.url != "" }}
-    <p class="text-muted small mb-1">{{ artifact.credit | html.escape
-      }}{{ if artifact.credit != "" && artifact.url != "" }}<span class="artifact-meta-sep">·</span>{{ end
-      }}{{ include 'artifact-link' }}</p>
-    {{~ end }}
-    {{ if artifact.date != "" }}<p class="text-muted small mb-1">{{ artifact.date | html.escape }}</p>{{ end }}
-    {{~ # Empty unless the source PDF was published, so there is never a link to a missing file. ~}}
-    {{ if artifact.original_src != "" }}<p class="mb-1"><a href="{{ artifact.original_src | html.escape }}" download><i class="bi bi-download" aria-hidden="true"></i> Download PDF</a></p>{{ end }}
+
+    {{~ # container-fluid for the same reason as artifact-photo: the reader above is full width. ~}}
+    <div class="container-fluid artifact-meta artifact-meta-row">
+      {{ include 'artifact-nav' artifact.prev_href "prev" }}
+      <div class="artifact-meta-body">
+        <h4 class="mb-1">{{ artifact.caption | html.escape }}</h4>
+        {{ include 'artifact-subtitle' }}
+        {{~ # Empty unless the source PDF was published, so there is never a link to a missing file. ~}}
+        {{ if artifact.original_src != "" }}<p class="mb-1"><a href="{{ artifact.original_src | html.escape }}" download><i class="bi bi-download" aria-hidden="true"></i> Download PDF</a></p>{{ end }}
+      </div>
+      {{ include 'artifact-nav' artifact.next_href "next" }}
+    </div>
   </div>
 
   {{ include 'footer' }}

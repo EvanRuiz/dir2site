@@ -1,0 +1,20 @@
+{{~ # The one line under a viewer page's title: author, credit, the link out and the date, all on ~}}
+{{~ # the same row with a · between whichever of them are there. ~}}
+{{~ # ~}}
+{{~ # One line rather than a stack because the page reserves a fixed band for the caption, and a ~}}
+{{~ # column of short phrases spends that band on empty space to the right of each one while ~}}
+{{~ # pushing the last of them out of sight. Stacked, "March 1890" needed scrolling to reach; ~}}
+{{~ # joined, it sits beside the credit with room over. ~}}
+{{~ # ~}}
+{{~ # Each separator asks whether anything at all came before it rather than whether one ~}}
+{{~ # particular field did, so any combination of the four reads correctly and none of them opens ~}}
+{{~ # or closes the line with a stray dot. `author` is blank on everything but a PDF — the ~}}
+{{~ # generator sets it on every artifact so this partial can be shared. ~}}
+{{~ # The line is emitted as one unbroken run. Every newline this file could put between the ~}}
+{{~ # pieces would reach the page as a space, and a space in front of a separator that already ~}}
+{{~ # carries a 0.4rem margin shows as one dot sitting further from its neighbour than the rest. ~}}
+{{~ # Left-trim markers don't reliably close the gap after literal text, so there is none to ~}}
+{{~ # close: hence the long line, which is the price of the separators being right. ~}}
+{{~ if artifact.author != "" || artifact.credit != "" || artifact.url != "" || artifact.date != "" ~}}
+<p class="text-muted small mb-1">{{ artifact.author | html.escape }}{{ if artifact.author != "" && artifact.credit != "" }}<span class="artifact-meta-sep">·</span>{{ end }}{{ artifact.credit | html.escape }}{{ if (artifact.author != "" || artifact.credit != "") && artifact.url != "" }}<span class="artifact-meta-sep">·</span>{{ end }}{{ include 'artifact-link' }}{{ if (artifact.author != "" || artifact.credit != "" || artifact.url != "") && artifact.date != "" }}<span class="artifact-meta-sep">·</span>{{ end }}{{ artifact.date | html.escape }}</p>
+{{~ end ~}}
