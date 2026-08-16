@@ -35,6 +35,33 @@
         <Style Selector="Button.banner:pressed /template/ ContentPresenter">
             <Setter Property="Foreground" Value="White"/>
         </Style>
+
+        <!-- A recent-project tile is a miniature of that site's own header, so the button chrome
+             has to get out of the way: the theme's grey would repaint the navbar color on hover. -->
+        <Style Selector="Button.recent /template/ ContentPresenter">
+            <Setter Property="Background" Value="{Binding $parent[Button].Background}"/>
+            <Setter Property="BorderBrush" Value="#DDDDDD"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="Button.recent:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{Binding $parent[Button].Background}"/>
+            <Setter Property="BorderBrush" Value="#999999"/>
+        </Style>
+        <Style Selector="Button.recent:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{Binding $parent[Button].Background}"/>
+            <Setter Property="BorderBrush" Value="#666666"/>
+        </Style>
+
+        <!-- Quiet until you go looking for it: removing a shortcut is a rare act next to opening
+             the project, so it should not compete with the tile for attention. -->
+        <Style Selector="Button.forget">
+            <Setter Property="Opacity" Value="0.35"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style Selector="Button.forget:pointerover">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
     </Window.Styles>
 
     <DockPanel>
@@ -199,6 +226,67 @@
                        VerticalAlignment="Top"
                        Margin="0,0,40,0"/>
                 <StackPanel Grid.Column="1" Spacing="12">
+
+            <!-- Recent projects: the common case is reopening one, so it comes before the pitch.
+                 Collapses entirely on a first run, leaving the welcome screen as it was. -->
+            <StackPanel Spacing="10" Margin="0,0,0,16" IsVisible="{Binding HasRecentProjects}">
+                <TextBlock Text="Recent Projects" FontSize="20" FontWeight="SemiBold"/>
+                <ItemsControl ItemsSource="{Binding RecentProjectItems}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <!-- One per row: a site header is a wide band, and most logos are far
+                                 wider than they are tall. -->
+                            <StackPanel Orientation="Vertical" Spacing="8"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:RecentProjectItem">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Button Classes="recent"
+                                        Width="560" Height="60" Padding="20,0"
+                                        HorizontalContentAlignment="Left"
+                                        VerticalContentAlignment="Center"
+                                        Background="{Binding Background}"
+                                        ToolTip.Tip="{Binding Path}"
+                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenRecentProjectCommand}"
+                                        CommandParameter="{Binding}">
+                                    <Panel HorizontalAlignment="Left">
+                                        <!-- The generated header draws its brand at height 40. -->
+                                        <Image Source="{Binding Logo}"
+                                               IsVisible="{Binding HasLogo}"
+                                               Height="40"
+                                               Stretch="Uniform"
+                                               HorizontalAlignment="Left"
+                                               VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Title}"
+                                                   IsVisible="{Binding !HasLogo}"
+                                                   Foreground="{Binding Foreground}"
+                                                   FontSize="19"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxWidth="500"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center"/>
+                                    </Panel>
+                                </Button>
+
+                                <!-- Beside the tile rather than on it: a target sitting inside the
+                                     thing it deletes is one slip away from opening the project. -->
+                                <Button Classes="forget"
+                                        Content="✕"
+                                        Width="26" Height="26"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        HorizontalContentAlignment="Center"
+                                        VerticalContentAlignment="Center"
+                                        ToolTip.Tip="Remove from recent projects — the project itself is not touched"
+                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ForgetRecentProjectCommand}"
+                                        CommandParameter="{Binding}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
                     <TextBlock Text="Dir2Site" FontSize="28" FontWeight="Bold"/>
                     <TextBlock Text="Turn any folder into a polished static website — instantly."
                                FontSize="15" TextWrapping="Wrap"/>
