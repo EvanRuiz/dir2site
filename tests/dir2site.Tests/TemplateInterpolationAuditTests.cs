@@ -48,8 +48,9 @@ public class TemplateInterpolationAuditTests
 
     private static readonly string[] Templates =
     [
-        "artifact-default", "artifact-link", "artifact-markdown", "artifact-pdf", "artifact-photo",
-        "badge", "card", "collection", "footer", "header", "opengraph", "site-css",
+        "artifact-default", "artifact-link", "artifact-markdown", "artifact-nav", "artifact-pdf",
+        "artifact-photo", "artifact-subtitle", "badge", "card", "collection", "footer", "header",
+        "opengraph", "site-css",
     ];
 
     private static string Read(string name)

@@ -173,7 +173,7 @@ public static class SiteGenerator
             {
                 var soleChange = GenerateArtifactPage(soleArtifact, outputDir, directoryRoot, config,
                     menuFolders, depth, ancestorNames, templates, footerColumns, colors, progress,
-                    ledger, atFolderIndex: true);
+                    ledger, atFolderIndex: true, metaRows: CaptionRows([soleArtifact]));
                 tracker.PageDone(soleChange);
                 tracker.ArtifactChanged(soleChange);
             }
@@ -282,12 +282,35 @@ public static class SiteGenerator
         var artifactChildren = node.Children
             .Where(c => !c.IsDirectory && c.Artifact != null && c.Artifact.Type != ArtifactType.Video)
             .ToList();
+
+        // The artifacts this folder's prev/next arrows thread together, in the order the folder
+        // shows them. A narrower list than the pages about to be written: a type that carries no
+        // arrows is not somewhere they can strand you either, so the chain steps over a PDF or an
+        // article between two photos the same way it steps over a video.
+        var chain = artifactChildren.Where(c => PolicyFor(c.Artifact!.Type).HasPrevNextNav).ToList();
+        var neighbours = new Dictionary<DirectoryTreeItem, ArtifactNeighbours>();
+        for (var i = 0; i < chain.Count; i++)
+            neighbours[chain[i]] = new ArtifactNeighbours(
+                i > 0 ? chain[i - 1] : null,
+                i < chain.Count - 1 ? chain[i + 1] : null);
+
+        // What the chain's pages agree to reserve. Only they need to agree: the reservation exists
+        // so the picture doesn't resize under the arrows, and a page you can only reach by going
+        // back and clicking a card is a page you were never going to see it move on.
+        var chainRows = CaptionRows(chain);
+
         foreach (var child in artifactChildren)
         {
             try
             {
+                // Off the chain, both ends are null and the page reads that as no arrows at all —
+                // and it answers the caption question for itself, rather than being held to what
+                // its neighbours reserved. Otherwise one PDF with an author line cost every photo
+                // in the folder a row of picture, to make room for something none of them show.
+                var onChain = neighbours.TryGetValue(child, out var siblings);
                 var change = GenerateArtifactPage(child, outputDir, directoryRoot, config, menuFolders,
-                    depth + 1, childAncestors, templates, footerColumns, colors, progress, ledger);
+                    depth + 1, childAncestors, templates, footerColumns, colors, progress, ledger,
+                    siblings: siblings, metaRows: onChain ? chainRows : CaptionRows([child]));
                 tracker.PageDone(change);
                 // What happened to an artifact's own page is what "new" and "updated" mean for the
                 // artifact: a photo the site had never rendered, or one whose page now reads
@@ -478,6 +501,47 @@ public static class SiteGenerator
             _ => "",
         };
     }
+
+    /// <summary>
+    /// The two things an artifact type's page rests on, kept in one table rather than as
+    /// <c>type is Photo or Deepzoom</c> spelled out wherever either is needed. A type added later
+    /// is then a prompt to decide, not a silent inheritance of whatever the fallback happened to
+    /// be — which is what <c>ArtifactPagePolicyTests</c> turns into a failing build.
+    /// </summary>
+    /// <param name="FitsViewport">
+    /// The media is sized to what the window has left rather than to itself, so the caption under
+    /// it is on screen without scrolling. True of a viewer, false of anything read by scrolling.
+    /// </param>
+    /// <param name="HasPrevNextNav">
+    /// This type is on the chain the folder's prev/next arrows thread together — which says both
+    /// that its pages carry the arrows and that its pages are where the arrows lead. The two
+    /// cannot come apart: a type the arrows can reach but not leave is a dead end.
+    /// </param>
+    internal readonly record struct ArtifactPagePolicy(bool FitsViewport, bool HasPrevNextNav);
+
+    internal static readonly IReadOnlyDictionary<ArtifactType, ArtifactPagePolicy> PagePolicies =
+        new Dictionary<ArtifactType, ArtifactPagePolicy>
+        {
+            [ArtifactType.Photo]     = new(FitsViewport: true,  HasPrevNextNav: true),
+            [ArtifactType.Deepzoom]  = new(FitsViewport: true,  HasPrevNextNav: true),
+            // The reader has page-turning of its own; a second pair of arrows beside it would put
+            // two different meanings of "next" on one page.
+            [ArtifactType.Pdf]       = new(FitsViewport: true,  HasPrevNextNav: false),
+            // An article is read by scrolling, so pinning it to the window would cut it off.
+            [ArtifactType.Markdown]  = new(FitsViewport: false, HasPrevNextNav: false),
+            // Neither gets a page of its own: a video plays on its folder's page, and a directory
+            // is a folder's page.
+            [ArtifactType.Video]     = new(FitsViewport: false, HasPrevNextNav: false),
+            [ArtifactType.Directory] = new(FitsViewport: false, HasPrevNextNav: false),
+        };
+
+    /// <summary>
+    /// A type's policy, or both answers false for one the table has never heard of. Reporting a
+    /// missing row as a generation error would put it in front of the wrong person — the test is
+    /// where a table this file owns should be held to being complete.
+    /// </summary>
+    private static ArtifactPagePolicy PolicyFor(ArtifactType type) =>
+        PagePolicies.TryGetValue(type, out var policy) ? policy : default;
 
     // Human-friendly label shown on cards and artifact pages in the generated site.
     private static string TypeBadge(ArtifactType type) => type switch
@@ -1253,6 +1317,52 @@ public static class SiteGenerator
     private static string RelativePrefix(int depth) =>
         string.Concat(Enumerable.Repeat("../", depth));
 
+    /// <summary>
+    /// The address of a neighbouring artifact's page, as written on an artifact page — so up out of
+    /// this artifact's own folder and down into its neighbour's. The raw stem, not
+    /// <see cref="PublicName"/>: that is the folder <see cref="GenerateArtifactPage"/> writes the
+    /// page into and the name <see cref="BuildCardModel"/> already links it by.
+    ///
+    /// Only ever called for a neighbour on the chain, which never includes the artifact published
+    /// at its folder's own index — that one has no siblings, and its page is a level up from where
+    /// this "../" is measured.
+    /// </summary>
+    private static string SiblingHref(DirectoryTreeItem? sibling) =>
+        sibling == null ? "" : $"../{Path.GetFileNameWithoutExtension(sibling.Name)}/";
+
+    /// <summary>
+    /// How many rows of caption a set of viewer pages reserves between them: two where anything in
+    /// the set has something to say under its title, one where nothing does.
+    ///
+    /// The reservation exists because a viewer takes whatever the caption leaves, so a photo with
+    /// a credit used to be shown smaller than the bare one beside it and the picture jumped as you
+    /// arrowed through. Reserving the same room on every page of the chain holds it still. The set
+    /// is the chain rather than the whole folder, and the answer is a folder's rather than the
+    /// site's, for the same reason in both directions: nobody should give up a band of picture to
+    /// hold a line that never appears on any page they can reach from where they are.
+    ///
+    /// Rows, not pixels: what a row is worth is a question about font size and the stylesheet
+    /// answers it. Nothing here could anyway — a title that is one line on a desktop is four on a
+    /// phone, and the caption scrolls inside its band when it outgrows it.
+    /// </summary>
+    private static int CaptionRows(IEnumerable<DirectoryTreeItem> folderArtifacts) =>
+        folderArtifacts.Any(c =>
+            c.Artifact is { } a
+            && PolicyFor(a.Type).FitsViewport
+            && HasCaptionSubtitle(a))
+            ? 2
+            : 1;
+
+    /// <summary>
+    /// Whether this artifact puts a line under its title. The subtitle is one line however many of
+    /// these are filled in, so any of them means the same second row.
+    /// </summary>
+    private static bool HasCaptionSubtitle(Artifact artifact) =>
+        artifact.Credit is { Length: > 0 }
+        || artifact.Date is { Length: > 0 }
+        || LinkableUrl(artifact.Url).Length > 0
+        || (artifact as Document)?.Author is { Length: > 0 };
+
     /// <summary>One file to place in _site. Collected up front so the copy stage knows its total.</summary>
     private sealed record CopyJob(string Src, string Dest, string Label);
 
@@ -1526,6 +1636,13 @@ public static class SiteGenerator
             jobs.Add(new CopyJob(src, Path.Combine(siteRoot, logoFilename), logoFilename));
     }
 
+    /// <summary>
+    /// Where an artifact's page sits on its folder's prev/next chain. Both null — which is what
+    /// <c>default</c> gives — for a page that isn't on it at all, and for the two at the ends,
+    /// where the missing link is simply not rendered.
+    /// </summary>
+    private readonly record struct ArtifactNeighbours(DirectoryTreeItem? Prev, DirectoryTreeItem? Next);
+
     /// <summary>Reports whether this artifact's page was newly created, rewritten, or unchanged.</summary>
     private static Change GenerateArtifactPage(
         DirectoryTreeItem item,
@@ -1540,7 +1657,9 @@ public static class SiteGenerator
         SiteColors colors,
         IProgress<string>? progress,
         SiteLedger ledger,
-        bool atFolderIndex = false)
+        bool atFolderIndex = false,
+        ArtifactNeighbours siblings = default,
+        int metaRows = 1)
     {
         var artifact = item.Artifact!;
         var stem = Path.GetFileNameWithoutExtension(item.Name);
@@ -1600,9 +1719,32 @@ public static class SiteGenerator
             url.Length == 0 ? "" : artifact.UrlText is { Length: > 0 } text ? text : url,
             readOnly: true);
 
-        artifactObj.SetValue("badge", TypeBadge(artifact.Type), readOnly: true);
-        artifactObj.SetValue("badge_icon", TypeIcon(artifact.Type), readOnly: true);
+        // No type badge here, unlike on a card: a card is one of a row of mixed things and has to
+        // say which it is, while a page showing you the photo has already said so.
         artifactObj.SetValue("preview_src", previewSrc, readOnly: true);
+
+        // Only a Document has one, but every page sets it: the subtitle partial is shared, and
+        // Scriban reads members per template, so a key missing on a photo would be an error there
+        // rather than the blank the partial is written to skip over.
+        artifactObj.SetValue("author", (artifact as Document)?.Author ?? "", readOnly: true);
+
+        // The folder's prev/next. Blank for a page off the chain, and blank at each end of it —
+        // the template renders a link only where there is an address, so one condition covers
+        // both and the arrows can be turned on for another type by its policy row alone.
+        //
+        // An address and nothing else. A neighbour's caption does not belong on this page, and
+        // there is nowhere good to put it: as a tooltip it would fire on every photo, because
+        // reading a folder means clicking Next in the same spot the whole way through and the
+        // pointer never leaves the link. Anywhere else it couples the two pages, so retitling one
+        // photo would rewrite three of them and report three artifacts updated — not what the
+        // person who edited one caption did.
+        artifactObj.SetValue("prev_href", SiblingHref(siblings.Prev), readOnly: true);
+        artifactObj.SetValue("next_href", SiblingHref(siblings.Next), readOnly: true);
+
+        // Whether the page sizes its media to the window. The only part of the policy the
+        // templates see; the arrows reach them as addresses, or as the lack of one.
+        artifactObj.SetValue("fits_viewport", PolicyFor(artifact.Type).FitsViewport, readOnly: true);
+        artifactObj.SetValue("meta_rows", metaRows, readOnly: true);
 
         string templateName;
         switch (artifact.Type)
@@ -1621,8 +1763,8 @@ public static class SiteGenerator
                 // The reader is configured in javascript, so both of the strings it is given need
                 // escaping as javascript. Escaped as HTML they were safe but wrong: an author of
                 // "Tom & Jerry" reached the panel spelled "Tom &amp; Jerry", entity and all.
+                // (The plain `author` the caption uses is set for every type further up.)
                 var author = (artifact as Document)?.Author ?? "";
-                artifactObj.SetValue("author", author, readOnly: true);
                 artifactObj.SetValue("author_js", JsString(author), readOnly: true);
                 artifactObj.SetValue("caption_js", JsString(caption), readOnly: true);
                 artifactObj.SetValue(

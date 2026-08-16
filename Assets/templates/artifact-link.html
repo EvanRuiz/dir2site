@@ -2,6 +2,8 @@
 {{~ # when there is no url. Just the anchor: it shares the credit's line, so the page owns the ~}}
 {{~ # wrapper and this can't impose one. The icon sits inside the anchor so it takes the link's ~}}
 {{~ # color and its click. ~}}
+{{~ # `end` closes on the same line as the anchor so this emits no trailing newline. It used to, ~}}
+{{~ # and a caller that puts the link mid-line — the subtitle joins credit · link · date — got ~}}
+{{~ # the rest of its line broken off and re-indented to wherever the include sat. ~}}
 {{~ if artifact.url != "" ~}}
-<a class="artifact-link" href="{{ artifact.url | html.escape }}" target="_blank" rel="noopener noreferrer">{{ artifact.url_text | html.escape }}<i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
-{{~ end ~}}
+<a class="artifact-link" href="{{ artifact.url | html.escape }}" target="_blank" rel="noopener noreferrer">{{ artifact.url_text | html.escape }}<i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>{{~ end ~}}

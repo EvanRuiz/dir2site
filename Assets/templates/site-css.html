@@ -5,9 +5,26 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* What the body clears below the fixed header, and what a viewer subtracts from the window to find
+   the room it has. Named because two places have to agree on it, and a page whose media is one bar
+   too tall hides the caption underneath it.
+
+   Two numbers because there are two answers. The header itself is 94px — a 56px navbar over a 38px
+   breadcrumb bar — and an ordinary page leaves a little clear space under that before its content
+   starts. A viewer page wants none: the picture begins where the header ends.
+
+   Both are stated rather than measured, which is this file's oldest compromise and still its most
+   fragile: a breadcrumb trail long enough to wrap makes the header taller than either number says,
+   and the page slides under it. That was true of the single 106px before this and is unchanged by
+   splitting it. */
+:root {
+  --site-header-flush: 94px;
+  --site-header-height: 106px;
+}
+
 body {
   background-color: {{ site.background_color }};
-  padding-top: 106px;
+  padding-top: var(--site-header-height);
   /* A column so the footer's auto top margin can take up the slack on a short page. Bootstrap's
      border-box sizing keeps the padding above inside the 100vh, so this adds no scrollbar. */
   display: flex;
@@ -50,8 +67,69 @@ body {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
+/* Not over a viewer. The shadow is there to lift the header off a page of content, and a photo
+   page has none under the bar to lift it off — just the picture, which starts immediately below.
+   Over the viewer's dark canvas it reads as a smudge along the top of the image, not as depth.
+
+   The same rule closes the gap it was falling into. Other pages leave a band of clear space under
+   the header, and on a viewer page that band was a strip of page background between the bar and
+   the picture — so the shadow had somewhere to land and the picture started 12px lower than it
+   needed to. Redefining the height here rather than writing a second calc means the body's padding
+   and the stage's height both follow from one number, as they already did.
+
+   Keyed off the stage the viewer pages carry rather than a class of the header's own: what decides
+   this is what lies underneath, and the header is written once for every kind of page. A browser
+   too old for :has() keeps the shadow and the clear space, which is what it has today. */
+body:has(.artifact-stage-fit) {
+  --site-header-height: var(--site-header-flush);
+}
+
+body:has(.artifact-stage-fit) .breadcrumb-bar {
+  box-shadow: none;
+}
+
+/* The trail stays on one line whatever it is carrying, because what the page leaves clear for the
+   header is a stated number and cannot follow it. A 232-character caption once turned the bar into
+   six lines and the header into 262px of a 375px-wide phone, with the picture starting somewhere
+   underneath it.
+
+   One line, and the names kept whole: what doesn't fit is scrolled to. Two earlier attempts show
+   why it has to be this and not shrinking. Refusing to shrink the crumbs at all ran the trail off
+   the side of the screen, and since the bar sits in a fixed header nothing extended the document's
+   scroll width — no scrollbar, no ellipsis, the last folder chopped mid-word. Letting them all
+   shrink, weighted so the caption gave first, kept everything on screen but abbreviated every
+   crumb to a stub on a phone: "H. / P… / F…" is a row of clickable targets with no labels, which
+   is not what a trail is for. Four ordinary folder names simply want more room than a phone has,
+   and no distribution of a deficit invents any.
+
+   The scrollbar is hidden rather than left to appear, because it would be drawn inside the bar and
+   the bar's height is what the picture below is measured against. What signals the trail continues
+   is the trail visibly reaching the edge.
+
+   The caption crumb is still capped, in ch because what is being limited is a number of
+   characters: long enough to recognise a caption by, short enough that one caption cannot make the
+   whole trail a scrolling errand. The full text is the page's title and its heading — this is the
+   trail, which says where you are rather than saying it twice. */
 .breadcrumb-bar .breadcrumb {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
   margin-bottom: 0;
+}
+
+.breadcrumb-bar .breadcrumb::-webkit-scrollbar {
+  display: none;
+}
+
+.breadcrumb-bar .breadcrumb-item {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.breadcrumb-bar .breadcrumb-item.active {
+  max-width: 36ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .badge-type {
@@ -79,22 +157,177 @@ body {
 
 .artifact-meta { padding: 12px 0 4px; }
 
+/* The caption block with the folder's prev/next at its two ends. The block is the child that
+   grows, which is what keeps Next on the right edge whether or not there is a Prev on the left —
+   so a missing link at either end of a folder costs nothing but the caption sliding over.
+
+   Aligned to the top rather than the middle: a caption runs to one line or to four depending on
+   what the yaml says, and centring would walk the buttons up and down the screen as you arrow
+   through a folder. Against the top they land in the same place on every photo. */
+.artifact-meta-row { display: flex; align-items: flex-start; gap: 1rem; }
+.artifact-meta-body { flex: 1 1 auto; min-width: 0; }
+
+/* The type badge's colours — white on the secondary — because these read as buttons rather than
+   as prose, and the badge is this page's existing example of that. Deliberately not
+   .artifact-link's treatment: that one is a link inside a sentence, which is a different thing
+   from a control you click your way through a folder with. */
+.artifact-nav-link {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  background-color: {{ site.secondary_color }};
+  color: #ffffff;
+  text-decoration: none;
+  padding: 0.35rem 0.7rem;
+  border-radius: 0.375rem;
+}
+/* Lightened rather than given a second colour of its own: a project configures one secondary, and
+   the hover has to hold up against whichever one that is. */
+.artifact-nav-link:hover,
+.artifact-nav-link:focus { color: #ffffff; text-decoration: none; filter: brightness(1.15); }
+/* The glyph sits a touch high against the word beside it at this size. */
+.artifact-nav-link .bi { vertical-align: -0.1em; }
+
+/* A viewer sized to what the window has left once the caption's band is set aside, so the caption
+   and the arrows under it are on screen without scrolling — the footer is what goes below the fold
+   instead.
+
+   The height goes on the viewer rather than on the stage around it, and that is the whole of why
+   an over-long caption scrolls the page. Pinning the stage instead and letting the viewer flex
+   into what was left meant the band could never grow: anything past its height had to be reached
+   inside a scroll box of its own, a scrollbar in the middle of the page for two lines of caption.
+   Here the band's height is a floor, not a ceiling — the picture is the same on every page of a
+   folder because it never consults the caption, and a caption with more to say simply makes the
+   document taller and is read by scrolling it, like anything else on a page.
+
+   The height is declared twice on purpose: a browser that doesn't know dvh keeps the vh line, and
+   one that does takes the second. That matters on a phone, where vh is the tall viewport measured
+   as though the URL bar were already gone, and would push the caption off the bottom until it
+   was. */
+.artifact-stage-fit > .artifact-viewer {
+  height: calc(100vh - var(--site-header-height) - var(--band-height));
+  height: calc(100dvh - var(--site-header-height) - var(--band-height));
+}
+/* The stage ends where the window does, so .artifact-meta's usual 4px leaves the last line of a
+   caption sitting on the very edge of the screen. It reads as cut off even though it isn't.
+
+   The side inset is 28px because that is where the breadcrumb trail above starts — its bar adds
+   16px to the 12px gutter — so the Prev button lines up under "Home". It has to be stated in full
+   rather than left to the container: .artifact-meta's `padding: 12px 0 4px` is a shorthand and
+   zeroes the gutter out. Only the full-bleed viewer pages need this; an article's strip sits in a
+   centred column that is already inset. */
+.artifact-stage-fit > .artifact-meta {
+  padding: 12px 28px;
+}
+
+/* How much of the window the caption is promised. The viewer above subtracts it, which is what
+   makes the picture the same height on every page of a folder: it is sized from this number and
+   never from the caption actually underneath it. Letting it follow the caption instead is what
+   made the picture jump — a photo carrying a credit was shown 46px shorter than the bare one next
+   to it.
+
+   One row or two is the folder's answer, not the page's — see CaptionRows. One where nothing in
+   the folder has anything under its title, two where something does.
+
+   Stated in rem, because the only honest unit here is one that follows the font. Nothing at
+   generate time can know how tall a caption ends up: a title that is one line on a desktop is four
+   on a phone, and no arithmetic over the yaml predicts that. */
+.artifact-meta-rows-1 { --caption-height: 2.25rem; }
+.artifact-meta-rows-2 { --caption-height: 3.75rem; }
+
+/* The promise plus the padding around it — the two together are what the viewer sets aside. Both
+   properties are declared on the stage, not on the caption, because the viewer is the caption's
+   sibling and a custom property travels down to children, never across. */
+.artifact-stage-fit { --band-height: calc(var(--caption-height) + 24px); }
+
+/* A floor, not a ceiling. Every page of a folder reserves the same room whether its caption fills
+   it or not, which is what holds the picture still; a caption with more to say than that grows the
+   band past it, makes the document taller, and is read by scrolling the page. No scroll box of its
+   own — a scrollbar in the middle of a page for two lines of caption is a worse answer than the
+   page simply being longer. */
+.artifact-stage-fit > .artifact-meta { min-height: var(--band-height); }
+
+/* Centred in the room it was promised, which is what a one-line caption in a two-line band wants:
+   otherwise it hangs from the top with dead space beneath it while the buttons beside it sit level
+   with the middle. Stretching to the band is what gives it something to be centred in; once the
+   caption outgrows the band it is the thing setting the height, and centring has no free space
+   left to distribute, so it starts at the top of its own accord. */
+.artifact-stage-fit .artifact-meta-body {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+/* The last line's bottom margin is part of what gets centred, so it lifts the text above the
+   buttons that are meant to be level with it — two pixels, but two pixels that make the centring
+   this rule claims a near miss. Nothing follows that line inside the band, so it has nothing to
+   space. !important because the margin comes from Bootstrap's mb-1, and its spacing utilities are
+   themselves !important — an ordinary override never reaches them. */
+.artifact-stage-fit .artifact-meta-body > :last-child { margin-bottom: 0 !important; }
+
+/* Centred in the room set aside for the caption, which is not the same as centred in the row. The
+   row grows when a caption outruns its band, and centring against that walked the buttons down the
+   page on exactly the photo where they were hardest to predict. Measuring from --caption-height
+   instead pins them to the part of the band that is on screen without scrolling, so they sit in
+   the same place on every page of a folder no matter how much any one caption has to say.
+
+   Hence the stated height: the offset is half of what the band has left over after the button, and
+   that arithmetic has to work in the same units the band is written in. Left to itself the button
+   came out at 36.78px — a line-height plus two paddings, fractional and moving with the font. The
+   line-height below is the height less its own vertical padding, so the two agree exactly.
+   Deliberately not inline-flex, which would have been the tidier way to centre the label: it makes
+   an anonymous flex item of the text and trims the space between the glyph and the word. */
+.artifact-stage-fit {
+  --nav-button-height: 2.25rem;
+}
+.artifact-stage-fit .artifact-nav-link {
+  align-self: flex-start;
+  height: var(--nav-button-height);
+  line-height: calc(var(--nav-button-height) - 0.7rem);
+  margin-top: calc((var(--caption-height) - var(--nav-button-height)) / 2);
+}
+
+/* The three cells stay three cells at every width — the buttons keep their columns on a phone as
+   on a desktop, rather than dropping to a row of their own underneath. Wrapping them was worse
+   than it sounds: a wrapped flex line takes its height from its contents, so a title running to
+   four lines on a narrow screen pushed the buttons off the bottom of the window entirely. The
+   caption takes whatever is left between them and wraps into it. */
+@media (max-width: 575.98px) {
+  .artifact-meta-row { gap: 0.6rem; }
+  .artifact-nav-link { padding: 0.35rem 0.5rem; }
+}
+
+/* A phone held sideways has no height to divide up. Setting the caption's band aside out of 375px
+   leaves the picture a 197px letterbox with most of the screen below it given over to two lines of
+   text — the caption is on screen, which is what the band is for, but there is nothing left to
+   caption. Here the viewer takes what the header leaves and the caption is reached by scrolling,
+   which is the one place this stylesheet gives that up.
+
+   The picture still can't resize between photos: the height stops depending on the band, so it
+   stops depending on the caption too, which is what the reservation was protecting. */
+@media (max-height: 480px) {
+  .artifact-stage-fit > .artifact-viewer {
+    height: calc(100vh - var(--site-header-height));
+    height: calc(100dvh - var(--site-header-height));
+  }
+}
+
 /* Photo artifact */
 
+/* Fills the box that carries the height, and addressed by id for the same reason the reader is:
+   the element handed to a viewer library is the library's to relabel. */
 #osd-viewer {
   width: 100%;
-  height: calc(100vh - 106px);
+  height: 100%;
   background: #111;
 }
 
 /* PDF artifact */
 
-body.artifact-pdf { display: flex; flex-direction: column; min-height: 100vh; }
-
+/* Fills the box that carries the height — see artifact-pdf.html for why the reader isn't that box
+   itself. Addressed by id because the class it was given does not survive its own initialisation. */
 #BookReader {
   width: 100%;
-  flex: 1 1 auto;
-  min-height: 500px;
+  height: 100%;
 }
 
 .BRtoolbar { display: none !important; }
