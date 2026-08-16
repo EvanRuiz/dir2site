@@ -1963,16 +1963,96 @@ public static class SiteGenerator
 
         var template = Template.Parse(loader.LoadByName("site-css"), "site-css.html");
         var css = template.Render(context);
-        WriteIfChanged(Path.Combine(siteRoot, "css", "site.css"), css, ledger);
+        WriteIfChanged(Path.Combine(siteRoot, "css", "site.css"), WithoutComments(css), ledger);
 
         var jsTemplate = Template.Parse(loader.LoadByName("site-js"), "site-js.html");
         var js = jsTemplate.Render(context);
-        WriteIfChanged(Path.Combine(siteRoot, "js", "site.js"), js, ledger);
+        WriteIfChanged(Path.Combine(siteRoot, "js", "site.js"), WithoutComments(js), ledger);
 
         // Written unconditionally, like every other asset; only pages with a video reference it.
         var videoTemplate = Template.Parse(loader.LoadByName("video-js"), "video-js.html");
         var videoJs = videoTemplate.Render(context);
-        WriteIfChanged(Path.Combine(siteRoot, "js", "video.js"), videoJs, ledger);
+        WriteIfChanged(Path.Combine(siteRoot, "js", "video.js"), WithoutComments(videoJs), ledger);
+    }
+
+    /// <summary>
+    /// The stylesheet and scripts with their comments taken out, for the copy a visitor downloads.
+    ///
+    /// These three templates are the only ones whose comments survive rendering: everywhere else the
+    /// reasoning is written in Scriban's <c>{{~ # … ~}}</c>, which is stripped on the way out, so a
+    /// page's markup costs a reader nothing however much is said about it. CSS and JavaScript have
+    /// no such syntax — their comments are ordinary text and go out over the wire. Two thirds of the
+    /// generated stylesheet was prose, on a render-blocking link in the head of every page, and
+    /// compression doesn't save it: most of what gzip actually transferred was the commentary.
+    ///
+    /// The templates keep every word. This is a step on the way out, not an instruction to write
+    /// less down.
+    /// </summary>
+    /// <remarks>
+    /// A scan rather than a pair of regexes, because the only question that matters is whether a
+    /// <c>/</c> is inside a string, and a regex cannot ask it. video.js loads the player from
+    /// <c>https://www.youtube.com/iframe_api</c>; anything matching <c>//</c> to the end of the line
+    /// truncates that to <c>'https:</c>, which is an unterminated literal — the file stops parsing
+    /// and no video plays, with nothing at generate time any the wiser. Restricting the rule to
+    /// whole-line comments avoided that one string by avoiding the question; knowing where the
+    /// strings are answers it, and takes the trailing comments too.
+    ///
+    /// What this deliberately does not model is a regular-expression literal, where a <c>/</c> is
+    /// neither a string nor a comment. None of the three templates contains one — and a regex is
+    /// far more likely to arrive in a script than a <c>/*</c> inside a string ever was, so
+    /// <see cref="GeneratedAssetsCarryNoCommentsTests"/> parses the result rather than trusting it.
+    /// </remarks>
+    private static string WithoutComments(string source)
+    {
+        var kept = new StringBuilder(source.Length);
+        var quote = '\0';
+
+        for (var i = 0; i < source.Length; i++)
+        {
+            var c = source[i];
+
+            if (quote != '\0')
+            {
+                kept.Append(c);
+                // An escape takes the next character with it, so a \" doesn't end the string.
+                if (c == '\\' && i + 1 < source.Length) kept.Append(source[++i]);
+                else if (c == quote) quote = '\0';
+                continue;
+            }
+
+            if (c is '"' or '\'' or '`')
+            {
+                quote = c;
+                kept.Append(c);
+                continue;
+            }
+
+            if (c == '/' && i + 1 < source.Length)
+            {
+                if (source[i + 1] == '*')
+                {
+                    var close = source.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                    i = close < 0 ? source.Length : close + 1;
+                    continue;
+                }
+
+                if (source[i + 1] == '/')
+                {
+                    var line = source.IndexOf('\n', i);
+                    // Stop before the newline, so the line ending survives for the tidy-up below.
+                    i = line < 0 ? source.Length : line - 1;
+                    continue;
+                }
+            }
+
+            kept.Append(c);
+        }
+
+        // What the comments leave behind: trailing space on a line that ended in one, and runs of
+        // blank lines where a paragraph used to be.
+        var stripped = Regex.Replace(kept.ToString(), @"(?m)[ \t]+$", "");
+        stripped = Regex.Replace(stripped, @"(\r?\n){3,}", "\n\n");
+        return stripped.Trim() + "\n";
     }
 
     private static void CopyBootstrapAssets(string siteRoot, SiteLedger ledger, IProgress<string>? progress)
