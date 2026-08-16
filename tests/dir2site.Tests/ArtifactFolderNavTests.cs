@@ -97,11 +97,23 @@ public class ArtifactFolderNavTests : IDisposable
     /// </summary>
     private static string Rule(string css, string selector)
     {
-        var start = css.IndexOf(selector + " {", StringComparison.Ordinal);
-        Assert.True(start >= 0, $"no rule for `{selector}` in the stylesheet");
-        var end = css.IndexOf('}', start);
-        Assert.True(end > start, $"unterminated rule for `{selector}`");
-        return css[start..end];
+        // Every block for the selector, not the first. A selector can legitimately open more than
+        // once — a shorthand shared with a sibling, a media query override — and returning whichever
+        // came first answers a question about ordering rather than about the rule. Silently: the
+        // assertion passes or fails against a block the test never meant to read.
+        var blocks = new List<string>();
+        for (var at = 0; ; )
+        {
+            var start = css.IndexOf(selector + " {", at, StringComparison.Ordinal);
+            if (start < 0) break;
+            var end = css.IndexOf('}', start);
+            Assert.True(end > start, $"unterminated rule for `{selector}`");
+            blocks.Add(css[start..end]);
+            at = end;
+        }
+
+        Assert.True(blocks.Count > 0, $"no rule for `{selector}` in the stylesheet");
+        return string.Join("\n", blocks);
     }
 
     /// <summary>
@@ -343,9 +355,9 @@ public class ArtifactFolderNavTests : IDisposable
         MakePhoto(album, "Damson.jpg", "A Damson");
         Generate();
 
-        Assert.Contains("artifact-stage-fit", ReadPage("Album", "Apple"));
-        Assert.Contains("artifact-stage-fit", ReadPage("Album", "Banana"));
-        Assert.DoesNotContain("artifact-stage-fit", ReadPage("Album", "Cherry"));
+        Assert.Contains("artifact-screen-fit", ReadPage("Album", "Apple"));
+        Assert.Contains("artifact-screen-fit", ReadPage("Album", "Banana"));
+        Assert.DoesNotContain("artifact-screen-fit", ReadPage("Album", "Cherry"));
     }
 
     /// <summary>
@@ -454,25 +466,41 @@ public class ArtifactFolderNavTests : IDisposable
 
         var css = File.ReadAllText(Path.Combine(_root, "_site", "css", "site.css"));
 
-        Assert.Contains("--site-header-height: 106px;", css);
+        // Nothing states how tall the header is, because nothing can: it depends on a logo this
+        // generator has never seen. A stated 94px was wrong by 50px on a phone with a wide logo,
+        // and the picture started underneath the breadcrumb bar.
+        //
+        // Asked as "never declared, never read" rather than "the name is absent from the file" —
+        // the comment above these rules explains why the variable went, and names it to do so.
+        Assert.DoesNotContain("--site-header-height:", css);
+        Assert.DoesNotContain("--site-header-flush:", css);
+        Assert.DoesNotContain("var(--site-header", css);
 
-        // The viewer is sized from the room set aside for the caption, never from the caption
-        // itself. That is what makes the picture the same height on every page of a folder.
+        // The page is the grid, and an empty spacer spanning the header rows and the picture's is
+        // what makes them add up to a viewport less the band. The browser does the arithmetic.
+        Assert.Contains("display: grid;", Rule(css, ".artifact-screen-fit"));
         Assert.Contains(
-            "height: calc(100dvh - var(--site-header-height) - var(--band-height));", css);
+            "height: calc(100dvh - var(--band-height));",
+            Rule(css, ".artifact-screen-fit > .artifact-screen-spacer"));
+
+        // The trail keeps its place while the navbar leaves, which only works because its parent is
+        // the page: a sticky box cannot escape whatever wraps it.
+        Assert.Contains("position: sticky;", Rule(css, ".artifact-screen-fit .breadcrumb-bar"));
+
         Assert.Contains(".artifact-meta-rows-1 { --caption-height:", css);
         Assert.Contains(".artifact-meta-rows-2 { --caption-height:", css);
-        Assert.Contains(".artifact-stage-fit { --band-height: calc(var(--caption-height) + 24px); }", css);
 
-        // A floor, not a ceiling: the band never shrinks below what the viewer set aside, and a
-        // caption with more to say grows it and the document with it.
-        Assert.Contains(".artifact-stage-fit > .artifact-meta { min-height: var(--band-height); }", css);
+        // The caption lands in the room the spacer left and grows downward out of it, so what the
+        // caption does can never reach the picture — and anything past that room lengthens the
+        // document instead, which is how a long caption is read.
+        Assert.Contains(
+            "min-height: var(--band-height);", Rule(css, ".artifact-meta-reserved"));
 
         // And no scroll box of its own — an over-long caption is read by scrolling the page.
         // Asked of this rule rather than of the stylesheet: a site-wide ban on the word would fail
         // for whoever next gives a table wrapper or a code block a scrollbar, in a test named after
         // the caption band and pointing nowhere near what they changed.
-        Assert.DoesNotContain("overflow", Rule(css, ".artifact-stage-fit .artifact-meta-body"));
+        Assert.DoesNotContain("overflow", Rule(css, ".artifact-meta-reserved .artifact-meta-body"));
 
         // Centred in the room set aside for the caption rather than in the row, which is what keeps
         // them in the same place on the page whose caption outgrows its band and stretches the row.
@@ -489,14 +517,15 @@ public class ArtifactFolderNavTests : IDisposable
         // Bootstrap's mb-1 is !important, so without matching it the trailing margin stays inside
         // the centred content and lifts the text off the buttons it should be level with.
         Assert.Contains(
-            ".artifact-stage-fit .artifact-meta-body > :last-child { margin-bottom: 0 !important; }",
+            ".artifact-meta-reserved .artifact-meta-body > :last-child { margin-bottom: 0 !important; }",
             css);
     }
 
     /// <summary>
-    /// A viewer page starts where the header ends. Other pages keep a band of clear space under it;
-    /// on a photo page that band was a strip of page background above the picture, with the
-    /// breadcrumb bar's shadow falling into it.
+    /// A viewer page starts where the header ends, whatever the header turns out to be. It ends
+    /// where it ends because it is in the flow rather than out of it: a fixed header has to be
+    /// compensated for by a number, and the number was a guess about a logo this generator has
+    /// never seen — 94px, against a real 144px on a phone whose site has a wide one.
     /// </summary>
     [AvaloniaFact]
     public void AViewerPageSitsFlushUnderTheHeaderWithNoShadowOverIt()
@@ -506,12 +535,17 @@ public class ArtifactFolderNavTests : IDisposable
 
         var css = File.ReadAllText(Path.Combine(_root, "_site", "css", "site.css"));
 
-        // One number drives both the body's padding and the stage's height, so redefining it is
-        // the whole of the change.
-        Assert.Contains("--site-header-flush:", css);
-        Assert.Contains("body:has(.artifact-stage-fit) {", css);
-        Assert.Contains("--site-header-height: var(--site-header-flush);", css);
-        Assert.Contains("body:has(.artifact-stage-fit) .breadcrumb-bar {", css);
+        // In flow, so it takes the room it needs and the grid hands the rest to the picture. It
+        // still stays put as the page scrolls, which is the only thing `fixed` was buying.
+        // Both asked of the header's own rules, so a modal added later doesn't fail a test about
+        // the header.
+        Assert.Contains("position: sticky;", Rule(css, ".site-header"));
+        Assert.DoesNotContain("position: fixed", Rule(css, ".site-header"));
+
+        // Nothing below it is pushed down by a stated amount, because nothing needs to be.
+        Assert.DoesNotContain("padding-top", Rule(css, "body"));
+
+        Assert.Contains(".artifact-screen-fit .breadcrumb-bar {", css);
     }
 
     /// <summary>
@@ -565,12 +599,13 @@ public class ArtifactFolderNavTests : IDisposable
         var block = MediaBlock(css, "@media (max-height: 480px)");
 
         // What the rule does, not merely that the query is there. This one went missing once
-        // already, in the rework between two commits of this branch, and an assertion on the query
-        // alone would have passed on the empty block it left behind.
-        Assert.Contains(".artifact-stage-fit > .artifact-viewer", block);
-        Assert.Contains("height: calc(100dvh - var(--site-header-height));", block);
-        // The band is what it gives up here; leaving the term in would defeat the whole block.
-        Assert.DoesNotContain("--band-height", block);
+        // already, in a rework, and an assertion on the query alone would have passed on the empty
+        // block it left behind.
+        //
+        // Giving the band up is now a matter of not reserving it: the spacer runs the full height,
+        // so the picture takes everything the header leaves and the caption follows it down.
+        Assert.Contains("height: 100dvh;", block);
+        Assert.Contains("artifact-screen-spacer", block);
     }
 
     /// <summary>

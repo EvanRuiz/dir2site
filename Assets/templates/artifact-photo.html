@@ -9,36 +9,51 @@
   <link rel="stylesheet" href="{{ prefix }}js/bootstrap-icons/bootstrap-icons.css">
   <link rel="stylesheet" href="{{ prefix }}css/site.css">
 </head>
-<body>
+{{~ # The page itself is the grid, so the header can be a row of it and still be a child of the ~}}
+{{~ # document. That is what lets the breadcrumb trail stay pinned the whole way down while the ~}}
+{{~ # picture is still sized by what the header leaves: a sticky box can never escape its parent, ~}}
+{{~ # so wrapping the header in a one-viewport box — which the picture's arithmetic used to need — ~}}
+{{~ # took the trail off the screen the moment you scrolled. ~}}
+{{~ # ~}}
+{{~ # The row count is on the body because the picture reads it too, to know how much to leave; a ~}}
+{{~ # custom property reaches a sibling only by way of a shared parent. It is the folder's count, ~}}
+{{~ # not this photo's, so every page in an album reserves the same caption height and the picture ~}}
+{{~ # doesn't resize as you arrow through. Written as a branch rather than as the number, so ~}}
+{{~ # nothing from the generator lands in a class attribute. ~}}
+<body class="{{ if artifact.fits_viewport }}artifact-screen-fit {{ end }}{{ if artifact.meta_rows == 2 }}artifact-meta-rows-2{{ else }}artifact-meta-rows-1{{ end }}">
+  {{~ # Empty, invisible, and load-bearing: it spans the header rows and the picture's, and being ~}}
+  {{~ # one viewport less the caption's band it forces those rows to add up to exactly that. The ~}}
+  {{~ # picture's height is then the browser's arithmetic, not ours — no number here says how tall ~}}
+  {{~ # a logo is. It sits in a zero-width column of its own so its height is distributed only to ~}}
+  {{~ # the picture: sharing a column with the header, the grid fed some of it to the header rows ~}}
+  {{~ # instead, and a long caption made the picture 16px shorter than its neighbours. ~}}
+  <div class="artifact-screen-spacer" aria-hidden="true"></div>
+
   {{ include 'header' }}
 
-  {{~ # The row count sits on the stage rather than on the caption because the viewer reads it too, ~}}
-  {{~ # to know how much of the window to leave — and a custom property reaches a sibling only by ~}}
-  {{~ # way of a shared parent. It is the folder's count, not this photo's: every page in an album ~}}
-  {{~ # reserves the same caption height so the picture doesn't resize as you arrow through it. ~}}
-  {{~ # Written as a branch rather than as the number, so nothing from the generator lands in a ~}}
-  {{~ # class attribute. ~}}
-  <div class="artifact-stage{{ if artifact.fits_viewport }} artifact-stage-fit{{ end }} {{ if artifact.meta_rows == 2 }}artifact-meta-rows-2{{ else }}artifact-meta-rows-1{{ end }}">
-    {{~ # Wrapped for the same reason as the reader in artifact-pdf: the class the layout hangs on ~}}
-    {{~ # lives on a box no library owns. OpenSeadragon happens to append children and leave this ~}}
-    {{~ # element's class attribute alone, so a class on #osd-viewer survives today — but that is ~}}
-    {{~ # a property of the version we ship rather than anything the page arranges, and it is the ~}}
-    {{~ # same bet BookReader lost. There it failed silently, as a viewer with no height. ~}}
-    <div class="artifact-viewer">
-      <div id="osd-viewer"></div>
-    </div>
+  {{~ # Wrapped for the same reason as the reader in artifact-pdf: the class the layout hangs on ~}}
+  {{~ # lives on a box no library owns. OpenSeadragon happens to append children and leave this ~}}
+  {{~ # element's class attribute alone, so a class on #osd-viewer survives today — but that is ~}}
+  {{~ # a property of the version we ship rather than anything the page arranges, and it is the ~}}
+  {{~ # same bet BookReader lost. There it failed silently, as a viewer with no height. ~}}
+  <div class="artifact-viewer">
+    <div id="osd-viewer"></div>
+  </div>
 
-    {{~ # container-fluid, not container: the viewer above runs edge to edge, and a centred column ~}}
-    {{~ # here would strand the buttons a hundred pixels inside the picture they belong to. The ~}}
-    {{~ # header sets its own bars in a container-fluid for the same reason. ~}}
-    <div class="container-fluid artifact-meta artifact-meta-row">
-      {{ include 'artifact-nav' artifact.prev_href "prev" }}
-      <div class="artifact-meta-body">
-        <h4 class="mb-1">{{ artifact.caption | html.escape }}</h4>
-        {{ include 'artifact-subtitle' }}
-      </div>
-      {{ include 'artifact-nav' artifact.next_href "next" }}
+  {{~ # Sits in the room the spacer set aside, and grows downward out of it: a caption with more to ~}}
+  {{~ # say pushes the footer down and lengthens the document, which is how it is read. The picture ~}}
+  {{~ # above never learns of it — the reservation is a fixed amount whether this caption fills it ~}}
+  {{~ # or not, so the photo before and the photo after are the same size as this one. ~}}
+  {{~ # ~}}
+  {{~ # container-fluid, not container: the picture above runs edge to edge, and a centred column ~}}
+  {{~ # here would strand the buttons a hundred pixels inside it. ~}}
+  <div class="container-fluid artifact-meta artifact-meta-row{{ if artifact.fits_viewport }} artifact-meta-reserved{{ end }}">
+    {{ include 'artifact-nav' artifact.prev_href "prev" }}
+    <div class="artifact-meta-body">
+      <h4 class="mb-1">{{ artifact.caption | html.escape }}</h4>
+      {{ include 'artifact-subtitle' }}
     </div>
+    {{ include 'artifact-nav' artifact.next_href "next" }}
   </div>
 
   {{ include 'footer' }}
