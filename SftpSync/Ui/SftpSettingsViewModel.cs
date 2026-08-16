@@ -72,7 +72,21 @@ public partial class SftpSettingsViewModel : ViewModelBase
         if (!_secretReadFailed) Status = string.Empty;
     }
 
+    // Set while LoadFrom is filling the form. Each assignment below raises its own change
+    // notification, and Host, Username and the key path each ask to reload the secret — so without
+    // this a single dropdown switch reads the store several times, once against a half-updated form
+    // that briefly puts the wrong account's password on screen.
+    private bool _loadingForm;
+
     private void LoadFrom(DeployTarget t)
+    {
+        _loadingForm = true;
+        try { FillForm(t); } finally { _loadingForm = false; }
+
+        LoadSecretForTheFormsAccount();
+    }
+
+    private void FillForm(DeployTarget t)
     {
         TargetName = t.Name;
         Host = t.Host;
@@ -89,62 +103,100 @@ public partial class SftpSettingsViewModel : ViewModelBase
         _hostKeyFingerprint = t.HostKeyFingerprint;
         OnPropertyChanged(nameof(HostKeyFingerprintDisplay));
         OnPropertyChanged(nameof(HasPinnedHostKey));
+    }
+
+    /// <summary>
+    /// Fills the secret box from whatever is stored for the account — or key file — the form now
+    /// describes, and reports when that could not be read.
+    /// </summary>
+    private void LoadSecretForTheFormsAccount()
+    {
+        var profile = BuildProfile();
 
         // Read, not Get: an unreadable secret must not look like an absent one, or Save below
         // deletes it on the user's behalf.
-        var result = _credentials.Read(DeployTargets.CredentialKey(_projectRoot, t));
+        var result = TargetSecret.Read(_credentials, _projectRoot, profile);
         _secretReadFailed = result.Status == CredentialStatus.Failed;
         if (_secretReadFailed) Status = result.Error ?? "Could not read the saved secret.";
 
         var secret = result.Secret;
         if (IsKeyAuth) { Passphrase = secret ?? string.Empty; Password = string.Empty; }
         else { Password = secret ?? string.Empty; Passphrase = string.Empty; }
+
+        // Loading is not the user typing. Cleared last so the assignments above don't set them.
+        _passwordEdited = false;
+        _passphraseEdited = false;
+        _secretLoadedFor = (profile.Host, profile.Username, profile.PrivateKeyPath, profile.AuthMethod);
+    }
+
+    // Whether the user has touched each secret box since it was loaded. A secret now lives with the
+    // thing it belongs to rather than with this project's target, so it is shared with other targets
+    // and other projects — writing it back on every Save would let someone who merely retyped a
+    // hostname overwrite a password they never looked at.
+    //
+    // Two flags, not one: Save writes to whichever key the current auth method selects, so a flag
+    // shared between the boxes would let an edit to the password authorise a write — or a delete —
+    // against the passphrase's key, and the other way round.
+    private bool _passwordEdited;
+    private bool _passphraseEdited;
+
+    /// <summary>Whether the box feeding <see cref="CurrentSecret"/> is the one the user edited.</summary>
+    private bool CurrentSecretEdited => IsKeyAuth ? _passphraseEdited : _passwordEdited;
+
+    partial void OnPasswordChanged(string value) => _passwordEdited = true;
+    partial void OnPassphraseChanged(string value) => _passphraseEdited = true;
+
+    // What the box on screen was filled for. When the form moves to a different account or key
+    // file, an untouched box is still showing the previous one's secret: leaving it would offer to
+    // save one server's password against another, and would show a populated field for an account
+    // that has nothing stored — which then saves nothing and fails at deploy time with an opaque
+    // authentication error.
+    private (string Host, string Username, string KeyPath, SftpAuthMethod Auth) _secretLoadedFor;
+
+    private void ReloadSecretIfAccountChanged()
+    {
+        if (_loadingForm) return;
+
+        var profile = BuildProfile();
+        var now = (profile.Host, profile.Username, profile.PrivateKeyPath, profile.AuthMethod);
+        if (now == _secretLoadedFor) return;
+
+        // Never discard what the user typed — they presumably mean it for wherever they are
+        // pointing now. Only an untouched box gets refilled.
+        if (CurrentSecretEdited) { _secretLoadedFor = now; return; }
+
+        LoadSecretForTheFormsAccount();
     }
 
     // True when the selected target has a stored secret we could not read. Set per target by
     // LoadFrom, so switching the dropdown re-evaluates it.
     private bool _secretReadFailed;
 
-    // What each target was called, and which keychain entry held its secret, when the dialog opened.
-    // The credential key is a hash of host, port and username, so editing any of those changes where
-    // the secret belongs — and without this the old entry would be left behind in the user's
-    // keychain: unreachable by the app, invisible to them, still holding a live password.
-    private readonly Dictionary<DeployTarget, (string Name, string CredentialKey)> _identityOnOpen = new();
+    // What each target was called when the dialog opened, so a rename can carry its private key
+    // path — which is stored per machine, under the target's name — across with it.
+    //
+    // Secrets used to be reconciled here as well, because the credential key included the project
+    // path, the port and the target's identity, so editing any of them stranded the secret under a
+    // key nothing could reach again. A secret is now stored against the thing it actually belongs
+    // to — a password with the server account, a passphrase with the key pair — which no longer
+    // moves when a target is edited. Carrying one across would in fact be wrong now that entries
+    // are shared: copying a password from the old host to the new one would overwrite whatever the
+    // new host's real password was.
+    private readonly Dictionary<DeployTarget, string> _nameOnOpen = new();
 
-    private void RememberIdentity(DeployTarget t) =>
-        _identityOnOpen[t] = (t.Name, DeployTargets.CredentialKey(_projectRoot, t));
+    private void RememberIdentity(DeployTarget t) => _nameOnOpen[t] = t.Name;
 
-    /// <summary>Moves a target's secret and key path when its identity changed, leaving nothing behind.</summary>
+    /// <summary>Carries a target's per-machine private key path across a rename.</summary>
     private void ReconcileIdentity(DeployTarget t)
     {
-        if (!_identityOnOpen.TryGetValue(t, out var was)) { RememberIdentity(t); return; }
+        if (!_nameOnOpen.TryGetValue(t, out var wasName)) { RememberIdentity(t); return; }
 
-        var nowKey = DeployTargets.CredentialKey(_projectRoot, t);
-
-        if (!string.Equals(was.CredentialKey, nowKey, StringComparison.Ordinal))
+        if (!string.Equals(wasName, t.Name, StringComparison.Ordinal))
         {
-            // Move rather than drop: the user edited a hostname, they didn't ask to forget the
-            // password. The selected target's secret is rewritten from the form right after this,
-            // which harmlessly overwrites what we carry across here.
-            var carried = _credentials.Read(was.CredentialKey);
-            if (carried.Status == CredentialStatus.Found && !string.IsNullOrEmpty(carried.Secret))
-                _credentials.Set(nowKey, carried.Secret);
-
-            // Only retire the old entry once we know what was in it. A failed read here used to
-            // skip the Set and delete anyway, turning an unreadable secret into a deleted one.
-            // The cost is that a failed read strands the old entry under a key nothing looks up
-            // any more, with no way for the user to clear it — worth it, because the alternative
-            // is destroying a secret that a retry might have read.
-            if (carried.Status != CredentialStatus.Failed)
-                try { _credentials.Delete(was.CredentialKey); } catch { }
-        }
-
-        if (!string.Equals(was.Name, t.Name, StringComparison.Ordinal))
-        {
-            var keyPath = DeployLocalStore.GetPrivateKeyPath(_projectRoot, was.Name);
+            var keyPath = DeployLocalStore.GetPrivateKeyPath(_projectRoot, wasName);
             if (!string.IsNullOrEmpty(keyPath))
                 DeployLocalStore.SetPrivateKeyPath(_projectRoot, t.Name, keyPath);
-            DeployLocalStore.Remove(_projectRoot, was.Name);
+            DeployLocalStore.Remove(_projectRoot, wasName);
         }
 
         RememberIdentity(t);
@@ -192,8 +244,17 @@ public partial class SftpSettingsViewModel : ViewModelBase
     public string HostKeyFingerprintDisplay =>
         HasPinnedHostKey ? _hostKeyFingerprint : "Not yet trusted";
 
-    partial void OnHostChanged(string value) => ResetHostKey();
+    partial void OnHostChanged(string value)
+    {
+        ResetHostKey();
+        ReloadSecretIfAccountChanged();
+    }
+
     partial void OnPortChanged(int value) => ResetHostKey();
+
+    // The account the password belongs to, and the key file the passphrase belongs to.
+    partial void OnUsernameChanged(string value) => ReloadSecretIfAccountChanged();
+    partial void OnPrivateKeyPathChanged(string value) => ReloadSecretIfAccountChanged();
 
     private void ResetHostKey()
     {
@@ -204,7 +265,13 @@ public partial class SftpSettingsViewModel : ViewModelBase
     }
 
     public bool IsPasswordAuth => !IsKeyAuth;
-    partial void OnIsKeyAuthChanged(bool value) => OnPropertyChanged(nameof(IsPasswordAuth));
+
+    partial void OnIsKeyAuthChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsPasswordAuth));
+        // Switching auth mode switches which secret — and so which entry — is in play.
+        ReloadSecretIfAccountChanged();
+    }
 
     // Snapshot of what's on screen, for a connection test that hasn't been saved yet.
     private SftpProfile BuildProfile() => new()
@@ -365,13 +432,17 @@ public partial class SftpSettingsViewModel : ViewModelBase
         }
 
         var doomed = SelectedTarget;
-        // Leaving the keychain entry behind would strand a password nothing can reach or clear.
-        try { _credentials.Delete(DeployTargets.CredentialKey(_projectRoot, doomed)); } catch { }
+
+        // The secret deliberately outlives the target. It belongs to the server account, not to
+        // this target, so another target or another project may still be using it — and deleting
+        // it here would break their deploy. It is not stranded either: adding a target for the
+        // same host and username finds it again, which is what made deleting it right back when
+        // the key was a per-project hash nothing else could reach.
         DeployLocalStore.Remove(_projectRoot, doomed.Name);
 
         _deploy.Targets.Remove(doomed);
         Targets.Remove(doomed);
-        _identityOnOpen.Remove(doomed);
+        _nameOnOpen.Remove(doomed);
         SelectedTarget = Targets[0];
         Status = $"Deleted “{doomed.Name}”. Save to write the change to dir2site.yaml.";
     }
@@ -407,15 +478,30 @@ public partial class SftpSettingsViewModel : ViewModelBase
             // The key path is per-machine, so it never goes into the project file.
             DeployLocalStore.SetPrivateKeyPath(_projectRoot, SelectedTarget.Name, PrivateKeyPath.Trim());
 
-            var key = DeployTargets.CredentialKey(_projectRoot, SelectedTarget);
-            if (!string.IsNullOrEmpty(CurrentSecret))
-                _credentials.Set(key, CurrentSecret);
-            else if (!_secretReadFailed)
-                // An empty box means "forget the secret" only when we know the box started empty.
-                // If the stored secret was there but unreadable, the box is empty because we
-                // couldn't fill it — deleting here would destroy it on the user's behalf, for a
-                // failure that may well be transient (a file lock, a half-finished write).
-                _credentials.Delete(key);
+            // Only write the box the user actually typed in, and only to the key that box feeds.
+            // An untouched box holds whatever was loaded for a previous account, and entries are
+            // shared with anything else using the same account — so writing it back after a
+            // hostname edit would overwrite the real password of the server just pointed at.
+            if (CurrentSecretEdited &&
+                CredentialKeys.For(DeployTargets.ToProfile(_projectRoot, SelectedTarget)) is { } key)
+            {
+                // Record an emptied box as an empty secret rather than as no secret. "Nothing
+                // stored" is what migration keys on, so deleting the entry reads as never having
+                // had one, and the next open copies the old value back out of the legacy key —
+                // undoing the clearing entirely on an upgraded install. Storing the blank keeps
+                // "the answer is empty" distinct from "there is no answer yet", leaves the legacy
+                // copy alone for a downgrade, and needs nothing remembered.
+                //
+                // Blank and absent are already indistinguishable at the wire: a password is sent as
+                // secret ?? "", and an empty passphrase takes the unencrypted-key branch, which is
+                // the correct answer for a key that has none.
+                //
+                // Guarded either way: if the read failed, the box is empty because we couldn't fill
+                // it, and writing over it would destroy a secret that was merely unreadable.
+                var secret = string.IsNullOrEmpty(CurrentSecret) ? string.Empty : CurrentSecret;
+                if (secret.Length > 0 || !_secretReadFailed)
+                    _credentials.Set(key, secret);
+            }
 
             _window.Close(true);
         }

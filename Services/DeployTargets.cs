@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using dir2site.Models;
 using dir2site.SftpSync.Core;
+using dir2site.SftpSync.Core.Credentials;
 
 namespace dir2site.Services;
 
@@ -48,9 +49,19 @@ public static class DeployTargets
     public static SftpProfile ToProfile(string projectRoot, DeployTarget target) =>
         target.ToProfile(DeployLocalStore.GetPrivateKeyPath(projectRoot, target.Name));
 
-    /// <summary>Keychain key for a target's password or passphrase.</summary>
-    public static string CredentialKey(string projectRoot, DeployTarget target) =>
-        SftpProfileStore.CredentialKey(projectRoot, target.ToProfile(""));
+    /// <summary>
+    /// Credential-store key for a target's secret, or null when it has nowhere to keep one — a
+    /// key-auth target whose key file isn't chosen or isn't readable. The private key path is
+    /// consulted because a passphrase is addressed by the key it unlocks, not by the server.
+    /// </summary>
+    public static string? CredentialKey(string projectRoot, DeployTarget target) =>
+        CredentialKeys.For(ToProfile(projectRoot, target));
+
+    /// <summary>
+    /// The target's secret, moved off the older project-scoped key if it is still stored there.
+    /// </summary>
+    public static CredentialResult ReadSecret(ICredentialStore store, string projectRoot, DeployTarget target) =>
+        TargetSecret.Read(store, projectRoot, ToProfile(projectRoot, target));
 
     /// <summary>
     /// Writes the deploy block into the project's YAML, leaving everything outside it untouched.
