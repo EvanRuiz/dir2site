@@ -172,6 +172,39 @@ public static class DirectoryTraverser
     /// </summary>
     private sealed record PreviewSurvey(List<Artifact> All, List<PreviewJob> Jobs, List<Artifact> PreviewsCurrent);
 
+    /// <summary>
+    /// Whether an artifact's thumbnails are both there and still say what the source says.
+    /// </summary>
+    /// <remarks>
+    /// One rule for all four types, where there used to be four that agreed on the easy half. They
+    /// differed on staleness: markdown and video were checked against the source's timestamp,
+    /// photos and PDFs only for existence, on the reasoning that those are replaced rather than
+    /// revised and so cannot drift. Replacing is exactly the case that breaks it — drop a corrected
+    /// scan over the old one under the same name and the thumbnail beside it is a picture of what
+    /// used to be there, kept for good because the file exists.
+    ///
+    /// The other half of the rule is new in the opposite direction. A hand-written
+    /// <c>preview:</c> points at an image the user chose, so the source's timestamp says nothing
+    /// about it; re-rendering would burn the work and change nothing, because <c>NeedsPath</c>
+    /// rightly leaves their value alone — and it would do so again on every single run.
+    /// </remarks>
+    private static bool IsCurrent(string rootPath, string file, Artifact artifact)
+    {
+        if (string.IsNullOrEmpty(artifact.Preview) || string.IsNullOrEmpty(artifact.PreviewLarge))
+            return false;
+
+        foreach (var declared in new[] { artifact.Preview, artifact.PreviewLarge })
+        {
+            if (!PreviewGenerator.PreviewFileExists(rootPath, declared)) return false;
+
+            if (PreviewGenerator.IsCanonicalPreview(file, declared)
+                && PreviewGenerator.PreviewIsOlderThanSource(rootPath, declared, file))
+                return false;
+        }
+
+        return true;
+    }
+
     private static void CollectPreviewJobs(DirectoryTreeItem node, PreviewSurvey survey)
     {
         var jobs = survey.Jobs;
@@ -186,65 +219,29 @@ public static class DirectoryTraverser
 
             if (PreviewGenerator.IsImageFile(file))
             {
+                // A photo also carries a full-resolution web copy, which has to be there too.
                 var photo = artifact as dir2site.Models.Photo;
-                var alreadyHasAll = !string.IsNullOrEmpty(artifact.Preview)
-                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge)
-                    && (photo == null || (
-                        !string.IsNullOrEmpty(photo.Image)
-                        && PreviewGenerator.PreviewFileExists(rootPath, photo.Image)));
+                var imageIsCurrent = photo == null
+                    || (!string.IsNullOrEmpty(photo.Image)
+                        && PreviewGenerator.PreviewFileExists(rootPath, photo.Image));
 
-                if (!alreadyHasAll)
+                if (!IsCurrent(rootPath, file, artifact) || !imageIsCurrent)
                     jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
                         artifact.Type, PreviewChange(rootPath, artifact)));
             }
 
-            if (PreviewGenerator.IsPdfFile(file))
-            {
-                var alreadyHasBoth = !string.IsNullOrEmpty(artifact.Preview)
-                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge);
+            if (PreviewGenerator.IsPdfFile(file) && !IsCurrent(rootPath, file, artifact))
+                jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
+                    ArtifactType.Pdf, PreviewChange(rootPath, artifact)));
 
-                if (!alreadyHasBoth)
-                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
-                        ArtifactType.Pdf, PreviewChange(rootPath, artifact)));
-            }
+            if (PreviewGenerator.IsMarkdownFile(file) && !IsCurrent(rootPath, file, artifact))
+                jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
+                    ArtifactType.Markdown, PreviewChange(rootPath, artifact)));
 
-            if (PreviewGenerator.IsMarkdownFile(file))
-            {
-                // An article's thumbnail is a rendering of its body, so editing the .md makes the
-                // existing thumbnail wrong — "it exists" isn't enough here the way it is for a
-                // photo or a PDF, which get replaced rather than revised.
-                var alreadyHasBoth = !string.IsNullOrEmpty(artifact.Preview)
-                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge)
-                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.Preview, file)
-                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.PreviewLarge, file);
-
-                if (!alreadyHasBoth)
-                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
-                        ArtifactType.Markdown, PreviewChange(rootPath, artifact)));
-            }
-
-            if (PreviewGenerator.IsUrlFile(file) && artifact.Type == ArtifactType.Video)
-            {
-                // Same reasoning as markdown: the .url is edited in place, so re-pointing it at a
-                // different video has to re-fetch the poster. "The file exists" would leave the old
-                // video's thumbnail on the new video's card.
-                var alreadyHasBoth = !string.IsNullOrEmpty(artifact.Preview)
-                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge)
-                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.Preview, file)
-                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.PreviewLarge, file);
-
-                if (!alreadyHasBoth)
-                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
-                        ArtifactType.Video, PreviewChange(rootPath, artifact)));
-            }
+            if (PreviewGenerator.IsUrlFile(file) && artifact.Type == ArtifactType.Video
+                && !IsCurrent(rootPath, file, artifact))
+                jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
+                    ArtifactType.Video, PreviewChange(rootPath, artifact)));
 
             // Only the four types above can have previews at all; anything else is outside the
             // previews stage rather than complete within it.
@@ -381,42 +378,78 @@ public static class DirectoryTraverser
         });
     }
 
-    private static bool ShouldIgnoreDirectory(string path)
-    {
-        var name = Path.GetFileName(path);
+    private static bool ShouldIgnoreDirectory(string path) =>
+        IsIgnoredDirectoryName(Path.GetFileName(path)) || HasHiddenAttribute(path);
 
-        // Skip hidden/private directories (dot-prefix on mac/linux, underscore-prefix convention, Hidden attribute on Windows)
-        if (name.StartsWith('.'))
-            return true;
-
-        if (name.StartsWith('_'))
-            return true;
-
-        if (HasHiddenAttribute(path))
-            return true;
-
-        return PublishIgnore.IsJunkDirectory(name);
-    }
+    /// <summary>
+    /// The name-only half of <see cref="ShouldIgnoreDirectory"/> — dot-prefix on mac/linux,
+    /// underscore-prefix convention, and the shared junk list.
+    /// </summary>
+    /// <remarks>
+    /// Split out because the watcher has to judge paths that no longer exist: a folder reported as
+    /// deleted can't be asked for its attributes, and asking would answer "not hidden" for
+    /// everything and quietly let <c>_site</c> through. A name is all that survives a deletion, and
+    /// it is what carries every rule here except the Windows Hidden bit.
+    /// </remarks>
+    internal static bool IsIgnoredDirectoryName(string name) =>
+        name.StartsWith('.') || name.StartsWith('_') || PublishIgnore.IsJunkDirectory(name);
 
     private static bool ShouldIgnoreFile(string path)
     {
         var name = Path.GetFileName(path);
 
-        // Skip hidden files
-        if (name.StartsWith('.'))
-            return true;
-
-        if (HasHiddenAttribute(path))
+        if (IsIgnoredFileName(name))
             return true;
 
         // Skip metadata sidecar files — they are not content nodes
-        var ext = Path.GetExtension(name);
-        if (ext.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".yml",  StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".json", StringComparison.OrdinalIgnoreCase))
+        if (IsSidecarName(name))
             return true;
 
-        return PublishIgnore.IsJunkFile(name);
+        return HasHiddenAttribute(path);
+    }
+
+    /// <summary>The name-only rules a file is ignored by, sidecars aside. See <see cref="IsIgnoredDirectoryName"/>.</summary>
+    internal static bool IsIgnoredFileName(string name) =>
+        name.StartsWith('.') || PublishIgnore.IsJunkFile(name);
+
+    /// <summary>
+    /// A metadata file rather than content. The tree walk drops these; the watcher deliberately does
+    /// not, because a hand-edited yaml is a change the UI has to show (#62).
+    /// </summary>
+    internal static bool IsSidecarName(string name)
+    {
+        var ext = Path.GetExtension(name);
+        return ext.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".yml",  StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Whether any directory on the way from <paramref name="root"/> down to
+    /// <paramref name="fullPath"/> is one the walk refuses to enter — or whether the path escapes
+    /// the root altogether.
+    /// </summary>
+    /// <remarks>
+    /// The leaf is the caller's business; this is only about the way down. It exists because the
+    /// watcher reports whole paths rather than one directory at a time: <c>.dir2site/x/preview.webp</c>
+    /// has an innocent leaf and an ancestor that means "we wrote this ourselves". Judging the leaf
+    /// alone is how a generate ends up re-triggering itself forever.
+    /// </remarks>
+    internal static bool IsUnderIgnoredDirectory(string root, string fullPath)
+    {
+        var rel = Path.GetRelativePath(root, fullPath);
+
+        // GetRelativePath returns a ".." path when the target sits outside the root, and the
+        // absolute path when the two share no root at all.
+        if (rel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel))
+            return true;
+
+        var segments = rel.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        for (var i = 0; i < segments.Length - 1; i++)
+            if (IsIgnoredDirectoryName(segments[i]))
+                return true;
+
+        return false;
     }
 
     private static bool HasHiddenAttribute(string path)

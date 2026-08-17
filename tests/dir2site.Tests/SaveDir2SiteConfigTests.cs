@@ -9,8 +9,8 @@ using Xunit;
 namespace dir2site.Tests;
 
 /// <summary>
-/// Generate Site writes the project config on every run, so this is the path that used to eat a
-/// hand-edited dir2site.yaml the first time the user clicked the button.
+/// The project config's write path — reached whenever a setting is edited, and the one that used to
+/// eat a hand-edited dir2site.yaml the first time the user clicked Generate.
 /// </summary>
 public class SaveDir2SiteConfigTests : IDisposable
 {
@@ -173,17 +173,35 @@ public class SaveDir2SiteConfigTests : IDisposable
         Assert.Contains("Example About", text);
     }
 
+    /// <summary>
+    /// Saving an unchanged config with a footer must not touch the file at all.
+    /// </summary>
+    /// <remarks>
+    /// Byte equality is not enough, and asserting only that is how this was missed. The bytes were
+    /// always identical — <c>SetBlock</c> rewrote the block with exactly what it already said. What
+    /// changed was the mtime, and under auto-generate the mtime is the whole story: the file sits in
+    /// the watched folder, so a rewrite is a change, a change is a rebuild, and a rebuild used to
+    /// save the config again. A project with a footer never stopped rebuilding.
+    ///
+    /// So the assertion is about whether the file was written, not about what it says.
+    /// </remarks>
     [Fact]
-    public void FooterItems_SavingTwiceIsIdempotent()
+    public void FooterItems_SavingTwiceDoesNotRewriteTheFile()
     {
         var config = Sample();
         config.FooterItems = [new FooterItem { Title = "Example About", Link = "-Info/About.md" }];
 
         YamlParser.SaveDir2SiteConfig(Path_, config);
         var before = File.ReadAllText(Path_);
+
+        // Backdated so a rewrite is unmissable rather than a sub-millisecond difference.
+        var untouched = DateTime.UtcNow.AddMinutes(-10);
+        File.SetLastWriteTimeUtc(Path_, untouched);
+
         YamlParser.SaveDir2SiteConfig(Path_, config);
 
         Assert.Equal(before, File.ReadAllText(Path_));
+        Assert.Equal(untouched, File.GetLastWriteTimeUtc(Path_));
     }
 
     [Fact]
@@ -201,6 +219,52 @@ public class SaveDir2SiteConfigTests : IDisposable
         Assert.DoesNotContain("footerItems", text);
         // Everything else is still there — only the one block went.
         Assert.Contains("title: My Site", text);
+    }
+
+    /// <summary>
+    /// A setting whose text is a YAML null token has to come back as that text.
+    /// </summary>
+    /// <remarks>
+    /// YamlDotNet quotes a string that would re-read as a number or a boolean, and does not quote one
+    /// that would re-read as null — so a title of <c>~</c> was written bare, came back as null on the
+    /// next load, and the save after that threw a <see cref="NullReferenceException"/> from inside
+    /// the emitter. While Generate wrote the config that throw was outside its try/catch and escaped
+    /// as an unobserved task exception, which is why nobody saw a message.
+    /// </remarks>
+    [Theory]
+    [InlineData("~")]
+    [InlineData("null")]
+    [InlineData("NULL")]
+    [InlineData("Null")]
+    public void ATitleThatSpellsNull_SurvivesTheRoundTrip(string title)
+    {
+        YamlParser.SaveDir2SiteConfig(Path_, new Dir2SiteModel { Title = title });
+
+        var loaded = YamlParser.DeserializeAs<Dir2SiteModel>(File.ReadAllText(Path_));
+        Assert.Equal(title, loaded.Title);
+
+        // And saving what came back has to be an ordinary no-op, not a crash.
+        YamlParser.SaveDir2SiteConfig(Path_, loaded);
+        Assert.Equal(title, YamlParser.DeserializeAs<Dir2SiteModel>(File.ReadAllText(Path_)).Title);
+    }
+
+    /// <summary>
+    /// A hand-written null still has to be saveable, whatever we would have written ourselves.
+    /// </summary>
+    /// <remarks>
+    /// Quoting on the way out stops us creating this, and does nothing about a file someone wrote by
+    /// hand — <c>title:</c> with nothing after it is the ordinary way to spell an empty setting, and
+    /// it deserializes to null just the same.
+    /// </remarks>
+    [Fact]
+    public void AHandWrittenNullTitle_DoesNotThrowOnTheNextSave()
+    {
+        File.WriteAllText(Path_, "title: ~\nfooter: © 2026\n");
+        var loaded = YamlParser.DeserializeAs<Dir2SiteModel>(File.ReadAllText(Path_));
+
+        YamlParser.SaveDir2SiteConfig(Path_, loaded);
+
+        Assert.Contains("© 2026", File.ReadAllText(Path_), StringComparison.Ordinal);
     }
 
     [Fact]

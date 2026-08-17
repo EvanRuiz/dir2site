@@ -24,11 +24,15 @@ public static class YamlParser
     private static readonly IDeserializer DictDeserializer = new DeserializerBuilder()
         .Build();
 
+    // Every serializer in the app carries QuoteNullTokens, so the splice path and the whole-file
+    // path cannot disagree about what needs quoting to survive a round-trip.
     private static readonly ISerializer Serializer = new SerializerBuilder()
+        .WithEventEmitter(next => new YamlDocumentEditor.QuoteNullTokens(next))
         .Build();
 
     private static readonly ISerializer CamelCaseSerializer = new SerializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .WithEventEmitter(next => new YamlDocumentEditor.QuoteNullTokens(next))
         .Build();
 
     // Maps media file extensions to their artifact type name (lowercase).
@@ -427,6 +431,26 @@ public static class YamlParser
         if (extra != null)
             updates.AddRange(extra);
 
+        UpdateFields(yamlPath, updates);
+    }
+
+    /// <summary>
+    /// Brings the named keys into line in a sidecar, surgically — other values, comments, key order
+    /// and formatting all survive.
+    /// </summary>
+    /// <remarks>
+    /// The general form of <see cref="UpdatePreviewFields"/>, which is the same operation with the
+    /// two preview keys always present. Split out for the rename path, which sets a caption and
+    /// sometimes no preview at all.
+    /// </remarks>
+    public static void UpdateFields(string yamlPath, IReadOnlyList<KeyValuePair<string, string>> updates)
+    {
+        if (updates.Count == 0) return;
+
+        string yaml;
+        try { yaml = File.ReadAllText(yamlPath); }
+        catch { return; }
+
         var editor = YamlDocumentEditor.TryLoad(yaml);
         if (editor != null && editor.SetAll(updates))
         {
@@ -437,7 +461,7 @@ public static class YamlParser
             return;
         }
 
-        FallbackRewrite(yamlPath, yaml, updates);
+        FallbackRewrite(yamlPath, yaml, [.. updates]);
     }
 
     // Last resort for a file the editor cannot splice (unparseable, or a non-scalar sitting on one
@@ -699,8 +723,12 @@ public static class YamlParser
     /// <see cref="PrettifyFilename"/>, which is what turns the trimmed name into a caption. Only
     /// the suffix goes: a video legitimately titled "YouTube at 20" keeps its name, because the
     /// match is anchored to the end and requires the separator.
+    ///
+    /// Internal rather than private because the rename path has to reproduce a scaffolded caption
+    /// exactly to know whether the user has since edited it, and a video's caption came through
+    /// here first.
     /// </remarks>
-    private static string StripVideoProviderSuffix(string filePath)
+    internal static string StripVideoProviderSuffix(string filePath)
     {
         const string suffix = " - YouTube";
         var stem = Path.GetFileNameWithoutExtension(filePath);

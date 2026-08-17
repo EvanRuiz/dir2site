@@ -298,6 +298,14 @@ public class ArtifactFolderNavTests : IDisposable
 
         Assert.DoesNotContain("artifact-nav-link", ReadPage("Album", "Banana"));
         Assert.DoesNotContain("artifact-nav-link", ReadPage("Album", "Berry"));
+
+        // And the ones on the chain do carry it. Asserted alongside its absence because the class
+        // is load-bearing outside the page it appears on: RenderScope.ChangedSides reads it back off
+        // disk to decide whether an artifact has joined or left the chain since it was built. Rename
+        // it in the template with only the negative assertions above and every one of them still
+        // passes, while the narrowing quietly stops noticing.
+        Assert.Contains("artifact-nav-link", ReadPage("Album", "Apple"));
+        Assert.Contains("artifact-nav-link", ReadPage("Album", "Cherry"));
     }
 
     /// Subfolders are the breadcrumb's business, not the arrows'.
