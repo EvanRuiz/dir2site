@@ -35,10 +35,11 @@ public static partial class MarkdownPreviewRenderer
     // body size, below which a card reads as a ragged sliver rather than a paragraph.
     private const float FloatGap = 26f, MinTextBand = 330f;
 
-    // The column the published article is laid out in (.markdown-body's max-width in
-    // Assets/templates/site-css.html). An authored figure width is read as a fraction of it, so
-    // this preview and the page agree about how big a figure looks. SiteColumnWidthTests fails if
-    // the two drift apart.
+    // The column the published article is laid out in (.article-column's max-width in
+    // Assets/templates/site-css.html — an article's measure, which is why it is not on
+    // .markdown-body, whose rules a collection's introduction shares). An authored figure width is
+    // read as a fraction of it, so this preview and the page agree about how big a figure looks.
+    // SiteColumnWidthTests fails if the two drift apart.
     internal const float SiteColumnWidth = 820f;
 
     /// <summary>

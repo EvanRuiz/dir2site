@@ -226,6 +226,42 @@ appears — tick **Card Titles → Include Breadcrumbs** in Site Settings. The s
 `dir2site.yaml` as `cardBreadcrumbs` and is off unless it says otherwise. Top-level cards never show
 a trail: the home page is their only ancestor.
 
+### A folder's introduction (`index.md`)
+
+A collection page is a grid of cards with nothing but its own name above it. Put an `index.md` in
+the folder and it becomes that folder's introduction: rendered at the top of the page, above the
+cards.
+
+```
+Photographs/
+  index.md              the prose at the top of /Photographs/
+  Portrait.jpg
+  Landscape.jpg
+```
+
+It works in any folder, including the project root — which is the one page with no other way to say
+anything at all, since the home page is a collection like any other.
+
+**The introduction owns the top of the page.** Where there is one, the heading dir2site would have
+written — the folder's name — is left out, and whatever your `index.md` opens with stands in its
+place. The file being there is the whole decision, whatever is in it. Write a heading of your own to give the folder a title it wouldn't otherwise have, or open
+with a paragraph and have no heading at all, which is usually what a home page wants: the site's
+name is already in the navbar above it. The folder is still named in the browser's title bar and in
+the breadcrumbs either way.
+
+`index.md` is special all the way down. It is not an artifact: no card, no page of its own, no
+thumbnail, and — alone among the files dir2site reads — **no yaml sidecar**. There is nothing to
+caption, credit or date, so nothing is written beside it. Ordinary Markdown, figures and `_media`
+references all work as they do in an article, and relative paths are written from the folder the
+file sits in.
+
+Two consequences worth knowing:
+
+- A folder holding one artifact normally publishes as that artifact. One that also has an
+  introduction keeps its own page — otherwise the prose would vanish when the folder collapsed.
+- Renaming an article to `index.md` turns it into an introduction, and its old sidecar is left
+  behind rather than carried over. Generate offers to tidy it up, as it does for any leftover.
+
 ### Static media (`_media` and other `_`-folders)
 
 To include images or other assets that should **not** become artifacts of their own, put them in a

@@ -42,6 +42,37 @@ render consistently and need no inline styles.
 
 ---
 
+## Line breaks, and how to wrap your prose
+
+**A single newline is a line break on the page.** Standard Markdown reflows hand-wrapped lines into
+one paragraph; dir2site does not, because the alternative surprises anyone writing in an editor that
+wraps for them and offers only invisible trailing whitespace as the way to say "break here":
+
+```markdown
+Ink first, then paper.
+Never the other way round.
+```
+
+prints as two lines, which is what an address block, a line of verse or a working note needs.
+
+**So let your editor wrap, and keep each paragraph on one line.** Turn on soft wrap — it is
+*Word Wrap* in VS Code (`⌥Z`), `:set wrap linebreak` in Vim, `visual-line-mode` in Emacs, and on by
+default in most Markdown-first editors — and write a paragraph as a single long line. The page then
+wraps it to whatever width the reader's screen gives it.
+
+Hard-wrapping your prose at 80 or 100 columns instead looks right in the editor and wrong
+everywhere else. Every one of those breaks is kept, so the paragraph reads short on a wide screen —
+and on a phone each short line wraps *again*, leaving a stub under every line:
+
+> Riverbend Press has printed broadsides, chart plates and cards from a room above a bookshop
+> since
+
+The remedy is the editor setting, not the markup: there is nothing to add to the file.
+
+Paragraphs are separated by a blank line, exactly as in ordinary Markdown.
+
+---
+
 ## Images
 
 Reference an image with a path **relative to the `.md` file**:
@@ -143,6 +174,9 @@ scaled down. The published page is always the source of truth for exact layout.
 
 ## Tips
 
+- Turn on soft wrap in your editor and keep each paragraph on one line — see
+  [Line breaks](#line-breaks-and-how-to-wrap-your-prose). Hand-wrapped prose keeps every break and
+  reads badly on a phone.
 - Keep one lead figure near the top for the best-looking card thumbnail.
 - When checking your project into git, ignore the generated output with `/_site/` — do **not** use a
   blanket `_*` rule, or you'll exclude `_media` and other static-asset folders.

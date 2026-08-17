@@ -33,6 +33,12 @@ public static class ArtifactRename
     {
         if (string.Equals(oldPath, newPath, StringComparison.Ordinal)) return;
 
+        // Renaming an article to index.md makes it the folder's introduction, and an introduction
+        // has no sidecar or previews: carrying them over would create the one file this convention
+        // promises never exists. The old pair is left where it is, so the leftovers sweep offers it
+        // rather than this deleting a user's file on its own initiative.
+        if (DirectoryTraverser.IsFolderIntro(newPath)) return;
+
         var yamlPath = MoveSidecar(oldPath, newPath);
         MovePreviews(oldPath, newPath);
 
