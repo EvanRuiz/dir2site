@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using Avalonia.Headless.XUnit;
 using dir2site.Services;
+using ImageMagick;
 using Xunit;
 
 namespace dir2site.Tests;
@@ -33,11 +33,22 @@ public class StaleDerivedFileTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private static void MakeJpeg(string path, string colour)
+    /// <summary>
+    /// A real JPEG of one flat colour, written with the library the app itself uses.
+    /// </summary>
+    /// <remarks>
+    /// Through Magick.NET rather than the <c>magick</c> command, which is what this asked for first
+    /// and is the reason it passed here and failed on CI: the CLI is not part of the build, nothing
+    /// declares it, and windows-latest has no reason to have it. The app has never needed it either
+    /// — <c>PreviewGenerator</c> works in-process, and the package reaches the tests through it.
+    ///
+    /// It has to be a real image, not bytes pretending to be one: what these tests are about is the
+    /// thumbnail and the web copy being re-derived, which means something has to derive them.
+    /// </remarks>
+    private static void MakeJpeg(string path, MagickColor colour)
     {
-        using var process = Process.Start(new ProcessStartInfo("magick",
-            $"-size 400x300 xc:{colour} \"{path}\"") { RedirectStandardError = true })!;
-        process.WaitForExit();
+        using var image = new MagickImage(colour, 400, 300);
+        image.Write(path);
     }
 
     [AvaloniaFact]
@@ -45,7 +56,7 @@ public class StaleDerivedFileTests : IDisposable
     {
         var photos = Directory.CreateDirectory(Path.Combine(_root, "Photographs")).FullName;
         var jpeg = Path.Combine(photos, "Portrait.jpg");
-        MakeJpeg(jpeg, "red");
+        MakeJpeg(jpeg, MagickColors.Red);
 
         Assert.NotNull(PreviewGenerator.GeneratePreviews(jpeg, _root));
 
@@ -60,7 +71,7 @@ public class StaleDerivedFileTests : IDisposable
         // A whole second, because the check is a timestamp comparison and a filesystem that stores
         // them to the second would otherwise call the new file the same age as the old one.
         Thread.Sleep(1100);
-        MakeJpeg(jpeg, "blue");
+        MakeJpeg(jpeg, MagickColors.Blue);
 
         PreviewGenerator.GeneratePreviews(jpeg, _root);
 
@@ -78,7 +89,7 @@ public class StaleDerivedFileTests : IDisposable
         // and rewrite the site's assets on every save.
         var photos = Directory.CreateDirectory(Path.Combine(_root, "Photographs")).FullName;
         var jpeg = Path.Combine(photos, "Portrait.jpg");
-        MakeJpeg(jpeg, "red");
+        MakeJpeg(jpeg, MagickColors.Red);
 
         PreviewGenerator.GeneratePreviews(jpeg, _root);
         var preview = Path.Combine(photos, ".dir2site", "Portrait", "preview-Portrait.webp");

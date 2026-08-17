@@ -262,14 +262,16 @@ public class ProjectMovedTests : IDisposable
         await vm.LoadDirectoryCommand.ExecuteAsync(null);
         await Task.Delay(400);   // as above: let the watch be established before moving anything
 
-        var moved = false;
+        var tried = false;
+        string? refused = null;
         vm.PropertyChanged += (_, e) =>
         {
-            if (moved || e.PropertyName != nameof(vm.StatusText)) return;
+            if (tried || e.PropertyName != nameof(vm.StatusText)) return;
             if (!vm.StatusText.StartsWith("Generating ", StringComparison.Ordinal)) return;
 
-            moved = true;
-            Directory.Move(_root, Path.Combine(_base, "riverbend-2024"));
+            tried = true;
+            try { Directory.Move(_root, Path.Combine(_base, "riverbend-2024")); }
+            catch (IOException ex) { refused = ex.Message; }
         };
 
         // Started rather than awaited, and pumped while it runs: the watcher posts to the UI thread,
@@ -280,7 +282,21 @@ public class ProjectMovedTests : IDisposable
         await generate;
         await Until(() => !vm.IsGenerating && !vm.IsLoading);
 
-        Assert.True(moved, "the test never managed to move the folder mid-generate");
+        Assert.True(tried, "the test never reached the point where it moves the folder");
+
+        if (refused != null)
+        {
+            // Windows will not rename a directory that has open file handles inside it, and a
+            // generate in flight is exactly that — so the situation this test describes cannot be
+            // reached there at all. Asserted rather than skipped, because the refusal is the
+            // platform's answer to the question and worth holding on to: on Windows the folder
+            // cannot go while a generate is writing to it, and the site is never built against a
+            // project that has moved out from under it.
+            Assert.True(Directory.Exists(_root),
+                "the move was refused, so the folder has to still be where it was");
+            return;
+        }
+
         Assert.False(vm.IsGenerating);
         Assert.DoesNotContain("Site generated", vm.StatusText, StringComparison.Ordinal);
 
