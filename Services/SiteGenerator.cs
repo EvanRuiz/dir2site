@@ -36,7 +36,8 @@ public static class SiteGenerator
         string directoryRoot,
         DirectoryTreeItem rootItem,
         Dir2SiteModel config,
-        GenerateProgressTracker? progressTracker = null)
+        GenerateProgressTracker? progressTracker = null,
+        RenderScope? scope = null)
     {
         // A no-op tracker rather than null: `tracker?.Method(Write(...))` would skip the write
         // itself, which is a silent and very confusing way to generate nothing.
@@ -46,6 +47,7 @@ public static class SiteGenerator
         var siteRoot = Path.Combine(directoryRoot, "_site");
         Directory.CreateDirectory(siteRoot);
         var ledger = new SiteLedger(siteRoot);
+        scope ??= RenderScope.All;
 
         // Only ever read to build the menu — page generation walks each node's own children — so the
         // '--' folders are dropped here rather than filtered again on every page.
@@ -78,7 +80,7 @@ public static class SiteGenerator
         var footerColumns = BuildFooterColumns(config, directoryRoot, rootItem, warnings);
         GeneratePage(rootItem, siteRoot, directoryRoot, config, menuFolders, 0,
             [], templates, progress, errors, warnings, tracker, homePromotions, ledger,
-            footerColumns, colors);
+            footerColumns, colors, scope, siteRoot);
 
         var copyJobs = new List<CopyJob>();
         CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs, ledger);
@@ -164,7 +166,9 @@ public static class SiteGenerator
         IReadOnlyList<HomePromotion> homePromotions,
         SiteLedger ledger,
         List<List<FooterLink>> footerColumns,
-        SiteColors colors)
+        SiteColors colors,
+        RenderScope scope,
+        string siteRoot)
     {
         // The site root always gets a home page, however little is in it.
         if (depth > 0 && SoleArtifact(node) is { } soleArtifact)
@@ -173,7 +177,8 @@ public static class SiteGenerator
             {
                 var soleChange = GenerateArtifactPage(soleArtifact, outputDir, directoryRoot, config,
                     menuFolders, depth, ancestorNames, templates, footerColumns, colors, progress,
-                    ledger, atFolderIndex: true, metaRows: CaptionRows([soleArtifact]));
+                    ledger, scope, siteRoot,
+                    atFolderIndex: true, metaRows: CaptionRows([soleArtifact]));
                 tracker.PageDone(soleChange);
                 tracker.ArtifactChanged(soleChange);
             }
@@ -201,71 +206,15 @@ public static class SiteGenerator
         // error into quiet data loss.
         ledger.Keep(indexHtmlPath);
 
-        progress.Report($"Generating {label}...");
-
-        var pageTitle = depth == 0 ? config.Title : PublicName(node.Name);
-        var prefix = RelativePrefix(depth);
-
-        var siteObj = BuildSiteObject(config, footerColumns, colors);
-
-        var navFolders = menuFolders
-            .Select(f =>
-            {
-                var obj = new ScriptObject();
-                obj.SetValue("name", PublicName(f.Name), readOnly: true);
-                obj.SetValue("href", $"{prefix}{PublicName(f.Name)}/", readOnly: true);
-                return (object)obj;
-            })
-            .ToList();
-
-        var breadcrumbs = BuildBreadcrumbs(prefix, depth, ancestorNames, PublicName(node.Name));
-
-        var items = node.Children
-            .Where(child => !IsMenuOnly(child))
-            // childAncestors is the chain this page's children live under — the same list their own
-            // pages take their breadcrumbs from, so a card's title and the page it opens agree.
-            .Select(child => (object)BuildCardModel(
-                child, prefix, directoryRoot, childAncestors, config.CardBreadcrumbs))
-            .ToList();
-
-        // Cards for things that live deeper but asked to be reachable from the front door. They go
-        // after the root's own children so the home page still opens with what the site is.
-        var promoted = depth == 0 ? homePromotions : [];
-        foreach (var promotion in promoted)
-            items.Add(BuildCardModel(
-                promotion.Item, prefix, directoryRoot, promotion.Ancestors, config.CardBreadcrumbs,
-                promotion.Href));
-
-        // Only pages that actually embed a player pull in the YouTube glue.
-        var hasVideo = node.Children.Concat(promoted.Select(p => p.Item))
-            .Any(c => !c.IsDirectory && c.Artifact?.Type == ArtifactType.Video);
-
-        var ogTitle = depth == 0
-            ? config.Title
-            : string.Join(" > ", ancestorNames.Concat([PublicName(node.Name)]));
-
-        var ogImageResult = FindFirstArtifactWithPreview(node);
-        var ogImage = ogImageResult.HasValue
-            ? GetOgImageRootRelative(ogImageResult.Value.Item1, directoryRoot, ogImageResult.Value.Item2)
-            : "";
-
-        var globals = new ScriptObject();
-        globals.SetValue("site", siteObj, readOnly: true);
-        globals.SetValue("page_title", pageTitle, readOnly: true);
-        globals.SetValue("prefix", prefix, readOnly: true);
-        globals.SetValue("nav_folders", navFolders, readOnly: true);
-        globals.SetValue("breadcrumbs", breadcrumbs, readOnly: true);
-        globals.SetValue("items", items, readOnly: true);
-        globals.SetValue("has_video", hasVideo, readOnly: true);
-        globals.SetValue("og_title", ogTitle, readOnly: true);
-        globals.SetValue("og_description", ogTitle, readOnly: true);
-        globals.SetValue("og_image", ogImage, readOnly: true);
-
-        var context = new TemplateContext { TemplateLoader = templates.Loader };
-        context.PushGlobal(globals);
-
-        var html = templates.Collection.Render(context);
-        tracker.PageDone(WriteIfChanged(indexHtmlPath, html, ledger, Encoding.UTF8));
+        // Registered above, so skipping the render cannot strand this page: the ledger says what the
+        // site should hold, and it holds this whether or not this run had a reason to rewrite it.
+        // The children below are still walked either way — a folder nothing reached can still
+        // contain one something did.
+        //
+        // Render is a local function because its body needs every local declared above it; lifting
+        // it out properly would mean threading fifteen arguments through.
+        if (scope.ShouldRender(siteRoot, indexHtmlPath)) Render();
+        else tracker.PageDone(Change.None);
 
         ReportPublicNameCollisions(node, warnings);
 
@@ -274,7 +223,7 @@ public static class SiteGenerator
             var childOutputDir = Path.Combine(outputDir, PublicName(child.Name));
             GeneratePage(child, childOutputDir, directoryRoot, config, menuFolders,
                 depth + 1, childAncestors, templates, progress, errors, warnings, tracker,
-                homePromotions, ledger, footerColumns, colors);
+                homePromotions, ledger, footerColumns, colors, scope, siteRoot);
         }
 
         // Videos play inline on this page, so they get no page of their own — generating one would
@@ -283,11 +232,7 @@ public static class SiteGenerator
             .Where(c => !c.IsDirectory && c.Artifact != null && c.Artifact.Type != ArtifactType.Video)
             .ToList();
 
-        // The artifacts this folder's prev/next arrows thread together, in the order the folder
-        // shows them. A narrower list than the pages about to be written: a type that carries no
-        // arrows is not somewhere they can strand you either, so the chain steps over a PDF or an
-        // article between two photos the same way it steps over a video.
-        var chain = artifactChildren.Where(c => PolicyFor(c.Artifact!.Type).HasPrevNextNav).ToList();
+        var chain = ChainIn(node);
         var neighbours = new Dictionary<DirectoryTreeItem, ArtifactNeighbours>();
         for (var i = 0; i < chain.Count; i++)
             neighbours[chain[i]] = new ArtifactNeighbours(
@@ -310,6 +255,7 @@ public static class SiteGenerator
                 var onChain = neighbours.TryGetValue(child, out var siblings);
                 var change = GenerateArtifactPage(child, outputDir, directoryRoot, config, menuFolders,
                     depth + 1, childAncestors, templates, footerColumns, colors, progress, ledger,
+                    scope, siteRoot,
                     siblings: siblings, metaRows: onChain ? chainRows : CaptionRows([child]));
                 tracker.PageDone(change);
                 // What happened to an artifact's own page is what "new" and "updated" mean for the
@@ -324,6 +270,74 @@ public static class SiteGenerator
                 // A page that failed is still a page accounted for; the error is reported separately.
                 tracker.PageDone(Change.None);
             }
+        }
+        void Render()
+        {
+            progress.Report($"Generating {label}...");
+
+            var pageTitle = depth == 0 ? config.Title : PublicName(node.Name);
+            var prefix = RelativePrefix(depth);
+
+            var siteObj = BuildSiteObject(config, footerColumns, colors);
+
+            var navFolders = menuFolders
+                .Select(f =>
+                {
+                    var obj = new ScriptObject();
+                    obj.SetValue("name", PublicName(f.Name), readOnly: true);
+                    obj.SetValue("href", $"{prefix}{PublicName(f.Name)}/", readOnly: true);
+                    return (object)obj;
+                })
+                .ToList();
+
+            var breadcrumbs = BuildBreadcrumbs(prefix, depth, ancestorNames, PublicName(node.Name));
+
+            var items = node.Children
+                .Where(child => !IsMenuOnly(child))
+                // childAncestors is the chain this page's children live under — the same list their own
+                // pages take their breadcrumbs from, so a card's title and the page it opens agree.
+                .Select(child => (object)BuildCardModel(
+                    child, prefix, directoryRoot, childAncestors, config.CardBreadcrumbs))
+                .ToList();
+
+            // Cards for things that live deeper but asked to be reachable from the front door. They go
+            // after the root's own children so the home page still opens with what the site is.
+            var promoted = depth == 0 ? homePromotions : [];
+            foreach (var promotion in promoted)
+                items.Add(BuildCardModel(
+                    promotion.Item, prefix, directoryRoot, promotion.Ancestors, config.CardBreadcrumbs,
+                    promotion.Href));
+
+            // Only pages that actually embed a player pull in the YouTube glue.
+            var hasVideo = node.Children.Concat(promoted.Select(p => p.Item))
+                .Any(c => !c.IsDirectory && c.Artifact?.Type == ArtifactType.Video);
+
+            var ogTitle = depth == 0
+                ? config.Title
+                : string.Join(" > ", ancestorNames.Concat([PublicName(node.Name)]));
+
+            var ogImageResult = FindFirstArtifactWithPreview(node);
+            var ogImage = ogImageResult.HasValue
+                ? GetOgImageRootRelative(ogImageResult.Value.Item1, directoryRoot, ogImageResult.Value.Item2)
+                : "";
+
+            var globals = new ScriptObject();
+            globals.SetValue("site", siteObj, readOnly: true);
+            globals.SetValue("page_title", pageTitle, readOnly: true);
+            globals.SetValue("prefix", prefix, readOnly: true);
+            globals.SetValue("nav_folders", navFolders, readOnly: true);
+            globals.SetValue("breadcrumbs", breadcrumbs, readOnly: true);
+            globals.SetValue("items", items, readOnly: true);
+            globals.SetValue("has_video", hasVideo, readOnly: true);
+            globals.SetValue("og_title", ogTitle, readOnly: true);
+            globals.SetValue("og_description", ogTitle, readOnly: true);
+            globals.SetValue("og_image", ogImage, readOnly: true);
+
+            var context = new TemplateContext { TemplateLoader = templates.Loader };
+            context.PushGlobal(globals);
+
+            var html = templates.Collection.Render(context);
+            tracker.PageDone(WriteIfChanged(indexHtmlPath, html, ledger, Encoding.UTF8));
         }
     }
 
@@ -1331,6 +1345,28 @@ public static class SiteGenerator
         sibling == null ? "" : $"../{Path.GetFileNameWithoutExtension(sibling.Name)}/";
 
     /// <summary>
+    /// The artifacts a folder's prev/next arrows thread together, in the order the folder shows them.
+    /// </summary>
+    /// <remarks>
+    /// Narrower than the pages the folder writes: a video has no page of its own, and a type that
+    /// carries no arrows is not somewhere they can strand you either, so the chain steps over a PDF
+    /// or an article between two photos.
+    ///
+    /// Internal because <see cref="RenderScope"/> needs the same set — both to ask what band the
+    /// chain agrees on and to know which page it may read that band back from. Asking here rather
+    /// than restating the filter is what stops the two drifting apart.
+    /// </remarks>
+    internal static List<DirectoryTreeItem> ChainIn(DirectoryTreeItem folder) =>
+        [.. folder.Children.Where(c =>
+            !c.IsDirectory
+            && c.Artifact is { } a
+            && a.Type != ArtifactType.Video
+            && PolicyFor(a.Type).HasPrevNextNav)];
+
+    /// <summary>The caption band this folder's chain would agree on, as it stands now.</summary>
+    internal static int CaptionRowsFor(DirectoryTreeItem folder) => CaptionRows(ChainIn(folder));
+
+    /// <summary>
     /// How many rows of caption a set of viewer pages reserves between them: two where anything in
     /// the set has something to say under its title, one where nothing does.
     ///
@@ -1657,6 +1693,8 @@ public static class SiteGenerator
         SiteColors colors,
         IProgress<string>? progress,
         SiteLedger ledger,
+        RenderScope scope,
+        string siteRoot,
         bool atFolderIndex = false,
         ArtifactNeighbours siblings = default,
         int metaRows = 1)
@@ -1675,6 +1713,10 @@ public static class SiteGenerator
         // Before the render, not after: a page whose render throws is caught by the caller and
         // reported, and the copy already in the site should survive that rather than be swept.
         ledger.Keep(indexHtmlPath);
+
+        // Same as the collection page: registered first, so a page nothing reached this run is
+        // still a page the site wants, and the sweep leaves it alone.
+        if (!scope.ShouldRender(siteRoot, indexHtmlPath)) return Change.None;
 
         progress?.Report($"Generating {stem}/index.html...");
 

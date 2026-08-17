@@ -729,6 +729,9 @@ public partial class MainWindowViewModel : ViewModelBase
     /// </remarks>
     internal IReadOnlyList<string> PendingSiteOrphans { get; set; } = [];
 
+    /// <summary>How much of the site the current run has a reason to re-render.</summary>
+    private RenderScope _scope = RenderScope.All;
+
 
     // The targets belong to the project config, so they follow it — including when it is reloaded
     // from disk after a hand edit.
@@ -1179,8 +1182,9 @@ public partial class MainWindowViewModel : ViewModelBase
             await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, tracker));
 
             tracker.Report("Generating site...");
+            var scope = _scope;
             result = await Task.Run(() =>
-                SiteGenerator.Generate(DirectoryRoot, root, config, tracker));
+                SiteGenerator.Generate(DirectoryRoot, root, config, tracker, scope));
         }
         catch (Exception ex)
         {
@@ -1257,6 +1261,12 @@ public partial class MainWindowViewModel : ViewModelBase
         var explained = witnessed
             ? SiteChangeApplier.ExplainedBy(root, [.. _changesSinceGenerate])
             : [];
+
+        // The same knowledge, put to a second use: what a change can reach is also the only part of
+        // the site worth re-rendering. Without it every save re-renders every page.
+        _scope = witnessed
+            ? RenderScope.For(root, [.. _changesSinceGenerate], freshRoot)
+            : RenderScope.All;
 
         _changesSinceGenerate.Clear();
 
