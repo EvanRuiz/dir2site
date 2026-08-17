@@ -308,17 +308,33 @@ public sealed class RenderScope
             : path;
     }
 
+    /// <summary>
+    /// Whether this change is one of the ones <paramref name="folder"/> has to answer for.
+    /// </summary>
+    /// <remarks>
+    /// Both ends of a move, because a move touches two folders and <see cref="ExplainedBy"/> lists
+    /// them both. Matching only where the file arrived left the folder it <em>left</em> holding no
+    /// changes at all — so every refusal in <c>CanNarrow</c> passed for want of anything to refuse,
+    /// and the departure folder was added to neither list. Its index kept the card for a photo that
+    /// had gone, pointing at a page that no longer existed: a 404 on the published site, and the
+    /// surviving siblings' arrows stale for the same reason.
+    /// </remarks>
     private static bool SameFolder(
         string directoryRoot, string siteRoot, SourceChange change, string folder)
     {
-        var parent = Path.GetDirectoryName(change.Path);
-        if (parent == null) return false;
+        return IsIn(change.Path) || (change.From is { } from && IsIn(from));
 
-        var rel = SiteGenerator.PublicRelativePath(
-            Path.GetRelativePath(directoryRoot, parent).Replace(Path.DirectorySeparatorChar, '/'));
-        if (rel is ".") rel = string.Empty;
+        bool IsIn(string path)
+        {
+            var parent = Path.GetDirectoryName(path);
+            if (parent == null) return false;
 
-        return rel.Equals(folder, StringComparison.OrdinalIgnoreCase);
+            var rel = SiteGenerator.PublicRelativePath(
+                Path.GetRelativePath(directoryRoot, parent).Replace(Path.DirectorySeparatorChar, '/'));
+            if (rel is ".") rel = string.Empty;
+
+            return rel.Equals(folder, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     /// <summary>The tree node that publishes to <paramref name="folder"/>, or null.</summary>

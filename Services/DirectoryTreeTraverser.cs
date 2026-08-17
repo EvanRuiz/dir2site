@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using dir2site.Models;
 using dir2site.ViewModels;
@@ -20,14 +21,21 @@ public static class DirectoryTraverser
     /// files here, so it can say so once when the scan finishes rather than leave them to find out
     /// from a diff.
     /// </param>
+    /// <param name="cancel">
+    /// Abandons the walk part-way. The tree returned to a cancelled caller is a partial one, which
+    /// is why cancellation throws rather than returning what it had: a half-walked project is
+    /// indistinguishable from a project that has lost most of its files, and everything downstream
+    /// of here believes what the walk tells it.
+    /// </param>
     public static DirectoryTreeItem BuildTree(
         string rootPath,
         IList<string> allFiles,
         IList<string> allArtifacts,
         IProgress<string>? progress = null,
-        IList<string>? updatedYamls = null)
+        IList<string>? updatedYamls = null,
+        CancellationToken cancel = default)
     {
-        return BuildTree(rootPath, allFiles, allArtifacts, rootPath, progress, updatedYamls);
+        return BuildTree(rootPath, allFiles, allArtifacts, rootPath, progress, updatedYamls, cancel);
     }
 
     /// <summary>
@@ -35,7 +43,11 @@ public static class DirectoryTraverser
     /// using the provided site config (for PDF resize/quality settings).
     /// Call this during the Generate step so settings affect output.
     /// </summary>
-    public static void GeneratePreviews(DirectoryTreeItem root, dir2site.Models.Dir2SiteModel config, GenerateProgressTracker? progressTracker)
+    public static void GeneratePreviews(
+        DirectoryTreeItem root,
+        dir2site.Models.Dir2SiteModel config,
+        GenerateProgressTracker? progressTracker,
+        CancellationToken cancel = default)
     {
         // A no-op tracker rather than null, so no call site has to reach for `?.` — see the same
         // note in SiteGenerator.Generate for what that costs when the argument does real work.
@@ -55,12 +67,17 @@ public static class DirectoryTraverser
         tracker.SetPreviewTotal(survey.Jobs.Count + survey.PreviewsCurrent.Count);
         tracker.AddPreviewsDone(survey.PreviewsCurrent.Count, Change.None);
 
-        ExecutePreviewJobs(survey.Jobs, config, tracker);
+        ExecutePreviewJobs(survey.Jobs, config, tracker, cancel);
     }
 
     // Walks the directory tree and parses YAML. Preview generation is deferred to GeneratePreviews().
-    private static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles, IList<string> allArtifacts, string traversalRoot, IProgress<string>? progress, IList<string>? updatedYamls)
+    private static DirectoryTreeItem BuildTree(string rootPath, IList<string> allFiles, IList<string> allArtifacts, string traversalRoot, IProgress<string>? progress, IList<string>? updatedYamls, CancellationToken cancel)
     {
+        // Once per directory, which is often enough to stop promptly on a big project and never so
+        // often that it costs anything. Deliberately outside the catch below: the two exceptions it
+        // swallows are "this folder wouldn't open", and a cancellation is not that.
+        cancel.ThrowIfCancellationRequested();
+
         var node = new DirectoryTreeItem(rootPath);
 
         if (!node.IsDirectory)
@@ -77,7 +94,7 @@ public static class DirectoryTraverser
                 if (ShouldIgnoreDirectory(dir))
                     continue;
 
-                var child = BuildTree(dir, allFiles, allArtifacts, traversalRoot, progress, updatedYamls);
+                var child = BuildTree(dir, allFiles, allArtifacts, traversalRoot, progress, updatedYamls, cancel);
                 node.Children.Add(child);
             }
 
@@ -271,11 +288,18 @@ public static class DirectoryTraverser
     private static bool NeedsPath(string rootPath, string? current) =>
         string.IsNullOrEmpty(current) || !PreviewGenerator.PreviewFileExists(rootPath, current);
 
-    private static void ExecutePreviewJobs(List<PreviewJob> jobs, dir2site.Models.Dir2SiteModel config, GenerateProgressTracker tracker)
+    private static void ExecutePreviewJobs(List<PreviewJob> jobs, dir2site.Models.Dir2SiteModel config, GenerateProgressTracker tracker, CancellationToken cancel)
     {
         IProgress<string> progress = tracker;
 
-        Parallel.ForEach(jobs, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, job =>
+        // The token goes on the options rather than into the body: Parallel.ForEach then stops
+        // handing out work and waits for what is already running, so a cancelled stage never leaves
+        // a half-written preview behind — each job either ran or didn't.
+        Parallel.ForEach(jobs, new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Environment.ProcessorCount,
+            CancellationToken = cancel,
+        }, job =>
         {
             try
             {

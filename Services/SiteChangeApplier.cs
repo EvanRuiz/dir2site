@@ -117,9 +117,13 @@ public static class SiteChangeApplier
         // rule, and the same reasoning, as pairing a delete against a create in a live batch. Two
         // folders called "1890s" leaving and two arriving has no single right answer, and a move
         // invented here would publish pages at an address the user never chose.
+        // Both sides worked out once. Neither list is touched by the loop, so rebuilding the second
+        // on every pass was the same GroupBy over the same items for the same answer.
+        var wanted = Unique(missing);
+
         foreach (var (name, from) in Unique(unclaimed))
         {
-            if (!Unique(missing).TryGetValue(name, out var to)) continue;
+            if (!wanted.TryGetValue(name, out var to)) continue;
             if (!Contains(siteRoot, from) || !Contains(siteRoot, to)) continue;
             if (Directory.Exists(to) || File.Exists(to)) continue;
             if (IsProtectedUnder(siteRoot, from) || IsProtectedUnder(siteRoot, to)) continue;

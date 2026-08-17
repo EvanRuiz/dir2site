@@ -174,7 +174,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>
     /// Things that didn't stop the site being generated but didn't do what was written either —
     /// a misspelled setting, two folders competing for one address. Kept off the error banner so
-    /// a typo doesn't announce itself as a failed build.
+    /// a typo doesn't announce itself as a failed generate.
     /// </summary>
     private void AppendWarning(string message)
     {
@@ -390,6 +390,19 @@ public partial class MainWindowViewModel : ViewModelBase
     // honoured it; the UI simply never supplied one.
     private CancellationTokenSource? _syncCancellation;
 
+    /// <summary>True while a generate is running, so the UI can offer Cancel.</summary>
+    /// <remarks>
+    /// Its own flag rather than <see cref="IsLoading"/>, which is broader — it is also held by a
+    /// scan, by removing leftovers, and by every sync — so a Cancel bound to it would appear over
+    /// work it cannot stop. This is the sync flag's counterpart and reads the same way.
+    /// </remarks>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelGenerateCommand))]
+    private bool _isGenerating;
+
+    // Non-null only for the duration of a generate.
+    private CancellationTokenSource? _generateCancellation;
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GenerateSiteCommand))]
     [NotifyCanExecuteChangedFor(nameof(ChooseLogoCommand))]
@@ -426,6 +439,13 @@ public partial class MainWindowViewModel : ViewModelBase
     /// belongs in a dialog.
     /// </remarks>
     private bool _siteIsAccountedFor;
+
+    /// <summary>
+    /// Whether the site and the source are believed to agree. Exposed for tests in the manner of
+    /// <see cref="PendingSiteOrphans"/>: it decides whether deletions are carried through or offered,
+    /// so a change that quietly leaves it standing is exactly the kind worth pinning.
+    /// </summary>
+    internal bool SiteIsAccountedFor => _siteIsAccountedFor;
 
     /// <summary>
     /// Whether this view model belongs to a real window, and so should be watching the folder.
@@ -471,6 +491,8 @@ public partial class MainWindowViewModel : ViewModelBase
         _watching = false;
         _sourceWatcher?.Dispose();
         _sourceWatcher = null;
+        _folderWatcher?.Dispose();
+        _folderWatcher = null;
     }
 
     /// <summary>
@@ -500,6 +522,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _sourceWatcher?.Dispose();
         _sourceWatcher = null;
+        _folderWatcher?.Dispose();
+        _folderWatcher = null;
 
         if (!_watching || root == null || !Directory.Exists(root)) return;
 
@@ -508,6 +532,105 @@ public partial class MainWindowViewModel : ViewModelBase
         watcher.Stopped += OnWatchingStopped;
         watcher.Start();
         _sourceWatcher = watcher;
+
+        // Two watchers because they answer different questions and only one of them can. The first
+        // watches inside the project and cannot see the project itself leave; this one watches the
+        // folder above and sees nothing else.
+        var folder = new ProjectFolderWatcher(root);
+        folder.Changed += OnProjectFolderChanged;
+        folder.Start();
+        _folderWatcher = folder;
+    }
+
+    private ProjectFolderWatcher? _folderWatcher;
+
+    /// <summary>
+    /// Puts the question to the user, and returns what they chose.
+    /// </summary>
+    /// <remarks>
+    /// A seam, in the manner of <see cref="AskAboutOrphans"/>: a headless test has no window to
+    /// parent a modal to, so without this the whole question would quietly skip and a test asserting
+    /// that the project followed its folder would pass whether it did or not. The default answers
+    /// nothing, which is what a host with nobody at the keyboard should say.
+    /// </remarks>
+    internal Func<string, string?, Task<ProjectMovedAnswer?>> AskAboutMovedProject { get; set; } =
+        (_, _) => Task.FromResult<ProjectMovedAnswer?>(null);
+
+    /// <summary>
+    /// Reacts to the project folder itself being renamed, moved or deleted.
+    /// </summary>
+    /// <remarks>
+    /// Everything stops first and the question is asked second, in that order. A generate already
+    /// running is working from a tree that no longer describes anything, and every one of the three
+    /// answers makes it wrong — following means a different folder, staying put means a re-read,
+    /// closing means no folder at all. Letting it finish would write a site for a project that has
+    /// moved out from under it, and then report success.
+    /// </remarks>
+    private void OnProjectFolderChanged(object? sender, ProjectFolderEvent change) =>
+        Dispatcher.UIThread.Post(async () =>
+        {
+            var was = DirectoryRoot;
+            if (was == null) return;
+
+            CancelGenerateCommand.Execute(null);
+            _syncCancellation?.Cancel();
+
+            switch (await AskAboutMovedProject(was, change.NewPath))
+            {
+                case ProjectMovedAnswer.Follow when change.NewPath is { } moved:
+                    // Setting the root is the whole move: it restarts both watchers and forgets what
+                    // was known about the old path, which is right — none of it describes the folder
+                    // we are now looking at.
+                    DirectoryRoot = moved;
+                    StatusText = $"Now working on {Path.GetFileName(moved)}";
+                    await LoadDirectory();
+                    break;
+
+                case ProjectMovedAnswer.StayedPut:
+                    // The dialog only returns this once it has seen the folder back, so the watchers
+                    // can be put on it again — but nothing is rebuilt. Coming back is not a request.
+                    //
+                    // Restart rather than re-arm, which is the difference between resuming a watch
+                    // and opening a project, and this is the second. The folder was away, and away
+                    // is a window nothing was watching: on macOS a watcher whose root goes raises no
+                    // error and delivers nothing, so a photo deleted while it was gone leaves no
+                    // trace at all. Keeping the change list and the belief that the site is
+                    // accounted for would let the next run narrow against an account that stops
+                    // describing the folder part way through — and leave a card pointing at a page
+                    // the sweep then offers to delete.
+                    RestartSourceWatcher(was);
+                    StatusText = "Project folder is back";
+                    await LoadDirectory();
+                    break;
+
+                case ProjectMovedAnswer.Close:
+                    CloseProject();
+                    break;
+
+                default:
+                    // Dismissed without answering. The folder is still gone, so the one thing that
+                    // must not carry on is the part that works unattended.
+                    AutoGenerate = false;
+                    StatusText = "Project folder not found";
+                    break;
+            }
+        });
+
+    /// <summary>
+    /// Lets the project go and returns to the launch screen.
+    /// </summary>
+    /// <remarks>
+    /// Clearing the root is what the window watches to decide between the welcome panel and the
+    /// project, so this is the whole of it — and it takes the watchers, the change list and the
+    /// leftovers with it through <see cref="OnDirectoryRootChanged"/>.
+    /// </remarks>
+    private void CloseProject()
+    {
+        AutoGenerate = false;
+        DirectoryRoot = null;
+        DirItems.Clear();
+        Dir2SiteConfig = null;
+        StatusText = "Project closed";
     }
 
     /// <summary>
@@ -1167,11 +1290,16 @@ public partial class MainWindowViewModel : ViewModelBase
         //
         // No config *save* here. It was a leftover from when Generate was the only thing that ever
         // wrote dir2site.yaml; every mutation of the model now saves as it happens, through
-        // OnConfigEdited. Keeping it meant a build wrote into the folder it had just been asked to
-        // build from — which under auto-generate is the watcher's next change, and the next build.
+        // OnConfigEdited. Keeping it meant a generate wrote into the folder it had just been asked to
+        // generate from — which under auto-generate is the watcher's next change, and the next generate.
         var config = Dir2SiteConfig;
 
+        _generateCancellation?.Dispose();
+        _generateCancellation = new CancellationTokenSource();
+        var cancel = _generateCancellation.Token;
+
         IsLoading = true;
+        IsGenerating = true;
         GenerateCounters = string.Empty;
 
         // Every stage reports through the one tracker, so the message line and the counter line
@@ -1192,19 +1320,20 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 var files     = new List<string>();
                 var artifacts = new List<string>();
-                return DirectoryTraverser.BuildTree(DirectoryRoot!, files, artifacts, tracker, updatedYamls);
-            });
+                return DirectoryTraverser.BuildTree(
+                    DirectoryRoot!, files, artifacts, tracker, updatedYamls, cancel);
+            }, cancel);
             ReportUpdatedYamls(updatedYamls);
 
             // The scan above is the freshest picture of the project there is, so the tree on screen
-            // should be it. Until now the result was used for the build and then dropped, leaving
+            // should be it. Until now the result was used for the generate and then dropped, leaving
             // the panel showing whatever the folder looked like when it was first opened — so a
             // file added since, or a yaml fixed to clear an error, stayed invisible until the user
             // re-picked the same folder from the file dialog.
             DirItems.Clear();
             DirItems.Add(freshRoot);
 
-            // Carry moves and deletions through to _site before anything is written, so the build
+            // Carry moves and deletions through to _site before anything is written, so the generate
             // below runs over a tree that is already in the right shape. Left until afterwards, a
             // moved folder shows up as pages at a new address and unaccounted-for files at the old
             // one, and the user gets asked to confirm deleting content they never deleted.
@@ -1214,17 +1343,30 @@ public partial class MainWindowViewModel : ViewModelBase
             // With the watcher running these were already taken away as they happened, so a run
             // that finds any here has been out of the loop for something.
             if (!_siteIsAccountedFor)
-                sourceLeftovers = await Task.Run(() => SourceLeftovers.FindAll(DirectoryRoot!));
+                sourceLeftovers = await Task.Run(() => SourceLeftovers.FindAll(DirectoryRoot!), cancel);
 
             // Generate previews first so site settings (PDF resize/quality) affect output
             tracker.Report("Generating previews...");
             var root = freshRoot;
-            await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, tracker));
+            await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, tracker, cancel), cancel);
 
             tracker.Report("Generating site...");
             var scope = _scope;
             result = await Task.Run(() =>
-                SiteGenerator.Generate(DirectoryRoot, root, config, tracker, scope));
+                SiteGenerator.Generate(DirectoryRoot, root, config, tracker, scope, cancel), cancel);
+        }
+        catch (OperationCanceledException)
+        {
+            // Stopping is not failing, so it is not reported as an error — but it does cost the run
+            // its account of the project. ApplySourceChanges has already carried this batch through
+            // to _site and cleared it, and the pages it explains were only partly written, so the
+            // site and the source no longer agree in any way this run can describe. Saying so sends
+            // the next run down the conservative path, which is the honest state to be in.
+            _siteIsAccountedFor = false;
+            IsLoading = false;
+            IsGenerating = false;
+            StatusText = "Generate cancelled";
+            return;
         }
         catch (Exception ex)
         {
@@ -1233,12 +1375,14 @@ public partial class MainWindowViewModel : ViewModelBase
             // uishable from a hang, and the scan and preview stages both touch every file in the
             // project, which is where a locked or unreadable one shows up.
             IsLoading = false;
+            IsGenerating = false;
             StatusText = "Generate failed";
             AppendError(ex.Message);
             return;
         }
 
         IsLoading = false;
+        IsGenerating = false;
         StatusText = result.Summary;
         // Straight from the tracker: reports reach the UI through a Progress<T> post, so the last
         // one can still be in flight and would otherwise overwrite the final line a moment later.
@@ -1537,6 +1681,23 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     private bool CanCancelSync() => IsSyncing;
+
+    /// <summary>
+    /// Stops the generate in progress.
+    /// </summary>
+    /// <remarks>
+    /// Worth having on its own terms — a large project takes a while and there was no way out of it
+    /// — and necessary now that generates start unbidden: auto-generate runs one whenever the folder
+    /// changes, so the moment to stop is no longer a moment the user chose.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanCancelGenerate))]
+    private void CancelGenerate()
+    {
+        StatusText = "Cancelling…";
+        _generateCancellation?.Cancel();
+    }
+
+    private bool CanCancelGenerate() => IsGenerating;
 
     private bool CanSync() => BlockedReason() == null;
 

@@ -110,6 +110,47 @@ public static class PreviewGenerator
     }
 
     /// <summary>
+    /// Whether a derived file has to be made: it isn't there, or the source has moved on since.
+    /// </summary>
+    /// <remarks>
+    /// The question every generator here asks before writing, and the one several of them used to
+    /// ask as "is it there". <see cref="DirectoryTraverser"/> decides whether an artifact needs
+    /// visiting on this same rule, so a job that answered a narrower one was enqueued for work it
+    /// then declined to do — and did nothing, on every run, for as long as the project existed.
+    /// </remarks>
+    internal static bool Stale(string derived, string source) =>
+        !File.Exists(derived) || IsOlderThan(derived, source);
+
+    /// <summary>
+    /// Makes an artifact's <c>.dir2site</c> folder — and refuses to make the artifact's own folder,
+    /// or the project, along with it. Answers false when the artifact has gone.
+    /// </summary>
+    /// <remarks>
+    /// <c>Directory.CreateDirectory</c> is <c>mkdir -p</c>, and this stage only ever means
+    /// <c>mkdir</c>. It matters because previews run unattended and in parallel: a folder renamed
+    /// while a generate is under way leaves a hundred jobs mid-flight, and each one rebuilt every
+    /// missing segment on the way to its own output — resurrecting the project as a shell holding
+    /// nothing but hidden preview directories.
+    ///
+    /// The guard is on the <em>source file</em>, not on the folder it sits in, and that is the whole
+    /// of it. Guarding the folder looks equivalent and isn't: it is a check followed by a create, so
+    /// the first job to win the race fabricates the folder for everyone, and every job behind it
+    /// then finds the folder present and carries on. One winner unblocks the rest, which is why the
+    /// folder came back full of preview directories rather than not at all. Nothing recreates the
+    /// source file, so asking after it cannot cascade.
+    ///
+    /// Cancelling does not cover this either. The jobs are already running when the folder goes, and
+    /// the token stops the ones that haven't started rather than the ones that have.
+    /// </remarks>
+    internal static bool TryCreatePreviewDir(string sourceFile, params string[] directories)
+    {
+        if (!File.Exists(sourceFile)) return false;
+
+        foreach (var directory in directories) Directory.CreateDirectory(directory);
+        return true;
+    }
+
+    /// <summary>
     /// Generates preview, preview-large, and full-resolution web WebP images into the .dir2site mirror tree.
     /// Returns (previewFileName, previewLargeFileName, imageFileName), or null if generation was skipped/failed.
     /// </summary>
@@ -125,7 +166,7 @@ public static class PreviewGenerator
         var stem = Path.GetFileNameWithoutExtension(sourceFile);
 
         var dir2site = Path.GetFullPath(Path.Combine(fileDir, ".dir2site", stem));
-        Directory.CreateDirectory(dir2site);
+        if (!TryCreatePreviewDir(sourceFile, dir2site)) return null;
 
         var previewFile      = $"preview-{stem}.webp";
         var previewLargeFile = $"preview-lg-{stem}.webp";
@@ -141,19 +182,27 @@ public static class PreviewGenerator
 
         var fileName = Path.GetFileName(sourceFile);
 
-        if (!File.Exists(previewPath))
+        // Missing or older than the photo, not merely missing. Dropping a corrected scan over the
+        // old one under the same name is the ordinary way to replace a photo, and existence alone
+        // kept every derived file from the picture that used to be there — including
+        // {stem}_q90.webp, which is what the viewer displays, so the wrong picture was published
+        // rather than merely a wrong thumbnail.
+        //
+        // It never settled either: the survey enqueues this artifact for exactly this reason, and
+        // the job then did nothing, so the same work was proposed and counted on every single run.
+        if (Stale(previewPath, sourceFile))
         {
             progress?.Report($"Generating preview: {fileName}");
             GenerateThumbnail(sourceFile, previewPath, 800, 600);
         }
 
-        if (!File.Exists(previewLargePath))
+        if (Stale(previewLargePath, sourceFile))
         {
             progress?.Report($"Generating preview (large): {fileName}");
             GenerateThumbnail(sourceFile, previewLargePath, 1200, 900);
         }
 
-        if (!File.Exists(imagePath))
+        if (Stale(imagePath, sourceFile))
         {
             progress?.Report($"Generating web image: {fileName}");
             GenerateWebImage(sourceFile, imagePath);
@@ -189,7 +238,7 @@ public static class PreviewGenerator
         var stem = Path.GetFileNameWithoutExtension(sourceFile);
 
         var dir2site = Path.GetFullPath(Path.Combine(fileDir, ".dir2site", stem));
-        Directory.CreateDirectory(dir2site);
+        if (!TryCreatePreviewDir(sourceFile, dir2site)) return null;
 
         var previewPath      = Path.Combine(dir2site, $"preview-{stem}.webp");
         var previewLargePath = Path.Combine(dir2site, $"preview-lg-{stem}.webp");
@@ -259,8 +308,7 @@ public static class PreviewGenerator
         var stem     = Path.GetFileNameWithoutExtension(sourceFile);
         var dir2site = Path.GetFullPath(Path.Combine(fileDir, ".dir2site", stem));
         var pagesDir = Path.Combine(dir2site, $"{stem}_pages");
-        Directory.CreateDirectory(dir2site);
-        Directory.CreateDirectory(pagesDir);
+        if (!TryCreatePreviewDir(sourceFile, dir2site, pagesDir)) return null;
 
         var previewFile      = $"preview-{stem}.webp";
         var previewLargeFile = $"preview-lg-{stem}.webp";
@@ -275,10 +323,9 @@ public static class PreviewGenerator
         // Everything already rendered, and rendered from this PDF rather than an earlier one that
         // had the same name. Without the second half, replacing a document in place kept the old
         // document's page images — the whole reader would still be showing the previous version.
-        if (File.Exists(previewPath) && File.Exists(previewLargePath) && File.Exists(bookReaderJsonPath)
-            && !IsOlderThan(previewPath, sourceFile)
-            && !IsOlderThan(previewLargePath, sourceFile)
-            && !IsOlderThan(bookReaderJsonPath, sourceFile))
+        if (!Stale(previewPath, sourceFile)
+            && !Stale(previewLargePath, sourceFile)
+            && !Stale(bookReaderJsonPath, sourceFile))
             return (previewFileName, previewLargeFileName);
 
         var fileName    = Path.GetFileName(sourceFile);
@@ -311,7 +358,7 @@ public static class PreviewGenerator
 
             // Same reasoning as the short-circuit above, one page at a time: a page image older than
             // the PDF it came from is a page of the document that used to be here.
-            if (!File.Exists(pagePath) || IsOlderThan(pagePath, sourceFile))
+            if (Stale(pagePath, sourceFile))
             {
                 if (keepJpeg)
                 {

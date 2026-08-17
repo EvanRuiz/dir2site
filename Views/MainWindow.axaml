@@ -70,26 +70,48 @@
         <Border DockPanel.Dock="Bottom"
                 Background="#1A1A1A"
                 Padding="8,4">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <ProgressBar IsIndeterminate="True"
-                             IsVisible="{Binding IsLoading}"
-                             Width="120"
-                             Height="8"
-                             VerticalAlignment="Center"/>
-                <StackPanel Spacing="1" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StatusText}"
-                               FontSize="12"
-                               Foreground="#E0E0E0"
-                               TextTrimming="CharacterEllipsis"/>
-                    <!-- The overall view of a generate; absent, and the bar stays one line. -->
-                    <TextBlock x:Name="GenerateCountersText"
-                               Text="{Binding GenerateCounters}"
-                               FontSize="11"
-                               Foreground="#9A9A9A"
-                               TextTrimming="CharacterEllipsis"
-                               IsVisible="{Binding GenerateCounters, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            <DockPanel LastChildFill="True">
+                <!-- Stopping long work lives at one end of the status bar, whatever the work is:
+                     a generate and a deploy are the two things worth waiting on, and looking in two
+                     places for the same verb is its own small friction. They never show together —
+                     a sync can't start while a generate holds IsLoading — so the slot holds one
+                     button at a time and each command stays about its own operation. -->
+                <StackPanel DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+                    <Button x:Name="CancelGenerateButton"
+                            Content="Cancel"
+                            Command="{Binding CancelGenerateCommand}"
+                            IsVisible="{Binding IsGenerating}"
+                            FontSize="11" Padding="6,3"/>
+                    <Button x:Name="CancelSyncButton"
+                            Content="Cancel"
+                            Command="{Binding CancelSyncCommand}"
+                            IsVisible="{Binding IsSyncing}"
+                            FontSize="11" Padding="6,3"/>
                 </StackPanel>
-            </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <ProgressBar IsIndeterminate="True"
+                                 IsVisible="{Binding IsLoading}"
+                                 Width="120"
+                                 Height="8"
+                                 VerticalAlignment="Center"/>
+                    <StackPanel Spacing="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding StatusText}"
+                                   FontSize="12"
+                                   Foreground="#E0E0E0"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <!-- The overall view of a generate; absent, and the bar stays one line. -->
+                        <TextBlock x:Name="GenerateCountersText"
+                                   Text="{Binding GenerateCounters}"
+                                   FontSize="11"
+                                   Foreground="#9A9A9A"
+                                   TextTrimming="CharacterEllipsis"
+                                   IsVisible="{Binding GenerateCounters, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    </StackPanel>
+                </StackPanel>
+            </DockPanel>
         </Border>
 
         <!-- Toolbar: always visible -->
@@ -508,11 +530,8 @@
                                             Command="{Binding VerifyAndRepairCommand}"
                                             ToolTip.Tip="{Binding SyncBlockedReason}"
                                             FontSize="11" Padding="6,3"/>
-                                    <!-- Replaces nothing; appears only while a sync is actually running. -->
-                                    <Button Content="Cancel"
-                                            Command="{Binding CancelSyncCommand}"
-                                            IsVisible="{Binding IsSyncing}"
-                                            FontSize="11" Padding="6,3"/>
+                                    <!-- Cancel used to sit here. It is in the status bar now, beside
+                                         the generate's, so there is one place that stops long work. -->
                                     <CheckBox Content="Force full re-upload"
                                               IsChecked="{Binding ForceFullReupload}"
                                               FontSize="11" VerticalAlignment="Center"/>

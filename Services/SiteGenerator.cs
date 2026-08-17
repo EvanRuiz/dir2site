@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media;
 using Avalonia.Platform;
@@ -27,7 +28,7 @@ public static class SiteGenerator
     /// What happened, what failed, and what merely didn't do anything. Warnings are kept apart
     /// from errors because a misspelled setting or two folders competing for one address leave a
     /// site that generated perfectly well — reporting them as errors would make every typo read
-    /// like a failed build. Orphans are files the site no longer has any reason to contain; they
+    /// like a failed generate. Orphans are files the site no longer has any reason to contain; they
     /// are reported rather than deleted, because generating happens off the UI thread and taking
     /// files away is the user's call.
     /// </returns>
@@ -37,14 +38,32 @@ public static class SiteGenerator
         DirectoryTreeItem rootItem,
         Dir2SiteModel config,
         GenerateProgressTracker? progressTracker = null,
-        RenderScope? scope = null)
+        RenderScope? scope = null,
+        CancellationToken cancel = default)
     {
         // A no-op tracker rather than null: `tracker?.Method(Write(...))` would skip the write
         // itself, which is a silent and very confusing way to generate nothing.
         var tracker = progressTracker ?? new GenerateProgressTracker();
         IProgress<string> progress = tracker;
 
+        // Cancellation throws out of here rather than returning what it managed, and that is the
+        // whole safety argument for it. The sweep below offers for deletion everything in _site the
+        // ledger doesn't claim — and a run stopped half way has a ledger naming only the pages it
+        // reached, so returning early would propose deleting most of the site. Throwing means the
+        // sweep is never reached at all, which is a stronger guarantee than remembering not to run it.
+        cancel.ThrowIfCancellationRequested();
+
         var siteRoot = Path.Combine(directoryRoot, "_site");
+
+        // Making _site inside a project that exists is right; making the project is never right, and
+        // CreateDirectory does not know the difference — it builds every missing segment on the way.
+        // So a folder that went between the caller's check and this line came back as a phantom
+        // holding a whole site, reported as a success. Cancelling doesn't cover it either: the generate
+        // is seconds long and the check that guards its start cannot speak for its middle.
+        if (!Directory.Exists(directoryRoot))
+            throw new DirectoryNotFoundException(
+                $"{directoryRoot} is no longer there, so nothing was written.");
+
         Directory.CreateDirectory(siteRoot);
         var ledger = new SiteLedger(siteRoot);
         scope ??= RenderScope.All;
@@ -80,7 +99,7 @@ public static class SiteGenerator
         var footerColumns = BuildFooterColumns(config, directoryRoot, rootItem, warnings);
         GeneratePage(rootItem, siteRoot, directoryRoot, config, menuFolders, 0,
             [], templates, progress, errors, warnings, tracker, homePromotions, ledger,
-            footerColumns, colors, scope, siteRoot);
+            footerColumns, colors, scope, siteRoot, cancel);
 
         var copyJobs = new List<CopyJob>();
         CollectFolderPreviewCopyJobs(rootItem, directoryRoot, siteRoot, copyJobs, ledger);
@@ -90,6 +109,8 @@ public static class SiteGenerator
         tracker.SetFileTotal(copyJobs.Count);
         foreach (var job in copyJobs)
         {
+            cancel.ThrowIfCancellationRequested();
+
             // A file that won't copy is reported and the rest still go. Letting it escape took the
             // whole generate down with it — and since the caller resets its "busy" flag after the
             // await, the app was left spinning with every button disabled and nothing said. Locked
@@ -168,8 +189,14 @@ public static class SiteGenerator
         List<List<FooterLink>> footerColumns,
         SiteColors colors,
         RenderScope scope,
-        string siteRoot)
+        string siteRoot,
+        CancellationToken cancel)
     {
+        // Once per folder and once per artifact below, which bounds how long a cancel waits at
+        // roughly one page. Anything finer would mean checking inside a render that is already
+        // writing, and a page half in the file is worse than a page not started.
+        cancel.ThrowIfCancellationRequested();
+
         // The site root always gets a home page, however little is in it.
         if (depth > 0 && SoleArtifact(node) is { } soleArtifact)
         {
@@ -223,7 +250,7 @@ public static class SiteGenerator
             var childOutputDir = Path.Combine(outputDir, PublicName(child.Name));
             GeneratePage(child, childOutputDir, directoryRoot, config, menuFolders,
                 depth + 1, childAncestors, templates, progress, errors, warnings, tracker,
-                homePromotions, ledger, footerColumns, colors, scope, siteRoot);
+                homePromotions, ledger, footerColumns, colors, scope, siteRoot, cancel);
         }
 
         // Videos play inline on this page, so they get no page of their own — generating one would
@@ -246,6 +273,8 @@ public static class SiteGenerator
 
         foreach (var child in artifactChildren)
         {
+            cancel.ThrowIfCancellationRequested();
+
             try
             {
                 // Off the chain, both ends are null and the page reads that as no arrows at all —

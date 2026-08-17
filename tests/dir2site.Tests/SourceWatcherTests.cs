@@ -25,6 +25,17 @@ namespace dir2site.Tests;
 /// and pinning the batch count would fail on that difference rather than on a bug. What is left is
 /// robust: either the event arrives and the assertion is exact, or nothing arrives and the test
 /// times out.
+///
+/// A race is <em>caused</em> here, never waited for — worth saying plainly, because the obvious way
+/// round is the wrong one and was tried first. Where the bug and the correct behaviour make the same
+/// observation, no assertion can separate them: a delivery arriving about the moment <c>Dispose</c>
+/// returns is either a missing guard or a settle that legitimately started earlier. A test that hopes
+/// to land in that window is measuring how loaded the machine is, and the first attempt at
+/// <see cref="ASettleInterruptedByDisposal_DeliversNothing"/> proved it — sixty attempts per run to
+/// hit the window at all, then three red CI runs, every one of them the code working. Reach for a
+/// seam like <c>SourceWatcher.SettlingForTests</c> so the interleaving is chosen rather than won. If
+/// no seam is possible, verify the guard once by deleting it and watching a throwaway test fail, then
+/// keep the guard and the reasoning and leave the suite out of it.
 /// </remarks>
 public class SourceWatcherTests : IDisposable
 {
@@ -223,6 +234,34 @@ public class SourceWatcherTests : IDisposable
         Assert.True(true);
     }
 
+    // ---- shutting down safely ---------------------------------------------
+
+    [Fact]
+    public void ASettleInterruptedByDisposal_DeliversNothing()
+    {
+        // Disposing does not wait for a settle already running, so one can be part-way through when
+        // the watcher is let go. That matters because the caller disposes when the project changes,
+        // having just cleared the lists the batch would land in — so the previous project's paths
+        // were carried through in the new one: sidecars moved and preview folders deleted in a
+        // project nobody had open.
+        //
+        // The disposal is placed inside the window rather than raced into it, so this asserts the
+        // guard rather than the speed of the machine.
+        using var watcher = new SourceWatcher(_root, DebounceMs);
+
+        var delivered = 0;
+        watcher.Changed += (_, _) => Interlocked.Increment(ref delivered);
+        watcher.SettlingForTests = () => watcher.Dispose();
+
+        watcher.Start();
+        Thread.Sleep(200);
+
+        MakeFile("Photos/Portrait.jpg");
+        Thread.Sleep(DebounceMs * 10);
+
+        Assert.Equal(0, delivered);
+    }
+
     // ---- what must stay silent -------------------------------------------
 
     [Fact]
@@ -238,7 +277,13 @@ public class SourceWatcherTests : IDisposable
                 Path_("Photos", ".dir2site", "Portrait", "preview-Portrait.webp"), "fake"),
             expectSomething: false);
 
-        Assert.Empty(changes);
+        // Nothing from .dir2site, rather than nothing at all. The setup above writes Portrait.jpg,
+        // which is watchable, and FSEvents reports a path's accumulated history rather than only
+        // what happened after the watch began — so on a loaded machine those setup writes arrive
+        // inside the observation window and an empty-collection assertion fails on them. That is
+        // the test's own noise, not the thing it exists to catch: what must never be reported is a
+        // write the generator makes to its own output.
+        Assert.DoesNotContain(changes, c => c.Path.Contains(".dir2site", StringComparison.Ordinal));
     }
 
     [Fact]
