@@ -27,7 +27,7 @@ namespace dir2site.ViewModels;
 
 /// <summary>
 /// How an update check went. "Nothing to install" has three quite different causes — already
-/// current, uninstallable dev build, and couldn't reach GitHub — and a user who pressed a button
+/// current, uninstallable dev generate, and couldn't reach GitHub — and a user who pressed a button
 /// deserves to be told which.
 /// </summary>
 public enum UpdateCheckResult { Available, UpToDate, NotSupported, Failed }
@@ -41,7 +41,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly RecentProjectsStore _recentProjects = RecentProjectsStore.Default;
 
     // Null when Velopack isn't initialised — a test host, or anything that didn't run
-    // VelopackApp.Build(). Auto-update is then simply unavailable, rather than the whole view
+    // VelopackApp.Generate(). Auto-update is then simply unavailable, rather than the whole view
     // model being impossible to construct.
     private readonly UpdateManager? _updateManager = TryCreateUpdateManager();
     private UpdateInfo? _pendingUpdate;
@@ -83,7 +83,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _statusText = _updateManager is { IsInstalled: true }
             ? $"v{_updateManager.CurrentVersion}"
-            : "Development Build";
+            : "Development Generate";
         // The property-changed handlers only fire on change, so without this the very first state
         // — no project open — would show disabled buttons and no explanation.
         RefreshSyncBlockedReason();
@@ -174,7 +174,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>
     /// Things that didn't stop the site being generated but didn't do what was written either —
     /// a misspelled setting, two folders competing for one address. Kept off the error banner so
-    /// a typo doesn't announce itself as a failed build.
+    /// a typo doesn't announce itself as a failed generate.
     /// </summary>
     private void AppendWarning(string message)
     {
@@ -390,6 +390,19 @@ public partial class MainWindowViewModel : ViewModelBase
     // honoured it; the UI simply never supplied one.
     private CancellationTokenSource? _syncCancellation;
 
+    /// <summary>True while a generate is running, so the UI can offer Cancel.</summary>
+    /// <remarks>
+    /// Its own flag rather than <see cref="IsLoading"/>, which is broader — it is also held by a
+    /// scan, by removing leftovers, and by every sync — so a Cancel bound to it would appear over
+    /// work it cannot stop. This is the sync flag's counterpart and reads the same way.
+    /// </remarks>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelGenerateCommand))]
+    private bool _isGenerating;
+
+    // Non-null only for the duration of a generate.
+    private CancellationTokenSource? _generateCancellation;
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GenerateSiteCommand))]
     [NotifyCanExecuteChangedFor(nameof(ChooseLogoCommand))]
@@ -428,6 +441,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _siteIsAccountedFor;
 
     /// <summary>
+    /// Whether the site and the source are believed to agree. Exposed for tests in the manner of
+    /// <see cref="PendingSiteOrphans"/>: it decides whether deletions are carried through or offered,
+    /// so a change that quietly leaves it standing is exactly the kind worth pinning.
+    /// </summary>
+    internal bool SiteIsAccountedFor => _siteIsAccountedFor;
+
+    /// <summary>
     /// Whether this view model belongs to a real window, and so should be watching the folder.
     /// </summary>
     /// <remarks>
@@ -463,7 +483,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// A watcher is disposed when the project changes, but nothing said what happens when the view
     /// model itself is finished with — so one was left running on the last project opened, holding a
     /// handle and posting to a dispatcher that may be going away. Harmless enough in an app that is
-    /// quitting anyway; not harmless in a test, which builds these by the dozen against temp folders
+    /// quitting anyway; not harmless in a test, which generates these by the dozen against temp folders
     /// it then deletes.
     /// </remarks>
     public void StopWatching()
@@ -921,7 +941,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch
         {
-            // A shortcut list that won't build is not worth an error banner on startup.
+            // A shortcut list that won't generate is not worth an error banner on startup.
         }
     }
 
@@ -1096,7 +1116,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// become defaults named after the folder. Touch any setting once the drive is back and those
     /// defaults are what reaches the real file.
     ///
-    /// A generate does the opposite and builds the folder back. <c>SiteGenerator.Generate</c> opens
+    /// A generate does the opposite and generates the folder back. <c>SiteGenerator.Generate</c> opens
     /// with a <c>CreateDirectory</c> of <c>_site</c>, which creates every missing segment on the way
     /// — so Generate left a phantom project folder at the old path holding a complete site, and
     /// reported success directly underneath the error saying nothing had been changed.
@@ -1162,16 +1182,21 @@ public partial class MainWindowViewModel : ViewModelBase
         if (DirectoryRoot == null || DirItems.Count == 0 || Dir2SiteConfig == null) return;
         if (!ProjectFolderIsThere()) return;
 
-        // Read once, so the background stages below all build from the same config even if the
+        // Read once, so the background stages below all generate from the same config even if the
         // settings panel is edited while they run.
         //
         // No config *save* here. It was a leftover from when Generate was the only thing that ever
         // wrote dir2site.yaml; every mutation of the model now saves as it happens, through
-        // OnConfigEdited. Keeping it meant a build wrote into the folder it had just been asked to
-        // build from — which under auto-generate is the watcher's next change, and the next build.
+        // OnConfigEdited. Keeping it meant a generate wrote into the folder it had just been asked to
+        // generate from — which under auto-generate is the watcher's next change, and the next generate.
         var config = Dir2SiteConfig;
 
+        _generateCancellation?.Dispose();
+        _generateCancellation = new CancellationTokenSource();
+        var cancel = _generateCancellation.Token;
+
         IsLoading = true;
+        IsGenerating = true;
         GenerateCounters = string.Empty;
 
         // Every stage reports through the one tracker, so the message line and the counter line
@@ -1192,19 +1217,20 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 var files     = new List<string>();
                 var artifacts = new List<string>();
-                return DirectoryTraverser.BuildTree(DirectoryRoot!, files, artifacts, tracker, updatedYamls);
-            });
+                return DirectoryTraverser.BuildTree(
+                    DirectoryRoot!, files, artifacts, tracker, updatedYamls, cancel);
+            }, cancel);
             ReportUpdatedYamls(updatedYamls);
 
             // The scan above is the freshest picture of the project there is, so the tree on screen
-            // should be it. Until now the result was used for the build and then dropped, leaving
+            // should be it. Until now the result was used for the generate and then dropped, leaving
             // the panel showing whatever the folder looked like when it was first opened — so a
             // file added since, or a yaml fixed to clear an error, stayed invisible until the user
             // re-picked the same folder from the file dialog.
             DirItems.Clear();
             DirItems.Add(freshRoot);
 
-            // Carry moves and deletions through to _site before anything is written, so the build
+            // Carry moves and deletions through to _site before anything is written, so the generate
             // below runs over a tree that is already in the right shape. Left until afterwards, a
             // moved folder shows up as pages at a new address and unaccounted-for files at the old
             // one, and the user gets asked to confirm deleting content they never deleted.
@@ -1214,17 +1240,30 @@ public partial class MainWindowViewModel : ViewModelBase
             // With the watcher running these were already taken away as they happened, so a run
             // that finds any here has been out of the loop for something.
             if (!_siteIsAccountedFor)
-                sourceLeftovers = await Task.Run(() => SourceLeftovers.FindAll(DirectoryRoot!));
+                sourceLeftovers = await Task.Run(() => SourceLeftovers.FindAll(DirectoryRoot!), cancel);
 
             // Generate previews first so site settings (PDF resize/quality) affect output
             tracker.Report("Generating previews...");
             var root = freshRoot;
-            await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, tracker));
+            await Task.Run(() => DirectoryTraverser.GeneratePreviews(root, config, tracker, cancel), cancel);
 
             tracker.Report("Generating site...");
             var scope = _scope;
             result = await Task.Run(() =>
-                SiteGenerator.Generate(DirectoryRoot, root, config, tracker, scope));
+                SiteGenerator.Generate(DirectoryRoot, root, config, tracker, scope, cancel), cancel);
+        }
+        catch (OperationCanceledException)
+        {
+            // Stopping is not failing, so it is not reported as an error — but it does cost the run
+            // its account of the project. ApplySourceChanges has already carried this batch through
+            // to _site and cleared it, and the pages it explains were only partly written, so the
+            // site and the source no longer agree in any way this run can describe. Saying so sends
+            // the next run down the conservative path, which is the honest state to be in.
+            _siteIsAccountedFor = false;
+            IsLoading = false;
+            IsGenerating = false;
+            StatusText = "Generate cancelled";
+            return;
         }
         catch (Exception ex)
         {
@@ -1233,12 +1272,14 @@ public partial class MainWindowViewModel : ViewModelBase
             // uishable from a hang, and the scan and preview stages both touch every file in the
             // project, which is where a locked or unreadable one shows up.
             IsLoading = false;
+            IsGenerating = false;
             StatusText = "Generate failed";
             AppendError(ex.Message);
             return;
         }
 
         IsLoading = false;
+        IsGenerating = false;
         StatusText = result.Summary;
         // Straight from the tracker: reports reach the UI through a Progress<T> post, so the last
         // one can still be in flight and would otherwise overwrite the final line a moment later.
@@ -1538,6 +1579,23 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private bool CanCancelSync() => IsSyncing;
 
+    /// <summary>
+    /// Stops the generate in progress.
+    /// </summary>
+    /// <remarks>
+    /// Worth having on its own terms — a large project takes a while and there was no way out of it
+    /// — and necessary now that generates start unbidden: auto-generate runs one whenever the folder
+    /// changes, so the moment to stop is no longer a moment the user chose.
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanCancelGenerate))]
+    private void CancelGenerate()
+    {
+        StatusText = "Cancelling…";
+        _generateCancellation?.Cancel();
+    }
+
+    private bool CanCancelGenerate() => IsGenerating;
+
     private bool CanSync() => BlockedReason() == null;
 
     /// <summary>
@@ -1577,7 +1635,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <remarks>
     /// Auto-generate takes the Generate button away, so "you'll be asked next time you generate" has
     /// nowhere to land. Deploy is the better moment anyway: a leftover in <c>_site</c> matters
-    /// precisely because it gets published — the sync walks that folder to build its manifest, so a
+    /// precisely because it gets published — the sync walks that folder to generate its manifest, so a
     /// file sitting there is uploaded and served exactly like a real page. Until then it is only
     /// visible to the local preview server, which is why holding it costs nothing.
     ///
@@ -1878,7 +1936,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             UpdateCheckResult.Available => $"Update available: v{UpdateVersion}.",
             UpdateCheckResult.UpToDate => $"Up to date (v{_updateManager?.CurrentVersion}).",
-            UpdateCheckResult.NotSupported => "This is a development build — it doesn't update itself.",
+            UpdateCheckResult.NotSupported => "This is a development generate — it doesn't update itself.",
             _ => "Couldn't check for updates — no connection, or no release to compare against.",
         };
     }

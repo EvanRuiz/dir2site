@@ -50,6 +50,11 @@ public class DeployRowTests : IDisposable
     private static Button Button(Visual root, string content) =>
         root.GetVisualDescendants().OfType<Button>().First(b => (b.Content as string) == content);
 
+    // By name, because "Cancel" is now two buttons sharing one slot in the status bar — one for a
+    // generate and one for a deploy — and matching on the label would find whichever came first.
+    private static Button Named(Visual root, string name) =>
+        root.GetVisualDescendants().OfType<Button>().First(b => b.Name == name);
+
     private static TextBlock? Label(Visual root, string text) =>
         root.GetVisualDescendants().OfType<TextBlock>().FirstOrDefault(t => t.Text == text);
 
@@ -58,7 +63,7 @@ public class DeployRowTests : IDisposable
     {
         var (window, vm) = ShowWithProject();
 
-        var cancel = Button(window, "Cancel");
+        var cancel = Named(window, "CancelSyncButton");
         Assert.False(cancel.IsEffectivelyVisible);
 
         vm.IsSyncing = true;
@@ -68,6 +73,35 @@ public class DeployRowTests : IDisposable
         Assert.True(cancel.IsEffectivelyEnabled);   // CanCancelSync follows IsSyncing
     }
 
+    /// <summary>
+    /// The generate's Cancel, in the same slot and answering to its own flag.
+    /// </summary>
+    /// <remarks>
+    /// The two share a place in the status bar deliberately — one bar, one verb, whatever the long
+    /// work is — so what has to be checked is that they don't share a trigger. A generate's Cancel
+    /// appearing over a deploy would offer to stop something it cannot.
+    /// </remarks>
+    [AvaloniaFact]
+    public void GenerateCancel_IsHiddenUntilAGenerateIsRunning()
+    {
+        var (window, vm) = ShowWithProject();
+
+        var cancel = Named(window, "CancelGenerateButton");
+        Assert.False(cancel.IsEffectivelyVisible);
+
+        vm.IsSyncing = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(cancel.IsEffectivelyVisible);
+
+        vm.IsSyncing = false;
+        vm.IsGenerating = true;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(cancel.IsEffectivelyVisible);
+        Assert.True(cancel.IsEffectivelyEnabled);
+        Assert.False(Named(window, "CancelSyncButton").IsEffectivelyVisible);
+    }
+
     [AvaloniaFact]
     public void CancelCommand_RequestsCancellation()
     {
@@ -75,7 +109,7 @@ public class DeployRowTests : IDisposable
         vm.IsSyncing = true;
         Dispatcher.UIThread.RunJobs();
 
-        Button(window, "Cancel").Command!.Execute(null);
+        Named(window, "CancelSyncButton").Command!.Execute(null);
 
         Assert.Equal("Cancelling…", vm.StatusText);
     }
