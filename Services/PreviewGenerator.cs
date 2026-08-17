@@ -40,8 +40,8 @@ public static class PreviewGenerator
     /// The names this class would give an artifact's two thumbnails, relative to its source folder.
     /// </summary>
     /// <remarks>
-    /// Every generator here generates the same pair independently, and
-    /// <see cref="MarkdownPreviewRenderer"/> generates it a fourth time — so this is the one place the
+    /// Every generator here builds the same pair independently, and
+    /// <see cref="MarkdownPreviewRenderer"/> builds it a fourth time — so this is the one place the
     /// convention is written down, and the one place <see cref="IsCanonicalPreview"/> can check
     /// against.
     /// </remarks>

@@ -27,7 +27,7 @@ namespace dir2site.ViewModels;
 
 /// <summary>
 /// How an update check went. "Nothing to install" has three quite different causes — already
-/// current, uninstallable dev generate, and couldn't reach GitHub — and a user who pressed a button
+/// current, uninstallable dev build, and couldn't reach GitHub — and a user who pressed a button
 /// deserves to be told which.
 /// </summary>
 public enum UpdateCheckResult { Available, UpToDate, NotSupported, Failed }
@@ -41,7 +41,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly RecentProjectsStore _recentProjects = RecentProjectsStore.Default;
 
     // Null when Velopack isn't initialised — a test host, or anything that didn't run
-    // VelopackApp.Generate(). Auto-update is then simply unavailable, rather than the whole view
+    // VelopackApp.Build(). Auto-update is then simply unavailable, rather than the whole view
     // model being impossible to construct.
     private readonly UpdateManager? _updateManager = TryCreateUpdateManager();
     private UpdateInfo? _pendingUpdate;
@@ -83,7 +83,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _statusText = _updateManager is { IsInstalled: true }
             ? $"v{_updateManager.CurrentVersion}"
-            : "Development Generate";
+            : "Development Build";
         // The property-changed handlers only fire on change, so without this the very first state
         // — no project open — would show disabled buttons and no explanation.
         RefreshSyncBlockedReason();
@@ -483,7 +483,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// A watcher is disposed when the project changes, but nothing said what happens when the view
     /// model itself is finished with — so one was left running on the last project opened, holding a
     /// handle and posting to a dispatcher that may be going away. Harmless enough in an app that is
-    /// quitting anyway; not harmless in a test, which generates these by the dozen against temp folders
+    /// quitting anyway; not harmless in a test, which builds these by the dozen against temp folders
     /// it then deletes.
     /// </remarks>
     public void StopWatching()
@@ -1044,7 +1044,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch
         {
-            // A shortcut list that won't generate is not worth an error banner on startup.
+            // A shortcut list that won't build is not worth an error banner on startup.
         }
     }
 
@@ -1219,7 +1219,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// become defaults named after the folder. Touch any setting once the drive is back and those
     /// defaults are what reaches the real file.
     ///
-    /// A generate does the opposite and generates the folder back. <c>SiteGenerator.Generate</c> opens
+    /// A generate does the opposite and builds the folder back. <c>SiteGenerator.Generate</c> opens
     /// with a <c>CreateDirectory</c> of <c>_site</c>, which creates every missing segment on the way
     /// — so Generate left a phantom project folder at the old path holding a complete site, and
     /// reported success directly underneath the error saying nothing had been changed.
@@ -1285,7 +1285,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (DirectoryRoot == null || DirItems.Count == 0 || Dir2SiteConfig == null) return;
         if (!ProjectFolderIsThere()) return;
 
-        // Read once, so the background stages below all generate from the same config even if the
+        // Read once, so the background stages below all build from the same config even if the
         // settings panel is edited while they run.
         //
         // No config *save* here. It was a leftover from when Generate was the only thing that ever
@@ -1738,7 +1738,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <remarks>
     /// Auto-generate takes the Generate button away, so "you'll be asked next time you generate" has
     /// nowhere to land. Deploy is the better moment anyway: a leftover in <c>_site</c> matters
-    /// precisely because it gets published — the sync walks that folder to generate its manifest, so a
+    /// precisely because it gets published — the sync walks that folder to build its manifest, so a
     /// file sitting there is uploaded and served exactly like a real page. Until then it is only
     /// visible to the local preview server, which is why holding it costs nothing.
     ///
@@ -2039,7 +2039,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             UpdateCheckResult.Available => $"Update available: v{UpdateVersion}.",
             UpdateCheckResult.UpToDate => $"Up to date (v{_updateManager?.CurrentVersion}).",
-            UpdateCheckResult.NotSupported => "This is a development generate — it doesn't update itself.",
+            UpdateCheckResult.NotSupported => "This is a development build — it doesn't update itself.",
             _ => "Couldn't check for updates — no connection, or no release to compare against.",
         };
     }

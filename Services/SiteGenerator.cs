@@ -56,7 +56,7 @@ public static class SiteGenerator
         var siteRoot = Path.Combine(directoryRoot, "_site");
 
         // Making _site inside a project that exists is right; making the project is never right, and
-        // CreateDirectory does not know the difference — it generates every missing segment on the way.
+        // CreateDirectory does not know the difference — it builds every missing segment on the way.
         // So a folder that went between the caller's check and this line came back as a phantom
         // holding a whole site, reported as a success. Cancelling doesn't cover it either: the generate
         // is seconds long and the check that guards its start cannot speak for its middle.
@@ -68,7 +68,7 @@ public static class SiteGenerator
         var ledger = new SiteLedger(siteRoot);
         scope ??= RenderScope.All;
 
-        // Only ever read to generate the menu — page generation walks each node's own children — so the
+        // Only ever read to build the menu — page generation walks each node's own children — so the
         // '--' folders are dropped here rather than filtered again on every page.
         var menuFolders = rootItem.Children
             .Where(c => c.IsDirectory && !IsUnlisted(c))
@@ -549,7 +549,7 @@ public static class SiteGenerator
     /// The two things an artifact type's page rests on, kept in one table rather than as
     /// <c>type is Photo or Deepzoom</c> spelled out wherever either is needed. A type added later
     /// is then a prompt to decide, not a silent inheritance of whatever the fallback happened to
-    /// be — which is what <c>ArtifactPagePolicyTests</c> turns into a failing generate.
+    /// be — which is what <c>ArtifactPagePolicyTests</c> turns into a failing build.
     /// </summary>
     /// <param name="FitsViewport">
     /// The media is sized to what the window has left rather than to itself, so the caption under
