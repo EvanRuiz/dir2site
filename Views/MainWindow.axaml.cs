@@ -42,6 +42,10 @@ public partial class MainWindow : Window
                 // someone answered.
                 viewModel.AskAboutOrphans = async orphans =>
                     await new OrphanFilesView(orphans).ShowDialog<IReadOnlyList<string>?>(this);
+
+                viewModel.AskAboutMovedProject = async (oldPath, newPath) =>
+                    await new ProjectMovedView(oldPath, newPath)
+                        .ShowDialog<ProjectMovedAnswer?>(this);
             }
         };
 

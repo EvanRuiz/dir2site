@@ -40,8 +40,8 @@ public static class PreviewGenerator
     /// The names this class would give an artifact's two thumbnails, relative to its source folder.
     /// </summary>
     /// <remarks>
-    /// Every generator here builds the same pair independently, and
-    /// <see cref="MarkdownPreviewRenderer"/> builds it a fourth time — so this is the one place the
+    /// Every generator here generates the same pair independently, and
+    /// <see cref="MarkdownPreviewRenderer"/> generates it a fourth time — so this is the one place the
     /// convention is written down, and the one place <see cref="IsCanonicalPreview"/> can check
     /// against.
     /// </remarks>
@@ -122,6 +122,35 @@ public static class PreviewGenerator
         !File.Exists(derived) || IsOlderThan(derived, source);
 
     /// <summary>
+    /// Makes an artifact's <c>.dir2site</c> folder — and refuses to make the artifact's own folder,
+    /// or the project, along with it. Answers false when the artifact has gone.
+    /// </summary>
+    /// <remarks>
+    /// <c>Directory.CreateDirectory</c> is <c>mkdir -p</c>, and this stage only ever means
+    /// <c>mkdir</c>. It matters because previews run unattended and in parallel: a folder renamed
+    /// while a generate is under way leaves a hundred jobs mid-flight, and each one rebuilt every
+    /// missing segment on the way to its own output — resurrecting the project as a shell holding
+    /// nothing but hidden preview directories.
+    ///
+    /// The guard is on the <em>source file</em>, not on the folder it sits in, and that is the whole
+    /// of it. Guarding the folder looks equivalent and isn't: it is a check followed by a create, so
+    /// the first job to win the race fabricates the folder for everyone, and every job behind it
+    /// then finds the folder present and carries on. One winner unblocks the rest, which is why the
+    /// folder came back full of preview directories rather than not at all. Nothing recreates the
+    /// source file, so asking after it cannot cascade.
+    ///
+    /// Cancelling does not cover this either. The jobs are already running when the folder goes, and
+    /// the token stops the ones that haven't started rather than the ones that have.
+    /// </remarks>
+    internal static bool TryCreatePreviewDir(string sourceFile, params string[] directories)
+    {
+        if (!File.Exists(sourceFile)) return false;
+
+        foreach (var directory in directories) Directory.CreateDirectory(directory);
+        return true;
+    }
+
+    /// <summary>
     /// Generates preview, preview-large, and full-resolution web WebP images into the .dir2site mirror tree.
     /// Returns (previewFileName, previewLargeFileName, imageFileName), or null if generation was skipped/failed.
     /// </summary>
@@ -137,7 +166,7 @@ public static class PreviewGenerator
         var stem = Path.GetFileNameWithoutExtension(sourceFile);
 
         var dir2site = Path.GetFullPath(Path.Combine(fileDir, ".dir2site", stem));
-        Directory.CreateDirectory(dir2site);
+        if (!TryCreatePreviewDir(sourceFile, dir2site)) return null;
 
         var previewFile      = $"preview-{stem}.webp";
         var previewLargeFile = $"preview-lg-{stem}.webp";
@@ -153,6 +182,14 @@ public static class PreviewGenerator
 
         var fileName = Path.GetFileName(sourceFile);
 
+        // Missing or older than the photo, not merely missing. Dropping a corrected scan over the
+        // old one under the same name is the ordinary way to replace a photo, and existence alone
+        // kept every derived file from the picture that used to be there — including
+        // {stem}_q90.webp, which is what the viewer displays, so the wrong picture was published
+        // rather than merely a wrong thumbnail.
+        //
+        // It never settled either: the survey enqueues this artifact for exactly this reason, and
+        // the job then did nothing, so the same work was proposed and counted on every single run.
         if (Stale(previewPath, sourceFile))
         {
             progress?.Report($"Generating preview: {fileName}");
@@ -201,7 +238,7 @@ public static class PreviewGenerator
         var stem = Path.GetFileNameWithoutExtension(sourceFile);
 
         var dir2site = Path.GetFullPath(Path.Combine(fileDir, ".dir2site", stem));
-        Directory.CreateDirectory(dir2site);
+        if (!TryCreatePreviewDir(sourceFile, dir2site)) return null;
 
         var previewPath      = Path.Combine(dir2site, $"preview-{stem}.webp");
         var previewLargePath = Path.Combine(dir2site, $"preview-lg-{stem}.webp");
@@ -271,8 +308,7 @@ public static class PreviewGenerator
         var stem     = Path.GetFileNameWithoutExtension(sourceFile);
         var dir2site = Path.GetFullPath(Path.Combine(fileDir, ".dir2site", stem));
         var pagesDir = Path.Combine(dir2site, $"{stem}_pages");
-        Directory.CreateDirectory(dir2site);
-        Directory.CreateDirectory(pagesDir);
+        if (!TryCreatePreviewDir(sourceFile, dir2site, pagesDir)) return null;
 
         var previewFile      = $"preview-{stem}.webp";
         var previewLargeFile = $"preview-lg-{stem}.webp";

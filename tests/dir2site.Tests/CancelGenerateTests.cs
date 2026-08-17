@@ -98,6 +98,37 @@ public class CancelGenerateTests : IDisposable
             DirectoryTraverser.BuildTree(_root, [], [], null, null, cancelled.Token));
     }
 
+    [AvaloniaFact]
+    public void AGenerateDoesNotMakeTheProjectFolderItLost()
+    {
+        // The check at the caller guards the start of a generate and cannot speak for its middle: the
+        // folder can go at any point in the seconds that follow, and CreateDirectory of _site generates
+        // every missing segment on the way — so the old path came back holding a whole site, and the
+        // run reported success. Cancelling doesn't cover it, which is why this is a refusal rather
+        // than a race to notice.
+        MakeProject(photos: 2);
+        var tree = DirectoryTraverser.BuildTree(_root, [], []);
+
+        var gone = Path.Combine(Path.GetTempPath(), "d2s-cancel-gone-" + Guid.NewGuid().ToString("N"));
+
+        Assert.Throws<DirectoryNotFoundException>(() =>
+            SiteGenerator.Generate(gone, tree, Config()));
+
+        Assert.False(Directory.Exists(gone), "the generate made the folder it was told to generate into");
+    }
+
+    [AvaloniaFact]
+    public void APreviewDoesNotMakeTheArtifactFolderItLost()
+    {
+        // Same rule one stage earlier, and the one cancellation reaches least well: preview jobs run
+        // in parallel, so a folder that goes mid-generate leaves several of them in flight, each ready
+        // to rebuild the whole path down to its own output.
+        var gone = Path.Combine(Path.GetTempPath(), "d2s-cancel-gone-" + Guid.NewGuid().ToString("N"));
+
+        Assert.Null(PreviewGenerator.GeneratePreviews(Path.Combine(gone, "Portrait.jpg"), gone));
+        Assert.False(Directory.Exists(gone), "the preview stage made the folder it had lost");
+    }
+
     // ---- what the window does with it ---------------------------------------
 
     private async Task<MainWindowViewModel> BuiltProject()

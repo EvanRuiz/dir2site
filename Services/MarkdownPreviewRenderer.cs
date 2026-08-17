@@ -52,7 +52,7 @@ public static partial class MarkdownPreviewRenderer
         var stem = Path.GetFileNameWithoutExtension(mdFile);
 
         var outDir = Path.GetFullPath(Path.Combine(fileDir, ".dir2site", stem));
-        Directory.CreateDirectory(outDir);
+        if (!PreviewGenerator.TryCreatePreviewDir(mdFile, outDir)) return null;
 
         var previewFile      = $"preview-{stem}.webp";
         var previewLargeFile = $"preview-lg-{stem}.webp";

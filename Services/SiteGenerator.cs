@@ -54,6 +54,16 @@ public static class SiteGenerator
         cancel.ThrowIfCancellationRequested();
 
         var siteRoot = Path.Combine(directoryRoot, "_site");
+
+        // Making _site inside a project that exists is right; making the project is never right, and
+        // CreateDirectory does not know the difference — it generates every missing segment on the way.
+        // So a folder that went between the caller's check and this line came back as a phantom
+        // holding a whole site, reported as a success. Cancelling doesn't cover it either: the generate
+        // is seconds long and the check that guards its start cannot speak for its middle.
+        if (!Directory.Exists(directoryRoot))
+            throw new DirectoryNotFoundException(
+                $"{directoryRoot} is no longer there, so nothing was written.");
+
         Directory.CreateDirectory(siteRoot);
         var ledger = new SiteLedger(siteRoot);
         scope ??= RenderScope.All;

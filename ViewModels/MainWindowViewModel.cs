@@ -491,6 +491,8 @@ public partial class MainWindowViewModel : ViewModelBase
         _watching = false;
         _sourceWatcher?.Dispose();
         _sourceWatcher = null;
+        _folderWatcher?.Dispose();
+        _folderWatcher = null;
     }
 
     /// <summary>
@@ -520,6 +522,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _sourceWatcher?.Dispose();
         _sourceWatcher = null;
+        _folderWatcher?.Dispose();
+        _folderWatcher = null;
 
         if (!_watching || root == null || !Directory.Exists(root)) return;
 
@@ -528,6 +532,105 @@ public partial class MainWindowViewModel : ViewModelBase
         watcher.Stopped += OnWatchingStopped;
         watcher.Start();
         _sourceWatcher = watcher;
+
+        // Two watchers because they answer different questions and only one of them can. The first
+        // watches inside the project and cannot see the project itself leave; this one watches the
+        // folder above and sees nothing else.
+        var folder = new ProjectFolderWatcher(root);
+        folder.Changed += OnProjectFolderChanged;
+        folder.Start();
+        _folderWatcher = folder;
+    }
+
+    private ProjectFolderWatcher? _folderWatcher;
+
+    /// <summary>
+    /// Puts the question to the user, and returns what they chose.
+    /// </summary>
+    /// <remarks>
+    /// A seam, in the manner of <see cref="AskAboutOrphans"/>: a headless test has no window to
+    /// parent a modal to, so without this the whole question would quietly skip and a test asserting
+    /// that the project followed its folder would pass whether it did or not. The default answers
+    /// nothing, which is what a host with nobody at the keyboard should say.
+    /// </remarks>
+    internal Func<string, string?, Task<ProjectMovedAnswer?>> AskAboutMovedProject { get; set; } =
+        (_, _) => Task.FromResult<ProjectMovedAnswer?>(null);
+
+    /// <summary>
+    /// Reacts to the project folder itself being renamed, moved or deleted.
+    /// </summary>
+    /// <remarks>
+    /// Everything stops first and the question is asked second, in that order. A generate already
+    /// running is working from a tree that no longer describes anything, and every one of the three
+    /// answers makes it wrong — following means a different folder, staying put means a re-read,
+    /// closing means no folder at all. Letting it finish would write a site for a project that has
+    /// moved out from under it, and then report success.
+    /// </remarks>
+    private void OnProjectFolderChanged(object? sender, ProjectFolderEvent change) =>
+        Dispatcher.UIThread.Post(async () =>
+        {
+            var was = DirectoryRoot;
+            if (was == null) return;
+
+            CancelGenerateCommand.Execute(null);
+            _syncCancellation?.Cancel();
+
+            switch (await AskAboutMovedProject(was, change.NewPath))
+            {
+                case ProjectMovedAnswer.Follow when change.NewPath is { } moved:
+                    // Setting the root is the whole move: it restarts both watchers and forgets what
+                    // was known about the old path, which is right — none of it describes the folder
+                    // we are now looking at.
+                    DirectoryRoot = moved;
+                    StatusText = $"Now working on {Path.GetFileName(moved)}";
+                    await LoadDirectory();
+                    break;
+
+                case ProjectMovedAnswer.StayedPut:
+                    // The dialog only returns this once it has seen the folder back, so the watchers
+                    // can be put on it again — but nothing is rebuilt. Coming back is not a request.
+                    //
+                    // Restart rather than re-arm, which is the difference between resuming a watch
+                    // and opening a project, and this is the second. The folder was away, and away
+                    // is a window nothing was watching: on macOS a watcher whose root goes raises no
+                    // error and delivers nothing, so a photo deleted while it was gone leaves no
+                    // trace at all. Keeping the change list and the belief that the site is
+                    // accounted for would let the next run narrow against an account that stops
+                    // describing the folder part way through — and leave a card pointing at a page
+                    // the sweep then offers to delete.
+                    RestartSourceWatcher(was);
+                    StatusText = "Project folder is back";
+                    await LoadDirectory();
+                    break;
+
+                case ProjectMovedAnswer.Close:
+                    CloseProject();
+                    break;
+
+                default:
+                    // Dismissed without answering. The folder is still gone, so the one thing that
+                    // must not carry on is the part that works unattended.
+                    AutoGenerate = false;
+                    StatusText = "Project folder not found";
+                    break;
+            }
+        });
+
+    /// <summary>
+    /// Lets the project go and returns to the launch screen.
+    /// </summary>
+    /// <remarks>
+    /// Clearing the root is what the window watches to decide between the welcome panel and the
+    /// project, so this is the whole of it — and it takes the watchers, the change list and the
+    /// leftovers with it through <see cref="OnDirectoryRootChanged"/>.
+    /// </remarks>
+    private void CloseProject()
+    {
+        AutoGenerate = false;
+        DirectoryRoot = null;
+        DirItems.Clear();
+        Dir2SiteConfig = null;
+        StatusText = "Project closed";
     }
 
     /// <summary>

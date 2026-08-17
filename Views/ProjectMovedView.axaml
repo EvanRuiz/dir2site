@@ -1,0 +1,38 @@
+<!-- SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:dir2site.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="520" d:DesignHeight="240"
+        x:Class="dir2site.Views.ProjectMovedView"
+        x:DataType="vm:ProjectMovedViewModel"
+        Width="520" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        Title="Project Folder Moved">
+
+    <StackPanel Margin="16" Spacing="10">
+
+        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Text="{Binding Headline}"/>
+
+        <TextBlock TextWrapping="Wrap" Foreground="#B0B0B0" Text="{Binding Detail}"/>
+
+        <!-- Said only once Try Again has been pressed and come back empty-handed. -->
+        <TextBlock TextWrapping="Wrap"
+                   Foreground="#E08A5A"
+                   Text="{Binding RetryMessage}"
+                   IsVisible="{Binding RetryMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+        <!-- Follow first, because it is the answer to the common case: a folder renamed on purpose,
+             still holding everything, one click from carrying on. Close last, and unadorned — it is
+             the one that gives something up, and putting it under the pointer would be a trap. -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,6,0,0">
+            <Button Content="{Binding FollowLabel}"
+                    Command="{Binding FollowCommand}"
+                    IsVisible="{Binding CanFollow}"/>
+            <Button Content="Try Again" Command="{Binding TryAgainCommand}"/>
+            <Button Content="Close Project" Command="{Binding CloseProjectCommand}"/>
+        </StackPanel>
+    </StackPanel>
+</Window>
