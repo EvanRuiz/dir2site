@@ -37,20 +37,71 @@ public static class PreviewGenerator
         File.Exists(Path.Combine(sourceFileDir, previewRelativePath.Replace('/', Path.DirectorySeparatorChar)));
 
     /// <summary>
-    /// True when <paramref name="previewRelativePath"/> is older than <paramref name="sourceFile"/> —
-    /// i.e. the source has been edited since the preview was rendered.
+    /// The names this class would give an artifact's two thumbnails, relative to its source folder.
     /// </summary>
     /// <remarks>
-    /// Only worth asking for sources people edit in place. A photo or a PDF is replaced, not
-    /// revised, so its thumbnail can't drift; a markdown article's thumbnail is a picture of the
-    /// body, and revising the body is the whole workflow.
+    /// Every generator here builds the same pair independently, and
+    /// <see cref="MarkdownPreviewRenderer"/> builds it a fourth time — so this is the one place the
+    /// convention is written down, and the one place <see cref="IsCanonicalPreview"/> can check
+    /// against.
     /// </remarks>
-    public static bool PreviewIsOlderThanSource(string sourceFileDir, string previewRelativePath, string sourceFile)
+    public static (string Preview, string PreviewLarge) CanonicalPreviewNames(string stem) =>
+        ($".dir2site/{stem}/preview-{stem}.webp", $".dir2site/{stem}/preview-lg-{stem}.webp");
+
+    /// <summary>
+    /// Whether a stored preview path is one we generated, rather than one the user chose.
+    /// </summary>
+    /// <remarks>
+    /// The difference decides whether staleness is even a meaningful question. A generated thumbnail
+    /// is derived from its source, so a newer source means a wrong thumbnail. A path the user wrote
+    /// by hand points at an image of their own choosing, which has no relationship to the source's
+    /// timestamp at all — re-rendering on their behalf would burn the work and then, thanks to
+    /// <c>NeedsPath</c>, leave the yaml still pointing at their file, so nothing would even change.
+    /// It would simply happen again on every run.
+    /// </remarks>
+    public static bool IsCanonicalPreview(string sourceFile, string? previewRelativePath)
     {
-        var previewPath = Path.Combine(sourceFileDir, previewRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        if (string.IsNullOrEmpty(previewRelativePath)) return false;
+
+        var (preview, previewLarge) = CanonicalPreviewNames(Path.GetFileNameWithoutExtension(sourceFile));
+        var normalised = previewRelativePath.Replace('\\', '/');
+
+        return normalised.Equals(preview,      StringComparison.OrdinalIgnoreCase)
+            || normalised.Equals(previewLarge, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// True when <paramref name="previewRelativePath"/> is older than <paramref name="sourceFile"/> —
+    /// i.e. the source has been replaced or edited since the preview was rendered.
+    /// </summary>
+    /// <remarks>
+    /// Worth asking of every artifact type. It used to be asked only of markdown and video, on the
+    /// grounds that a photo or a PDF is replaced rather than revised and so its thumbnail cannot
+    /// drift — but replacing is exactly the case: drop a corrected scan over the old one, keeping
+    /// the filename, and the file on disk is new while the thumbnail beside it is a picture of what
+    /// used to be there. Existence alone kept showing the old one for good.
+    ///
+    /// Known limitation: this only notices a source whose timestamp moves *forward*. Restoring from
+    /// a backup or syncing down from cloud storage can land a file with its original, older
+    /// timestamp, and the stale thumbnail survives. Catching that needs a recorded fingerprint of
+    /// the source, which conflicts with hand-written preview paths and would add keys to every
+    /// sidecar; the manual Rescan and a touched file both remain a way out.
+    /// </remarks>
+    public static bool PreviewIsOlderThanSource(string sourceFileDir, string previewRelativePath, string sourceFile) =>
+        IsOlderThan(
+            Path.Combine(sourceFileDir, previewRelativePath.Replace('/', Path.DirectorySeparatorChar)),
+            sourceFile);
+
+    /// <summary>
+    /// Whether <paramref name="derived"/> was written before <paramref name="source"/> was last
+    /// changed. Answers false if either can't be read, so an unreadable file doesn't cause endless
+    /// regeneration.
+    /// </summary>
+    internal static bool IsOlderThan(string derived, string source)
+    {
         try
         {
-            return File.GetLastWriteTimeUtc(previewPath) < File.GetLastWriteTimeUtc(sourceFile);
+            return File.GetLastWriteTimeUtc(derived) < File.GetLastWriteTimeUtc(source);
         }
         catch
         {
@@ -221,7 +272,13 @@ public static class PreviewGenerator
         var previewFileName      = $".dir2site/{stem}/preview-{stem}.webp";
         var previewLargeFileName = $".dir2site/{stem}/preview-lg-{stem}.webp";
 
-        if (File.Exists(previewPath) && File.Exists(previewLargePath) && File.Exists(bookReaderJsonPath))
+        // Everything already rendered, and rendered from this PDF rather than an earlier one that
+        // had the same name. Without the second half, replacing a document in place kept the old
+        // document's page images — the whole reader would still be showing the previous version.
+        if (File.Exists(previewPath) && File.Exists(previewLargePath) && File.Exists(bookReaderJsonPath)
+            && !IsOlderThan(previewPath, sourceFile)
+            && !IsOlderThan(previewLargePath, sourceFile)
+            && !IsOlderThan(bookReaderJsonPath, sourceFile))
             return (previewFileName, previewLargeFileName);
 
         var fileName    = Path.GetFileName(sourceFile);
@@ -252,7 +309,9 @@ public static class PreviewGenerator
             var pageName = keepJpeg ? $"page-{pageNum:D4}.jpg" : $"page-{pageNum:D4}.webp";
             var pagePath = Path.Combine(pagesDir, pageName);
 
-            if (!File.Exists(pagePath))
+            // Same reasoning as the short-circuit above, one page at a time: a page image older than
+            // the PDF it came from is a page of the document that used to be here.
+            if (!File.Exists(pagePath) || IsOlderThan(pagePath, sourceFile))
             {
                 if (keepJpeg)
                 {

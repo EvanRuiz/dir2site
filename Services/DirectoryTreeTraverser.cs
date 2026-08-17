@@ -172,6 +172,39 @@ public static class DirectoryTraverser
     /// </summary>
     private sealed record PreviewSurvey(List<Artifact> All, List<PreviewJob> Jobs, List<Artifact> PreviewsCurrent);
 
+    /// <summary>
+    /// Whether an artifact's thumbnails are both there and still say what the source says.
+    /// </summary>
+    /// <remarks>
+    /// One rule for all four types, where there used to be four that agreed on the easy half. They
+    /// differed on staleness: markdown and video were checked against the source's timestamp,
+    /// photos and PDFs only for existence, on the reasoning that those are replaced rather than
+    /// revised and so cannot drift. Replacing is exactly the case that breaks it — drop a corrected
+    /// scan over the old one under the same name and the thumbnail beside it is a picture of what
+    /// used to be there, kept for good because the file exists.
+    ///
+    /// The other half of the rule is new in the opposite direction. A hand-written
+    /// <c>preview:</c> points at an image the user chose, so the source's timestamp says nothing
+    /// about it; re-rendering would burn the work and change nothing, because <c>NeedsPath</c>
+    /// rightly leaves their value alone — and it would do so again on every single run.
+    /// </remarks>
+    private static bool IsCurrent(string rootPath, string file, Artifact artifact)
+    {
+        if (string.IsNullOrEmpty(artifact.Preview) || string.IsNullOrEmpty(artifact.PreviewLarge))
+            return false;
+
+        foreach (var declared in new[] { artifact.Preview, artifact.PreviewLarge })
+        {
+            if (!PreviewGenerator.PreviewFileExists(rootPath, declared)) return false;
+
+            if (PreviewGenerator.IsCanonicalPreview(file, declared)
+                && PreviewGenerator.PreviewIsOlderThanSource(rootPath, declared, file))
+                return false;
+        }
+
+        return true;
+    }
+
     private static void CollectPreviewJobs(DirectoryTreeItem node, PreviewSurvey survey)
     {
         var jobs = survey.Jobs;
@@ -186,65 +219,29 @@ public static class DirectoryTraverser
 
             if (PreviewGenerator.IsImageFile(file))
             {
+                // A photo also carries a full-resolution web copy, which has to be there too.
                 var photo = artifact as dir2site.Models.Photo;
-                var alreadyHasAll = !string.IsNullOrEmpty(artifact.Preview)
-                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge)
-                    && (photo == null || (
-                        !string.IsNullOrEmpty(photo.Image)
-                        && PreviewGenerator.PreviewFileExists(rootPath, photo.Image)));
+                var imageIsCurrent = photo == null
+                    || (!string.IsNullOrEmpty(photo.Image)
+                        && PreviewGenerator.PreviewFileExists(rootPath, photo.Image));
 
-                if (!alreadyHasAll)
+                if (!IsCurrent(rootPath, file, artifact) || !imageIsCurrent)
                     jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
                         artifact.Type, PreviewChange(rootPath, artifact)));
             }
 
-            if (PreviewGenerator.IsPdfFile(file))
-            {
-                var alreadyHasBoth = !string.IsNullOrEmpty(artifact.Preview)
-                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge);
+            if (PreviewGenerator.IsPdfFile(file) && !IsCurrent(rootPath, file, artifact))
+                jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
+                    ArtifactType.Pdf, PreviewChange(rootPath, artifact)));
 
-                if (!alreadyHasBoth)
-                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
-                        ArtifactType.Pdf, PreviewChange(rootPath, artifact)));
-            }
+            if (PreviewGenerator.IsMarkdownFile(file) && !IsCurrent(rootPath, file, artifact))
+                jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
+                    ArtifactType.Markdown, PreviewChange(rootPath, artifact)));
 
-            if (PreviewGenerator.IsMarkdownFile(file))
-            {
-                // An article's thumbnail is a rendering of its body, so editing the .md makes the
-                // existing thumbnail wrong — "it exists" isn't enough here the way it is for a
-                // photo or a PDF, which get replaced rather than revised.
-                var alreadyHasBoth = !string.IsNullOrEmpty(artifact.Preview)
-                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge)
-                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.Preview, file)
-                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.PreviewLarge, file);
-
-                if (!alreadyHasBoth)
-                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
-                        ArtifactType.Markdown, PreviewChange(rootPath, artifact)));
-            }
-
-            if (PreviewGenerator.IsUrlFile(file) && artifact.Type == ArtifactType.Video)
-            {
-                // Same reasoning as markdown: the .url is edited in place, so re-pointing it at a
-                // different video has to re-fetch the poster. "The file exists" would leave the old
-                // video's thumbnail on the new video's card.
-                var alreadyHasBoth = !string.IsNullOrEmpty(artifact.Preview)
-                    && !string.IsNullOrEmpty(artifact.PreviewLarge)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.Preview)
-                    && PreviewGenerator.PreviewFileExists(rootPath, artifact.PreviewLarge)
-                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.Preview, file)
-                    && !PreviewGenerator.PreviewIsOlderThanSource(rootPath, artifact.PreviewLarge, file);
-
-                if (!alreadyHasBoth)
-                    jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
-                        ArtifactType.Video, PreviewChange(rootPath, artifact)));
-            }
+            if (PreviewGenerator.IsUrlFile(file) && artifact.Type == ArtifactType.Video
+                && !IsCurrent(rootPath, file, artifact))
+                jobs.Add(new PreviewJob(file, artifact.TraversalRoot ?? rootPath, artifact,
+                    ArtifactType.Video, PreviewChange(rootPath, artifact)));
 
             // Only the four types above can have previews at all; anything else is outside the
             // previews stage rather than complete within it.
