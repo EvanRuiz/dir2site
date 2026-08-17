@@ -50,6 +50,18 @@ public sealed class SourceWatcher : IDisposable
     /// <summary>Raised once a burst has settled. Never raised for an empty batch.</summary>
     public event EventHandler<SourceChangeBatch>? Changed;
 
+    /// <summary>
+    /// Runs inside a settle, after the events are read and before they are delivered.
+    /// </summary>
+    /// <remarks>
+    /// Exists so the disposal guard below can be tested at all. Disposing a watcher while a settle
+    /// is part-way through is a window a few instructions wide, and a test that hoped to land in it
+    /// would be reporting how loaded the machine is — the bug and the correct behaviour both look
+    /// like "a delivery arrived around the time Dispose returned". Given a hook, the test causes
+    /// the interleaving instead of waiting for it, and the assertion is exact every run.
+    /// </remarks>
+    internal Action? SettlingForTests;
+
     /// <param name="debounceMs">
     /// Overridable so tests don't spend a second per assertion. Production has no reason to pass it.
     /// </param>
@@ -186,6 +198,12 @@ public sealed class SourceWatcher : IDisposable
             // changes, having just cleared the lists this batch would be added to. A settle from
             // the previous project then lands in them, and its paths are carried through:
             // sidecars moved and preview folders deleted in a project nobody has open.
+            //
+            // Held by ASettleInterruptedByDisposal_DeliversNothing, which reaches the window through
+            // SettlingForTests rather than trying to time its way into it. Watching from outside
+            // cannot tell this bug from correct behaviour — both look like a delivery arriving about
+            // the moment Dispose returns — so the first attempt at that test failed three times for
+            // the code working, and reported how busy the machine was rather than anything true.
             if (_disposed) return;
 
             events = [.. _pending];
@@ -202,6 +220,12 @@ public sealed class SourceWatcher : IDisposable
         // signal to rescan and to stop trusting classifications, which is the opposite of nothing
         // having happened.
         if (batch.IsEmpty && batch.Witnessed) return;
+
+        // A seam, in the manner of PretendWatchingStopped: the window this guard closes is a few
+        // instructions wide, so a test that waited for disposal to land inside it would be racing
+        // rather than asserting. Called here, a test can put the disposal exactly where it belongs
+        // and the outcome stops depending on how busy the machine is.
+        SettlingForTests?.Invoke();
 
         // Checked again on the way out, because everything above happens outside the lock and the
         // window this closes is exactly that long.
