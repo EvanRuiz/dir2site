@@ -181,6 +181,13 @@ public sealed class SourceWatcher : IDisposable
 
         lock (_gate)
         {
+            // Disposing does not wait for an Elapsed handler that is already running, so this can
+            // arrive after the watcher was let go — and the caller disposes when the project
+            // changes, having just cleared the lists this batch would be added to. A settle from
+            // the previous project then lands in them, and its paths are carried through:
+            // sidecars moved and preview folders deleted in a project nobody has open.
+            if (_disposed) return;
+
             events = [.. _pending];
             lost   = _lostEvents;
             _pending.Clear();
@@ -195,6 +202,10 @@ public sealed class SourceWatcher : IDisposable
         // signal to rescan and to stop trusting classifications, which is the opposite of nothing
         // having happened.
         if (batch.IsEmpty && batch.Witnessed) return;
+
+        // Checked again on the way out, because everything above happens outside the lock and the
+        // window this closes is exactly that long.
+        lock (_gate) if (_disposed) return;
 
         Changed?.Invoke(this, batch);
     }

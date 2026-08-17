@@ -417,10 +417,8 @@ public static class YamlParser
         string? imageFileName = null,
         IEnumerable<KeyValuePair<string, string>>? extra = null)
     {
-        string yaml;
-        try { yaml = File.ReadAllText(yamlPath); }
-        catch { return; }
-
+        // No read here. UpdateFields does its own, and this one was left behind when it was
+        // extracted — a whole-file read per artifact per generate, thrown away every time.
         var updates = new List<KeyValuePair<string, string>>
         {
             new("preview", previewFileName),

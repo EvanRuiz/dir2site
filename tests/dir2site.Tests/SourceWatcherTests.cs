@@ -223,6 +223,33 @@ public class SourceWatcherTests : IDisposable
         Assert.True(true);
     }
 
+    [Fact]
+    public void ADisposedWatcherDeliversNothing()
+    {
+        // Disposing does not wait for a settle already running, so a batch could arrive after the
+        // watcher was let go. The caller disposes when the project changes — having just cleared
+        // the lists the batch would be added to — so the previous project's paths landed in the new
+        // one's, and were carried through: sidecars moved and preview folders deleted in a project
+        // nobody had open.
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var watcher = new SourceWatcher(_root, DebounceMs);
+            var delivered = 0;
+            watcher.Changed += (_, _) => Interlocked.Increment(ref delivered);
+            watcher.Start();
+            Thread.Sleep(20);
+
+            // Make changes, then dispose while the settle for them is due.
+            MakeFile($"churn{attempt}/a.md", "# A");
+            MakeFile($"churn{attempt}/b.md", "# B");
+            Thread.Sleep(DebounceMs / 2);
+            watcher.Dispose();
+
+            Thread.Sleep(DebounceMs * 3);
+            Assert.Equal(0, delivered);
+        }
+    }
+
     // ---- what must stay silent -------------------------------------------
 
     [Fact]
