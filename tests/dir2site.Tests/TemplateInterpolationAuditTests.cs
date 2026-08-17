@@ -28,6 +28,7 @@ public class TemplateInterpolationAuditTests
     private static readonly Dictionary<string, string> DeliberatelyRaw = new()
     {
         ["artifact.html_content"] = "Markdown rendered to HTML — being HTML is the point of it.",
+        ["intro_html"] = "A folder's index.md rendered to HTML, for the same reason as an article's.",
         ["site.footer"] = "The footer is documented as markup the author writes; FooterTests pins it.",
         ["item.badge_icon"] = "A Bootstrap Icons class this generator chose, never anything a project supplies.",
         ["$2"] = "badge.html's icon parameter, which is item.badge_icon under another name.",

@@ -13,7 +13,15 @@
   {{ include 'header' }}
 
   <div class="container pt-4">
+    {{~ # An introduction owns the top of its page: whatever heading it opens with is the one the ~}}
+    {{~ # reader sees, and a folder whose name is already the answer can leave it out entirely. ~}}
+    {{~ # The file being there is the whole decision — what is in it is the author's business — and ~}}
+    {{~ # the folder name is still in the title bar and the breadcrumbs either way. ~}}
+    {{~ if has_intro ~}}
+    <div class="collection-intro markdown-body mb-4">{{ intro_html }}</div>
+    {{~ else ~}}
     <h2 class="mb-4">{{ page_title | html.escape }}</h2>
+    {{~ end ~}}
     <div class="row row-cols-1 row-cols-md-3 g-4">
       {{ for item in items -}}
       {{ include 'card' }}

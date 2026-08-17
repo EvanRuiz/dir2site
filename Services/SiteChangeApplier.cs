@@ -316,12 +316,23 @@ public static class SiteChangeApplier
     private static IEnumerable<(string Src, string Dest)> Candidates(
         string directoryRoot, string siteRoot, string from, string to)
     {
+        // An introduction publishes nothing of its own — it is prose on a page that already exists —
+        // so there is no directory to move, in either direction. Read as an artifact it would name
+        // "<folder>/index", which is a real address a sub-folder called "index" can hold: the guard
+        // is here so moving an intro can never move somebody else's published folder.
+        if (DirectoryTraverser.IsFolderIntro(from) || DirectoryTraverser.IsFolderIntro(to))
+            yield break;
+
         yield return (AsFolder(directoryRoot, siteRoot, from), AsFolder(directoryRoot, siteRoot, to));
         yield return (AsArtifact(directoryRoot, siteRoot, from), AsArtifact(directoryRoot, siteRoot, to));
     }
 
     private static IEnumerable<string> RemovalCandidates(string directoryRoot, string siteRoot, string path)
     {
+        // Same reasoning as Candidates: deleting an intro takes away no published directory, and
+        // "<folder>/index" is not this file's address to give away.
+        if (DirectoryTraverser.IsFolderIntro(path)) yield break;
+
         yield return AsFolder(directoryRoot, siteRoot, path);
         yield return AsArtifact(directoryRoot, siteRoot, path);
     }

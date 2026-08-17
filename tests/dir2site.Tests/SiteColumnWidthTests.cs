@@ -32,8 +32,8 @@ public class SiteColumnWidthTests
         var css = File.ReadAllText(
             Path.Combine(RepoRoot(), "Assets", "templates", "site-css.html"));
 
-        var match = Regex.Match(css, @"\.markdown-body\s*\{[^}]*?max-width:\s*(\d+(?:\.\d+)?)px");
-        Assert.True(match.Success, "Could not find .markdown-body's max-width in site-css.html.");
+        var match = Regex.Match(css, @"\.article-column\s*\{[^}]*?max-width:\s*(\d+(?:\.\d+)?)px");
+        Assert.True(match.Success, "Could not find .article-column's max-width in site-css.html.");
 
         var fromCss = float.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
 

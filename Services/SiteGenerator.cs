@@ -357,6 +357,8 @@ public static class SiteGenerator
             globals.SetValue("nav_folders", navFolders, readOnly: true);
             globals.SetValue("breadcrumbs", breadcrumbs, readOnly: true);
             globals.SetValue("items", items, readOnly: true);
+            globals.SetValue("intro_html", RenderIntro(node), readOnly: true);
+            globals.SetValue("has_intro", node.IntroPath != null, readOnly: true);
             globals.SetValue("has_video", hasVideo, readOnly: true);
             globals.SetValue("og_title", ogTitle, readOnly: true);
             globals.SetValue("og_description", ogTitle, readOnly: true);
@@ -834,11 +836,34 @@ public static class SiteGenerator
     /// </remarks>
     private static DirectoryTreeItem? SoleArtifact(DirectoryTreeItem node)
     {
+        // An introduction is content this folder's page carries. Publishing the folder as its one
+        // artifact would drop that prose with nothing to say where it went.
+        if (node.IntroPath != null) return null;
+
         if (node.Children.Count != 1) return null;
 
         var only = node.Children[0];
         if (only.IsDirectory || only.Artifact == null) return null;
         return only.Artifact.Type == ArtifactType.Video ? null : only;
+    }
+
+    /// <summary>
+    /// A folder's <c>index.md</c>, rendered for the top of its own page. Empty when there isn't one.
+    /// </summary>
+    /// <remarks>
+    /// Relative URLs are left exactly as written, unlike an article's, and the difference is where
+    /// the page sits. An article is published one level below its source — <c>Field Notes/Setting
+    /// Type/index.html</c> — so <c>_media/figure.jpg</c> beside it needs a <c>../</c> to still
+    /// resolve. An introduction is published <em>at</em> its folder, so the paths its author wrote
+    /// are already the paths the page needs, and adding a segment would break every one of them.
+    /// </remarks>
+    private static string RenderIntro(DirectoryTreeItem node)
+    {
+        if (node.IntroPath is not { } path) return string.Empty;
+
+        // FileToHtml answers an unreadable file with empty rather than throwing: the folder still
+        // has its cards, which is the greater part of the page.
+        return MarkdownRenderer.FileToHtml(path, pageIsNested: false);
     }
 
     /// <summary>

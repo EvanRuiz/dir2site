@@ -103,6 +103,17 @@ public static class DirectoryTraverser
                 if (ShouldIgnoreFile(file))
                     continue;
 
+                // The folder's own introduction, not one of its contents: it is rendered at the
+                // top of this folder's page and never becomes a card, a page or an artifact. No
+                // sidecar is written for it either — there is nothing to caption or credit, and a
+                // file that exists to be prose shouldn't grow a settings file nobody asked for.
+                if (IsFolderIntro(file))
+                {
+                    allFiles.Add(file);
+                    node.IntroPath = file;
+                    continue;
+                }
+
                 var child = new DirectoryTreeItem(file);
 
                 var artifact = YamlParser.TryParseYamlMeta(
@@ -431,6 +442,17 @@ public static class DirectoryTraverser
 
         return HasHiddenAttribute(path);
     }
+
+    /// <summary>
+    /// The reserved name for a folder's introduction. Chosen over a yaml flag because every other
+    /// structural decision here is made by naming — <c>-About</c>, <c>--Footer</c>, <c>_media</c> —
+    /// and a name is one step, visible in a file listing, and a rename to change.
+    /// </summary>
+    public const string FolderIntroName = "index.md";
+
+    /// <summary>Whether this path is a folder's introduction rather than one of its contents.</summary>
+    public static bool IsFolderIntro(string path) =>
+        Path.GetFileName(path).Equals(FolderIntroName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The name-only rules a file is ignored by, sidecars aside. See <see cref="IsIgnoredDirectoryName"/>.</summary>
     internal static bool IsIgnoredFileName(string name) =>

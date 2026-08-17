@@ -534,10 +534,20 @@ body {
 
 /* Markdown artifact */
 
-/* The 820px column is also MarkdownPreviewRenderer.SiteColumnWidth, which reads an authored
-   figure width as a fraction of it so the card thumbnail matches the page. SiteColumnWidthTests
-   fails if the two drift apart. */
-.markdown-body { max-width: 820px; margin: 0 auto; line-height: 1.7; }
+/* Rendered markdown, wherever it lands: an article's body, and a collection's introduction. These
+   are the rules that belong to the markup itself — headings, code, tables, figures — and nothing
+   here says how wide the thing holding them is. */
+.markdown-body { line-height: 1.7; }
+
+/* That is an article's business. An article is a column of prose and reads badly across a wide
+   window, so it takes a measure and centres it; a collection's introduction sits over a grid that
+   fills the container and takes neither.
+
+   The 820px column is also MarkdownPreviewRenderer.SiteColumnWidth, which reads an authored figure
+   width as a fraction of it so the card thumbnail matches the page. SiteColumnWidthTests fails if
+   the two drift apart. */
+.article-column { max-width: 820px; margin: 0 auto; }
+.collection-intro > :first-child { margin-top: 0; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3,
 .markdown-body h4, .markdown-body h5, .markdown-body h6 { margin-top: 1.6rem; margin-bottom: 0.8rem; }
 .markdown-body h1 { padding-bottom: 0.3rem; border-bottom: 1px solid #eaecef; }

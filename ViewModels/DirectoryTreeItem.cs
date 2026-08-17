@@ -49,6 +49,13 @@ public partial class DirectoryTreeItem : ObservableObject
 
     public ArtifactViewModel? ArtifactViewModel => _artifactViewModel;
 
+    /// <summary>
+    /// The full path of this folder's <c>index.md</c>, or null. It is prose belonging to the folder
+    /// page rather than an item in it, so it is held here instead of among the children — nothing
+    /// that walks <see cref="Children"/> should have to know to skip it.
+    /// </summary>
+    public string? IntroPath { get; set; }
+
     /// <summary>Any errors encountered while parsing the YAML file.</summary>
     public List<string> YamlErrors { get; } = new();
 
