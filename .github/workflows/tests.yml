@@ -26,6 +26,12 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    # A budget, not just a safety net: the suite is meant to stay well inside this, and a design
+    # that needs longer is a design to reconsider rather than a limit to raise. Both runners land
+    # around two to four minutes today. Without it the floor is GitHub's own six hours, which is
+    # what a hung test run costs when nobody is watching.
+    timeout-minutes: 10
+
     steps:
       # This job is nothing but small-file I/O — extracting a package cache, writing build output,
       # and driving a loopback SFTP server a file at a time — which is the workload real-time
@@ -90,5 +96,12 @@ jobs:
       - name: Build
         run: dotnet build -c Release
 
+      # --blame-hang names the test that stopped responding and takes a dump, which is the one
+      # thing the job timeout above cannot do: a run killed by the runner leaves no logs at all,
+      # so a hang reads only as a timestamp. 60s is roughly nine times the slowest test in the
+      # suite (a deliberate six-second wait), and it is wall clock rather than work, so a slower
+      # runner does not eat into the margin.
       - name: Test
-        run: dotnet test -c Release --no-build --logger "console;verbosity=normal"
+        run: >-
+          dotnet test -c Release --no-build --logger "console;verbosity=normal"
+          --blame-hang --blame-hang-timeout 60s
