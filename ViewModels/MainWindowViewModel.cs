@@ -1018,8 +1018,15 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanRescan))]
     private async Task LoadDirectory()
     {
+        if (DirectoryRoot == null)
+        {
+            DirItems.Clear();
+            return;
+        }
+
+        if (!ProjectFolderIsThere()) return;
+
         DirItems.Clear();
-        if (DirectoryRoot == null) return;
 
         // Rescan is the way back from a dead watch, so it has to be the thing that puts watching
         // back — reading the folder again and leaving it dead would look like recovery and be none.
@@ -1076,6 +1083,38 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private bool CanRescan() => DirectoryRoot != null && !IsLoading;
 
+    /// <summary>
+    /// Whether the project folder is still where it was, saying so if it isn't.
+    /// </summary>
+    /// <remarks>
+    /// A folder that isn't there is not a folder with nothing in it, and both of the things this
+    /// window does to a project go wrong when it's missing — in opposite directions, which is why
+    /// the check belongs somewhere they both pass rather than on the one that was noticed first.
+    ///
+    /// A scan destroys the last good view: the tree empties, and <c>LoadOrCreateDir2SiteConfig</c>
+    /// scaffolds a default config over the one that was loaded, so a title and footer the user wrote
+    /// become defaults named after the folder. Touch any setting once the drive is back and those
+    /// defaults are what reaches the real file.
+    ///
+    /// A generate does the opposite and builds the folder back. <c>SiteGenerator.Generate</c> opens
+    /// with a <c>CreateDirectory</c> of <c>_site</c>, which creates every missing segment on the way
+    /// — so Generate left a phantom project folder at the old path holding a complete site, and
+    /// reported success directly underneath the error saying nothing had been changed.
+    ///
+    /// This is the state the "stopped watching" warning is reported in, so it is the state both
+    /// buttons are most likely to be pressed in.
+    /// </remarks>
+    private bool ProjectFolderIsThere()
+    {
+        if (DirectoryRoot == null) return false;
+        if (Directory.Exists(DirectoryRoot)) return true;
+
+        StatusText = "Project folder not found";
+        AppendError(
+            $"Could not read {DirectoryRoot} — it may have been renamed, moved or removed. " +
+            "Nothing has been changed.");
+        return false;
+    }
 
     private async Task LoadOrCreateDir2SiteConfig()
     {
@@ -1121,6 +1160,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task GenerateSite()
     {
         if (DirectoryRoot == null || DirItems.Count == 0 || Dir2SiteConfig == null) return;
+        if (!ProjectFolderIsThere()) return;
 
         // Read once, so the background stages below all build from the same config even if the
         // settings panel is edited while they run.

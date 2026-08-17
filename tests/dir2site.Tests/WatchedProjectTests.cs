@@ -283,6 +283,87 @@ public class WatchedProjectTests : IDisposable
         Assert.True(arrived, "Rescan did not put watching back, so the new photo never arrived");
     }
 
+    /// <summary>
+    /// Rescanning a folder that has gone must leave the last good view of the project alone.
+    /// </summary>
+    /// <remarks>
+    /// This is the state the "stopped watching" warning is reported in — the folder was renamed,
+    /// moved, or is on a volume that went away — and Rescan is the natural thing to try next. It
+    /// opened by emptying the tree and then replacing the loaded config with a scaffolded default,
+    /// so pressing it turned a folder that was temporarily unreachable into an empty window and a
+    /// settings panel holding somebody else's defaults. Reconnect the drive, touch any setting, and
+    /// those defaults are what gets written over the real config.
+    ///
+    /// Nothing is recoverable from that by rescanning again, so the scan has to refuse.
+    /// </remarks>
+    [AvaloniaFact]
+    public async Task RescanningAFolderThatHasGone_KeepsTheTreeAndTheConfig()
+    {
+        var photos = Directory.CreateDirectory(At("Photographs")).FullName;
+        MakeArtifact(photos, "Portrait.jpg", "A Portrait");
+        File.WriteAllText(At("dir2site.yaml"), "title: Riverbend\nfooter: © 2026\n");
+
+        var vm = new MainWindowViewModel { DirectoryRoot = _root };
+        vm.AskAboutOrphans = _ => Task.FromResult<IReadOnlyList<string>?>(null);
+
+        await vm.LoadDirectoryCommand.ExecuteAsync(null);
+        Assert.NotEmpty(vm.DirItems);
+        Assert.Equal("Riverbend", vm.Dir2SiteConfig!.Title);
+
+        // The folder goes — renamed in Finder, or a volume unmounted.
+        var moved = _root + "-moved";
+        Directory.Move(_root, moved);
+        try
+        {
+            await vm.LoadDirectoryCommand.ExecuteAsync(null);
+
+            Assert.NotEmpty(vm.DirItems);
+            Assert.Equal("Riverbend", vm.Dir2SiteConfig!.Title);
+        }
+        finally
+        {
+            Directory.Move(moved, _root);
+        }
+    }
+
+    /// <summary>
+    /// Generating with the project folder gone must not recreate it.
+    /// </summary>
+    /// <remarks>
+    /// The other half of the guard on <c>LoadDirectory</c>, and the one that does something rather
+    /// than merely showing nothing: <c>SiteGenerator.Generate</c> opens with a
+    /// <c>CreateDirectory</c> of <c>_site</c>, which builds every missing segment on the way — the
+    /// project folder included. So pressing Generate after Rescan had just reported it could not
+    /// read the folder left a phantom at the old path holding a complete site, and said "Site
+    /// generated" directly underneath "Nothing has been changed".
+    /// </remarks>
+    [AvaloniaFact]
+    public async Task GeneratingWithTheFolderGone_DoesNotRecreateIt()
+    {
+        var photos = Directory.CreateDirectory(At("Photographs")).FullName;
+        MakeArtifact(photos, "Portrait.jpg", "A Portrait");
+
+        var vm = new MainWindowViewModel { DirectoryRoot = _root };
+        vm.AskAboutOrphans = _ => Task.FromResult<IReadOnlyList<string>?>(null);
+
+        await vm.LoadDirectoryCommand.ExecuteAsync(null);
+        await vm.GenerateSiteCommand.ExecuteAsync(null);
+
+        var moved = _root + "-moved";
+        Directory.Move(_root, moved);
+        try
+        {
+            await vm.LoadDirectoryCommand.ExecuteAsync(null);
+            await vm.GenerateSiteCommand.ExecuteAsync(null);
+
+            Assert.False(Directory.Exists(_root), "Generate recreated the project folder");
+        }
+        finally
+        {
+            Directory.Move(moved, _root);
+        }
+    }
+
     [AvaloniaFact]
     public async Task TheScanWritingYaml_DoesNotSetTheWatcherOffForever()
     {
