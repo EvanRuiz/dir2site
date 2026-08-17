@@ -4,6 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace dir2site.Services;
 
@@ -137,6 +139,76 @@ public static class ArtifactRename
                 // under the old name is regenerated on the next run, which is the same outcome as
                 // never having had it.
             }
+        }
+
+        RepointBookReader(newDir, oldStem, newStem);
+    }
+
+    /// <summary>
+    /// Rewrites the page addresses inside a PDF's reader manifest.
+    /// </summary>
+    /// <remarks>
+    /// The only asset here whose <em>contents</em> name the stem: <c>PreviewGenerator</c> writes
+    /// each page as <c>{stem}_pages/page-0001.webp</c>, and the site emits those verbatim. Renaming
+    /// the folder and the file left every one of them pointing at a directory that no longer
+    /// existed, so the reader opened to a document of broken images.
+    ///
+    /// It could not heal itself either. The PDF's own timestamp doesn't move when it is renamed, so
+    /// the short-circuit in <c>GeneratePdfPreviewsAndPages</c> found preview, preview-lg and the
+    /// manifest all present and current, and never rebuilt the pages.
+    ///
+    /// Rewritten as JSON rather than as text, which is the only way it can be right. The manifest is
+    /// written through a serializer whose encoder escapes every non-ASCII character to a numeric
+    /// sequence, so an accented or CJK name is not present in the file as anyone would type it — a
+    /// substitution searching for the name as typed matches nothing, and the reader goes on pointing
+    /// at a folder that has gone. The same gap in reverse lets a new name carrying a quote or a
+    /// backslash in unescaped, which leaves the file unparseable and the reader silently empty.
+    ///
+    /// Reading it the way <c>SiteGenerator.BuildBookReaderData</c> already does drops the escaping
+    /// question entirely: both ends are plain strings by the time we see them.
+    ///
+    /// Anchored to the front of the address for the same reason <see cref="RenamedAsset"/> is: a
+    /// document called <c>page</c> or <c>webp</c> would otherwise rewrite its own addresses into
+    /// nonsense.
+    /// </remarks>
+    private static void RepointBookReader(string previewDir, string oldStem, string newStem)
+    {
+        var manifest = Path.Combine(previewDir, $"{newStem}.bookreader.json");
+        if (!File.Exists(manifest)) return;
+
+        try
+        {
+            var document = JsonNode.Parse(File.ReadAllText(manifest));
+            if (document?["data"]?.AsArray() is not { } spreads) return;
+
+            var oldPrefix = $"{oldStem}_pages/";
+            var newPrefix = $"{newStem}_pages/";
+            var changed = false;
+
+            foreach (var spread in spreads)
+            {
+                if (spread is not JsonArray pages) continue;
+
+                foreach (var page in pages)
+                {
+                    if (page?["uri"] is not JsonValue address) continue;
+
+                    var uri = address.GetValue<string>();
+                    if (!uri.StartsWith(oldPrefix, StringComparison.Ordinal)) continue;
+
+                    page["uri"] = newPrefix + uri[oldPrefix.Length..];
+                    changed = true;
+                }
+            }
+
+            if (changed)
+                File.WriteAllText(manifest,
+                    document!.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch
+        {
+            // A manifest we cannot rewrite is one the next run regenerates once the pages are
+            // missing — worse than fixing it, better than abandoning the rename half done.
         }
     }
 

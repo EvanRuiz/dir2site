@@ -277,6 +277,59 @@ public class ArtifactRenameTests : IDisposable
         Assert.True(Directory.Exists(At(".dir2site", "Portrait")));
     }
 
+    /// <summary>Writes a reader manifest exactly as the generator does, escaping and all.</summary>
+    /// <remarks>
+    /// Through the serializer rather than as literal text, because the escaping is the point: the
+    /// default encoder turns anything non-ASCII into <c>\uXXXX</c>, so a manifest for "Café Menu"
+    /// does not contain the string "Café Menu" anywhere on disk.
+    /// </remarks>
+    private static void WriteManifest(string path, string stem) =>
+        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(
+            new
+            {
+                data = new[]
+                {
+                    new[] { new { width = 800, height = 600, uri = $"{stem}_pages/page-0001.webp", pageNum = "1" } },
+                },
+            },
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+    private static string ManifestUri(string path) =>
+        System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!
+            ["data"]!.AsArray()[0]!.AsArray()[0]!["uri"]!.GetValue<string>();
+
+    [Theory]
+    [InlineData("Report", "Annual Report")]
+    // Accented and CJK names are ordinary, and legal on every platform we ship to. They are also
+    // the case a text substitution cannot see: the manifest holds "Café Menu_pages/", so a
+    // search for "Café Menu_pages/" matches nothing and the reader keeps pointing at a folder that
+    // no longer exists.
+    [InlineData("Café Menu", "Bistro Menu")]
+    [InlineData("Rapport Année", "Compte Rendu")]
+    [InlineData("年次報告", "Annual")]
+    public void APdfsReaderManifestIsRepointedWhateverItIsCalled(string oldStem, string newStem)
+    {
+        var dir = Path.Combine(_root, "Documents");
+        Directory.CreateDirectory(dir);
+
+        var previews = Path.Combine(dir, ".dir2site", oldStem);
+        Directory.CreateDirectory(Path.Combine(previews, $"{oldStem}_pages"));
+        File.WriteAllText(Path.Combine(previews, $"{oldStem}_pages", "page-0001.webp"), "page");
+        WriteManifest(Path.Combine(previews, $"{oldStem}.bookreader.json"), oldStem);
+
+        var oldPath = Path.Combine(dir, $"{oldStem}.pdf");
+        var newPath = Path.Combine(dir, $"{newStem}.pdf");
+        File.WriteAllText(oldPath, "pdf");
+        File.WriteAllText(oldPath + ".yaml", $"type: pdf\ncaption: {oldStem}\n");
+
+        File.Move(oldPath, newPath);
+        ArtifactRename.Apply(oldPath, newPath);
+
+        var manifest = Path.Combine(dir, ".dir2site", newStem, $"{newStem}.bookreader.json");
+        Assert.True(File.Exists(manifest), "the manifest did not follow the rename");
+        Assert.Equal($"{newStem}_pages/page-0001.webp", ManifestUri(manifest));
+    }
+
     [Fact]
     public void WithNoSidecarOrPreviews_NothingHappensAndNothingThrows()
     {

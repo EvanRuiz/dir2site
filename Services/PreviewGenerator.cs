@@ -110,6 +110,18 @@ public static class PreviewGenerator
     }
 
     /// <summary>
+    /// Whether a derived file has to be made: it isn't there, or the source has moved on since.
+    /// </summary>
+    /// <remarks>
+    /// The question every generator here asks before writing, and the one several of them used to
+    /// ask as "is it there". <see cref="DirectoryTraverser"/> decides whether an artifact needs
+    /// visiting on this same rule, so a job that answered a narrower one was enqueued for work it
+    /// then declined to do — and did nothing, on every run, for as long as the project existed.
+    /// </remarks>
+    internal static bool Stale(string derived, string source) =>
+        !File.Exists(derived) || IsOlderThan(derived, source);
+
+    /// <summary>
     /// Generates preview, preview-large, and full-resolution web WebP images into the .dir2site mirror tree.
     /// Returns (previewFileName, previewLargeFileName, imageFileName), or null if generation was skipped/failed.
     /// </summary>
@@ -141,19 +153,19 @@ public static class PreviewGenerator
 
         var fileName = Path.GetFileName(sourceFile);
 
-        if (!File.Exists(previewPath))
+        if (Stale(previewPath, sourceFile))
         {
             progress?.Report($"Generating preview: {fileName}");
             GenerateThumbnail(sourceFile, previewPath, 800, 600);
         }
 
-        if (!File.Exists(previewLargePath))
+        if (Stale(previewLargePath, sourceFile))
         {
             progress?.Report($"Generating preview (large): {fileName}");
             GenerateThumbnail(sourceFile, previewLargePath, 1200, 900);
         }
 
-        if (!File.Exists(imagePath))
+        if (Stale(imagePath, sourceFile))
         {
             progress?.Report($"Generating web image: {fileName}");
             GenerateWebImage(sourceFile, imagePath);
@@ -275,10 +287,9 @@ public static class PreviewGenerator
         // Everything already rendered, and rendered from this PDF rather than an earlier one that
         // had the same name. Without the second half, replacing a document in place kept the old
         // document's page images — the whole reader would still be showing the previous version.
-        if (File.Exists(previewPath) && File.Exists(previewLargePath) && File.Exists(bookReaderJsonPath)
-            && !IsOlderThan(previewPath, sourceFile)
-            && !IsOlderThan(previewLargePath, sourceFile)
-            && !IsOlderThan(bookReaderJsonPath, sourceFile))
+        if (!Stale(previewPath, sourceFile)
+            && !Stale(previewLargePath, sourceFile)
+            && !Stale(bookReaderJsonPath, sourceFile))
             return (previewFileName, previewLargeFileName);
 
         var fileName    = Path.GetFileName(sourceFile);
@@ -311,7 +322,7 @@ public static class PreviewGenerator
 
             // Same reasoning as the short-circuit above, one page at a time: a page image older than
             // the PDF it came from is a page of the document that used to be here.
-            if (!File.Exists(pagePath) || IsOlderThan(pagePath, sourceFile))
+            if (Stale(pagePath, sourceFile))
             {
                 if (keepJpeg)
                 {

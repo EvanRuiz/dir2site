@@ -407,6 +407,52 @@ public class IncrementalRenderTests : IDisposable
     }
 
     [AvaloniaFact]
+    public void MovingAPhotoBetweenFolders_RendersTheFolderItLeft()
+    {
+        // A move touches two folders, and the one it left is the one that has to change: its index
+        // holds a card for the photo, and its remaining photos link past it with prev/next. Left
+        // out of the scope, that card stayed — pointing at a page that had moved away, which is a
+        // 404 on the published site rather than a stale caption.
+        //
+        // Missed because the folder pairing looked only at where a change landed, so the departure
+        // folder held no changes at all and every refusal passed for want of anything to refuse.
+        MakeProject();
+        Generate();
+
+        File.Move(At("Photographs", "Portrait.jpg"), At("Documents", "Portrait.jpg"));
+        File.Move(At("Photographs", "Portrait.jpg.yaml"), At("Documents", "Portrait.jpg.yaml"));
+
+        var scope = Scope(new SourceChange(
+            SourceChangeKind.Moved, At("Documents", "Portrait.jpg"), At("Photographs", "Portrait.jpg")));
+
+        Assert.True(scope.ShouldRender(SitePath(), SitePath("Photographs", "index.html")),
+            "the folder the photo left was not re-rendered");
+        Assert.True(scope.ShouldRender(SitePath(), SitePath("Documents", "index.html")),
+            "the folder the photo arrived in was not re-rendered");
+    }
+
+    [AvaloniaFact]
+    public void MovingAPhotoBetweenFolders_LeavesNoCardPointingAtNothing()
+    {
+        // The same thing seen from the site, which is where it would have been noticed.
+        MakeProject();
+        Generate();
+
+        File.Move(At("Photographs", "Portrait.jpg"), At("Documents", "Portrait.jpg"));
+        File.Move(At("Photographs", "Portrait.jpg.yaml"), At("Documents", "Portrait.jpg.yaml"));
+
+        var change = new SourceChange(
+            SourceChangeKind.Moved, At("Documents", "Portrait.jpg"), At("Photographs", "Portrait.jpg"));
+
+        SiteChangeApplier.Apply(_root, [change]);
+        Generate(Scope(change));
+
+        Assert.DoesNotContain("A Portrait",
+            File.ReadAllText(SitePath("Photographs", "index.html")), StringComparison.Ordinal);
+        Assert.True(File.Exists(SitePath("Documents", "Portrait", "index.html")));
+    }
+
+    [AvaloniaFact]
     public void WithNothingKnown_EverythingIsRendered()
     {
         // No change set means the app was closed, or events were lost. Narrowing on no information
