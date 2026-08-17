@@ -378,42 +378,78 @@ public static class DirectoryTraverser
         });
     }
 
-    private static bool ShouldIgnoreDirectory(string path)
-    {
-        var name = Path.GetFileName(path);
+    private static bool ShouldIgnoreDirectory(string path) =>
+        IsIgnoredDirectoryName(Path.GetFileName(path)) || HasHiddenAttribute(path);
 
-        // Skip hidden/private directories (dot-prefix on mac/linux, underscore-prefix convention, Hidden attribute on Windows)
-        if (name.StartsWith('.'))
-            return true;
-
-        if (name.StartsWith('_'))
-            return true;
-
-        if (HasHiddenAttribute(path))
-            return true;
-
-        return PublishIgnore.IsJunkDirectory(name);
-    }
+    /// <summary>
+    /// The name-only half of <see cref="ShouldIgnoreDirectory"/> — dot-prefix on mac/linux,
+    /// underscore-prefix convention, and the shared junk list.
+    /// </summary>
+    /// <remarks>
+    /// Split out because the watcher has to judge paths that no longer exist: a folder reported as
+    /// deleted can't be asked for its attributes, and asking would answer "not hidden" for
+    /// everything and quietly let <c>_site</c> through. A name is all that survives a deletion, and
+    /// it is what carries every rule here except the Windows Hidden bit.
+    /// </remarks>
+    internal static bool IsIgnoredDirectoryName(string name) =>
+        name.StartsWith('.') || name.StartsWith('_') || PublishIgnore.IsJunkDirectory(name);
 
     private static bool ShouldIgnoreFile(string path)
     {
         var name = Path.GetFileName(path);
 
-        // Skip hidden files
-        if (name.StartsWith('.'))
-            return true;
-
-        if (HasHiddenAttribute(path))
+        if (IsIgnoredFileName(name))
             return true;
 
         // Skip metadata sidecar files — they are not content nodes
-        var ext = Path.GetExtension(name);
-        if (ext.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".yml",  StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".json", StringComparison.OrdinalIgnoreCase))
+        if (IsSidecarName(name))
             return true;
 
-        return PublishIgnore.IsJunkFile(name);
+        return HasHiddenAttribute(path);
+    }
+
+    /// <summary>The name-only rules a file is ignored by, sidecars aside. See <see cref="IsIgnoredDirectoryName"/>.</summary>
+    internal static bool IsIgnoredFileName(string name) =>
+        name.StartsWith('.') || PublishIgnore.IsJunkFile(name);
+
+    /// <summary>
+    /// A metadata file rather than content. The tree walk drops these; the watcher deliberately does
+    /// not, because a hand-edited yaml is a change the UI has to show (#62).
+    /// </summary>
+    internal static bool IsSidecarName(string name)
+    {
+        var ext = Path.GetExtension(name);
+        return ext.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".yml",  StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Whether any directory on the way from <paramref name="root"/> down to
+    /// <paramref name="fullPath"/> is one the walk refuses to enter — or whether the path escapes
+    /// the root altogether.
+    /// </summary>
+    /// <remarks>
+    /// The leaf is the caller's business; this is only about the way down. It exists because the
+    /// watcher reports whole paths rather than one directory at a time: <c>.dir2site/x/preview.webp</c>
+    /// has an innocent leaf and an ancestor that means "we wrote this ourselves". Judging the leaf
+    /// alone is how a generate ends up re-triggering itself forever.
+    /// </remarks>
+    internal static bool IsUnderIgnoredDirectory(string root, string fullPath)
+    {
+        var rel = Path.GetRelativePath(root, fullPath);
+
+        // GetRelativePath returns a ".." path when the target sits outside the root, and the
+        // absolute path when the two share no root at all.
+        if (rel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel))
+            return true;
+
+        var segments = rel.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        for (var i = 0; i < segments.Length - 1; i++)
+            if (IsIgnoredDirectoryName(segments[i]))
+                return true;
+
+        return false;
     }
 
     private static bool HasHiddenAttribute(string path)

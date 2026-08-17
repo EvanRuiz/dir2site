@@ -769,7 +769,7 @@ public static class SiteGenerator
     /// Everything that turns a source path into a site path goes through here, so a page, its
     /// previews and its og:image can't disagree about where they live.
     /// </summary>
-    private static string PublicRelativePath(string relativePath)
+    internal static string PublicRelativePath(string relativePath)
     {
         if (relativePath == "." || relativePath.Length == 0) return relativePath;
         var parts = relativePath.Split('/', '\\');
@@ -1446,7 +1446,7 @@ public static class SiteGenerator
     /// purpose: a protected <c>.htaccess</c> stays in the local manifest, so it is never offered
     /// up as stale on the server either.
     /// </summary>
-    private static bool IsProtected(string relativePath) =>
+    internal static bool IsProtected(string relativePath) =>
         relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             .Any(segment => segment.StartsWith('.'));
 
@@ -1514,7 +1514,7 @@ public static class SiteGenerator
     // takes _site/Photographs/1890s/ away once the pages inside it are gone. The site root itself
     // stays. Failures are ignored: a directory that won't go is harmless, and one holding nothing
     // but a protected dot-file is correctly not empty.
-    private static void RemoveEmptyDirectories(string dir, string root)
+    internal static void RemoveEmptyDirectories(string dir, string root)
     {
         IEnumerable<string> children;
         try { children = [.. Directory.EnumerateDirectories(dir)]; }

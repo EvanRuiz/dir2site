@@ -35,6 +35,13 @@ public partial class MainWindow : Window
             if(DataContext is MainWindowViewModel viewModel)
             {
                 viewModel.TopLevel = GetTopLevel(this);
+                viewModel.StartWatching();
+
+                // The real prompt, supplied by the window that can parent it. The view model's own
+                // default declines, which is what a headless host should do rather than pretending
+                // someone answered.
+                viewModel.AskAboutOrphans = async orphans =>
+                    await new OrphanFilesView(orphans).ShowDialog<IReadOnlyList<string>?>(this);
             }
         };
 
@@ -64,6 +71,11 @@ public partial class MainWindow : Window
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         SaveGeometry();
+
+        // Watching was started from here, so it is stopped from here — a filesystem watcher left
+        // running would go on posting to a dispatcher that is on its way out.
+        if (DataContext is MainWindowViewModel viewModel) viewModel.StopWatching();
+
         base.OnClosing(e);
     }
 

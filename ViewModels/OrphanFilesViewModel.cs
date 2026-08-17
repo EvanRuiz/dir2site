@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Evan Ruiz and Dir2Site Contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -9,18 +10,38 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace dir2site.ViewModels;
 
+/// <summary>Where the leftovers were found, which decides how the dialog describes them.</summary>
+public enum OrphanKind
+{
+    /// <summary>Pages and assets in <c>_site</c> — published, and reachable by anyone with the URL.</summary>
+    Site,
+
+    /// <summary>Sidecars and <c>.dir2site</c> folders in the project — clutter, never published.</summary>
+    Source,
+}
+
 /// <summary>
-/// One file left over in _site, with a checkbox. Checked to begin with, unlike its counterpart in
-/// the remote stale-files dialog: these are generated files that can be made again from the source
-/// folder, and leaving them is what keeps deleted content on the published site.
+/// One leftover file, with a checkbox.
 /// </summary>
+/// <remarks>
+/// Ticked to begin with only when we could make it again. That is true of everything in
+/// <c>_site</c> and of a <c>.dir2site</c> preview folder — all of it is output, and leaving it is
+/// what keeps deleted content on the published site. It is emphatically not true of a sidecar: the
+/// caption, credit and date in it were typed by a person, and if the artifact was renamed rather
+/// than deleted that file is the only surviving copy of them. Removing it is still offered, because
+/// after a real deletion it is just clutter — but not on a default nobody chose.
+/// </remarks>
 public partial class OrphanFileItem : ObservableObject
 {
-    public OrphanFileItem(string path) => Path = path;
+    public OrphanFileItem(string path, bool selected = true)
+    {
+        Path = path;
+        _isSelected = selected;
+    }
 
     public string Path { get; }
 
-    [ObservableProperty] private bool _isSelected = true;
+    [ObservableProperty] private bool _isSelected;
 }
 
 /// <summary>
@@ -31,13 +52,29 @@ public partial class OrphanFilesViewModel : ViewModelBase
 {
     private readonly Window _window;
 
-    public OrphanFilesViewModel(Window window, IEnumerable<string> orphanPaths)
+    private readonly OrphanKind _kind;
+
+    public OrphanFilesViewModel(
+        Window window, IEnumerable<string> orphanPaths, OrphanKind kind = OrphanKind.Site)
     {
         _window = window;
-        Items = new ObservableCollection<OrphanFileItem>(orphanPaths.Select(p => new OrphanFileItem(p)));
+        _kind = kind;
+        Items = new ObservableCollection<OrphanFileItem>(
+            orphanPaths.Select(p => new OrphanFileItem(p, selected: CanBeMadeAgain(p))));
     }
 
     public ObservableCollection<OrphanFileItem> Items { get; }
+
+    /// <summary>
+    /// Whether losing this file would cost the user anything they can't get back.
+    /// </summary>
+    /// <remarks>
+    /// Only a sidecar fails this, and only in the project folder — everything else here is
+    /// generated. See <see cref="OrphanFileItem"/> for why that decides the tick.
+    /// </remarks>
+    private static bool CanBeMadeAgain(string path) =>
+        !path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase)
+        && !path.EndsWith(".yml", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// What the dialog closed with, alongside handing the same answer back through the window —
@@ -47,9 +84,18 @@ public partial class OrphanFilesViewModel : ViewModelBase
 
     public bool Decided { get; private set; }
 
-    public string Headline => Items.Count == 1
-        ? "1 file in your site no longer comes from anything in your folder."
-        : $"{Items.Count} files in your site no longer come from anything in your folder.";
+    /// <summary>
+    /// Which of the two kinds of leftover this is. They read very differently to someone deciding:
+    /// a page in the published site is content visitors can still reach, whereas a stray sidecar is
+    /// invisible clutter — and the second is much less alarming to be asked about.
+    /// </summary>
+    public string Headline => (_kind, Items.Count) switch
+    {
+        (OrphanKind.Site, 1) => "1 file in your site no longer comes from anything in your folder.",
+        (OrphanKind.Site, _) => $"{Items.Count} files in your site no longer come from anything in your folder.",
+        (_, 1) => "1 settings or preview file is left over from something no longer in your folder.",
+        _ => $"{Items.Count} settings and preview files are left over from things no longer in your folder.",
+    };
 
     [RelayCommand]
     private void SelectAll()

@@ -15,9 +15,9 @@ public partial class OrphanFilesView : Window
         InitializeComponent();
     }
 
-    public OrphanFilesView(IEnumerable<string> orphanPaths) : this()
+    public OrphanFilesView(IEnumerable<string> orphanPaths, OrphanKind kind = OrphanKind.Site) : this()
     {
-        DataContext = new OrphanFilesViewModel(this, orphanPaths);
+        DataContext = new OrphanFilesViewModel(this, orphanPaths, kind);
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
