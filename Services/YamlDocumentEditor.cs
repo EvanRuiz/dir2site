@@ -5,8 +5,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Globalization;
 using System.Linq;
+using YamlDotNet.Core;
 using YamlDotNet.RepresentationModel;
 using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.EventEmitters;
 
 namespace dir2site.Services;
 
@@ -26,8 +28,36 @@ namespace dir2site.Services;
 public sealed class YamlDocumentEditor
 {
     // Emits a scalar the way YamlDotNet would, so quoting rules (colons, '#', leading spaces,
-    // strings that would otherwise read as numbers or booleans) come from the library.
-    private static readonly ISerializer ScalarSerializer = new SerializerBuilder().Build();
+    // strings that would otherwise read as numbers or booleans) come from the library — plus the one
+    // rule it lacks, which is that a string spelling null has to come back as that string.
+    private static readonly ISerializer ScalarSerializer = new SerializerBuilder()
+        .WithEventEmitter(next => new QuoteNullTokens(next))
+        .Build();
+
+    /// <summary>
+    /// Quotes a string whose text is a YAML null token, so it comes back as that string.
+    /// </summary>
+    /// <remarks>
+    /// The emitter already quotes a string that would otherwise re-read as a number or a boolean; it
+    /// does not do the same for one that would re-read as null. So a title of <c>~</c> was written
+    /// bare, loaded back as null, and threw from inside the emitter on the save after that — the
+    /// value destroying itself one round-trip later, and taking the save with it.
+    ///
+    /// Shared by every serializer in the app rather than applied at the call site that hit it: a
+    /// footer row titled <c>null</c> or a deploy target named <c>~</c> are the same bug wearing a
+    /// different hat, and they go through <see cref="YamlParser"/>'s whole-model serializers instead
+    /// of this one.
+    /// </remarks>
+    internal sealed class QuoteNullTokens(IEventEmitter next) : ChainedEventEmitter(next)
+    {
+        public override void Emit(ScalarEventInfo eventInfo, IEmitter emitter)
+        {
+            if (eventInfo.Source.Value is string text && IsNullToken(text))
+                eventInfo.Style = ScalarStyle.SingleQuoted;
+
+            base.Emit(eventInfo, emitter);
+        }
+    }
 
     private string _text;
 
@@ -289,8 +319,16 @@ public sealed class YamlDocumentEditor
     }
 
     /// <summary>Renders a value as YAML, as a literal block when it spans lines.</summary>
-    private string Emit(string value, int indent)
+    /// <remarks>
+    /// A null arrives from the file rather than from the app: the models declare these non-nullable,
+    /// but <c>title:</c> with nothing after it — or a hand-written <c>~</c> — deserializes to null
+    /// all the same, and this used to throw on the line below. Read as the empty setting it is
+    /// written to mean.
+    /// </remarks>
+    private string Emit(string? value, int indent)
     {
+        value ??= string.Empty;
+
         if (value.Contains('\n'))
         {
             var body = value.Replace("\r\n", "\n").TrimEnd('\n');
@@ -306,6 +344,20 @@ public sealed class YamlDocumentEditor
         return emitted.StartsWith("--- ", StringComparison.Ordinal) ? emitted[4..] : emitted;
     }
 
+    /// <summary>
+    /// Whether this text would re-read as null rather than as itself.
+    /// </summary>
+    /// <remarks>
+    /// The YAML 1.1 null tokens, which is what the deserializer in use here recognises. The empty
+    /// string is deliberately not one: the emitter already writes it quoted.
+    ///
+    /// Internal because the whole-model serializer needs the same rule — a config written from
+    /// scratch does not come through this class at all — and two copies of a list like this is how
+    /// one of them quietly stops matching the other.
+    /// </remarks>
+    internal static bool IsNullToken(string text) =>
+        text is "~" or "null" or "Null" or "NULL";
+
     /// <summary>Accepts an edit only if the result still parses, so a bad splice can't reach disk.</summary>
     /// <remarks>
     /// Exactly one document, not merely a first one that looks right. Appending to a file that ends
@@ -313,9 +365,18 @@ public sealed class YamlDocumentEditor
     /// outright — so the file parsed before the edit and not after, and the artifact vanished from
     /// the site. A file that genuinely holds two documents is one we cannot append to at all:
     /// the key would land in the document nothing reads, and be missing again on the next scan.
+    ///
+    /// An edit that changes nothing is accepted without marking the document modified. Here rather
+    /// than in each splice because this is the one place they all pass through: <c>ReplaceValue</c>
+    /// had its own version of this guard and <see cref="SetBlock"/> did not, so a project with a
+    /// <c>footerItems:</c> block had its config rewritten byte-identical on every save — and under
+    /// auto-generate that write landed in the watched folder, was seen as a change, and rebuilt the
+    /// site, which wrote the config again. The same rewrite was waiting behind <c>deploy:</c>.
     /// </remarks>
     private bool TryCommit(string candidate)
     {
+        if (candidate == _text) return true;
+
         try
         {
             var stream = new YamlStream();

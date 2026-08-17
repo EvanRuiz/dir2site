@@ -24,11 +24,15 @@ public static class YamlParser
     private static readonly IDeserializer DictDeserializer = new DeserializerBuilder()
         .Build();
 
+    // Every serializer in the app carries QuoteNullTokens, so the splice path and the whole-file
+    // path cannot disagree about what needs quoting to survive a round-trip.
     private static readonly ISerializer Serializer = new SerializerBuilder()
+        .WithEventEmitter(next => new YamlDocumentEditor.QuoteNullTokens(next))
         .Build();
 
     private static readonly ISerializer CamelCaseSerializer = new SerializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .WithEventEmitter(next => new YamlDocumentEditor.QuoteNullTokens(next))
         .Build();
 
     // Maps media file extensions to their artifact type name (lowercase).

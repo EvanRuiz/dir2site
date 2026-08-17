@@ -83,6 +83,31 @@ public class DeployTargetsTests : IDisposable
         Assert.Single(YamlParser.DeserializeAs<Dir2SiteModel>(text).Deploy!.Targets);
     }
 
+    /// <summary>
+    /// Re-saving unchanged targets must not touch the file.
+    /// </summary>
+    /// <remarks>
+    /// The same rewrite that made a project with a footer rebuild forever, waiting behind the other
+    /// <c>SetBlock</c> caller. It is reached on an ordinary deploy: <c>PersistAcceptedHostKey</c>
+    /// re-pins the fingerprint a target already has, so with auto-generate on the config was written
+    /// — and a full site render started — in the middle of an upload.
+    /// </remarks>
+    [Fact]
+    public void SavingUnchangedTargets_DoesNotRewriteTheFile()
+    {
+        File.WriteAllText(ConfigPath, "title: My Site\n");
+        DeployTargets.Save(ConfigPath, TwoTargets());
+
+        var before = File.ReadAllText(ConfigPath);
+        var untouched = DateTime.UtcNow.AddMinutes(-10);
+        File.SetLastWriteTimeUtc(ConfigPath, untouched);
+
+        DeployTargets.Save(ConfigPath, TwoTargets());
+
+        Assert.Equal(before, File.ReadAllText(ConfigPath));
+        Assert.Equal(untouched, File.GetLastWriteTimeUtc(ConfigPath));
+    }
+
     [Fact]
     public void RemovingEveryTarget_DropsTheDeployBlockEntirely()
     {
