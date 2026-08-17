@@ -96,12 +96,17 @@ jobs:
       - name: Build
         run: dotnet build -c Release
 
-      # --blame-hang names the test that stopped responding and takes a dump, which is the one
-      # thing the job timeout above cannot do: a run killed by the runner leaves no logs at all,
-      # so a hang reads only as a timestamp. 60s is roughly nine times the slowest test in the
-      # suite (a deliberate six-second wait), and it is wall clock rather than work, so a slower
-      # runner does not eat into the margin.
+      # --blame-hang names the test that stopped responding, which is the one thing the job timeout
+      # above cannot do: a run killed by the runner leaves no logs at all, so a hang reads only as a
+      # timestamp.
+      #
+      # It measures inactivity — time since any test last finished — so with the suite running one
+      # test at a time, that is simply the slowest single test. Size it from CI and not from a
+      # developer machine: the SFTP tests drive a real server and run orders of magnitude slower
+      # here than locally, which is how the previous value ended up tripping on a test that was
+      # merely slow. Well clear of anything real, and under the job timeout above, which stays the
+      # backstop for a hang this fails to catch.
       - name: Test
         run: >-
           dotnet test -c Release --no-build --logger "console;verbosity=normal"
-          --blame-hang --blame-hang-timeout 60s
+          --blame-hang --blame-hang-timeout 5m
