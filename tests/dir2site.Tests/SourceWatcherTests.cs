@@ -231,22 +231,34 @@ public class SourceWatcherTests : IDisposable
         // the lists the batch would be added to — so the previous project's paths landed in the new
         // one's, and were carried through: sidecars moved and preview folders deleted in a project
         // nobody had open.
-        for (var attempt = 0; attempt < 20; attempt++)
+        // What is promised is that nothing arrives once Dispose has returned — not that nothing
+        // arrives at all. A batch delivered while the watcher is still live is the watcher working,
+        // and asking for silence outright made this pass here and fail on a loaded CI machine,
+        // where the quiet period elapses before the disposal it was racing.
+        for (var attempt = 0; attempt < 60; attempt++)
         {
             var watcher = new SourceWatcher(_root, DebounceMs);
-            var delivered = 0;
-            watcher.Changed += (_, _) => Interlocked.Increment(ref delivered);
+            var disposed = false;
+            var afterDisposal = 0;
+
+            watcher.Changed += (_, _) =>
+            {
+                if (Volatile.Read(ref disposed)) Interlocked.Increment(ref afterDisposal);
+            };
             watcher.Start();
             Thread.Sleep(20);
 
-            // Make changes, then dispose while the settle for them is due.
+            // Changes, then disposal while the settle for them is somewhere in flight — the window
+            // this closes is exactly that, so the test has to aim at it rather than around it.
             MakeFile($"churn{attempt}/a.md", "# A");
             MakeFile($"churn{attempt}/b.md", "# B");
-            Thread.Sleep(DebounceMs / 2);
+            Thread.Sleep(DebounceMs);
+
             watcher.Dispose();
+            Volatile.Write(ref disposed, true);
 
             Thread.Sleep(DebounceMs * 3);
-            Assert.Equal(0, delivered);
+            Assert.Equal(0, Volatile.Read(ref afterDisposal));
         }
     }
 
